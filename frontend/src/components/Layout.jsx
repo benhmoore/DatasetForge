@@ -3,6 +3,7 @@ import { Link, Outlet } from 'react-router-dom';
 import DatasetSelector from './DatasetSelector';
 import SettingsModal from './SettingsModal';
 import LogoutButton from './LogoutButton';
+import Generate from './Generate';
 
 const Layout = () => {
   const [selectedDataset, setSelectedDataset] = useState(null);
@@ -74,7 +75,7 @@ const Layout = () => {
           {activeTab === 'templates' ? (
             <Outlet context={{ tab: 'templates' }} />
           ) : (
-            <Outlet context={{ tab: 'generate', selectedDataset }} />
+            <Generate selectedDataset={selectedDataset} />
           )}
         </div>
       </main>

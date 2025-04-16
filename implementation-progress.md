@@ -38,16 +38,16 @@
 - [x] Implement navigation and routing
 
 ## Milestone 4: Generation UI & Data Management
-- [ ] Build SeedForm component
-- [ ] Create VariationCard component with star/edit/reject actions
-- [ ] Implement paraphrase dropdown functionality
-- [ ] Build ExampleTable with TanStack Table
-- [ ] Add inline editing functionality (local state)
-- [ ] Implement bulk operations (delete, regenerate)
-- [ ] Create export functionality
-- [ ] Add pagination for example lists
-- [ ] Implement "Add to Dataset" action
-- [ ] Build Ollama timeout error handling in UI
+- [x] Build SeedForm component
+- [x] Create VariationCard component with star/edit/reject actions
+- [x] Implement paraphrase dropdown functionality
+- [x] Build ExampleTable with TanStack Table
+- [x] Add inline editing functionality (local state)
+- [x] Implement bulk operations (delete, regenerate)
+- [x] Create export functionality
+- [x] Add pagination for example lists
+- [x] Implement "Add to Dataset" action
+- [x] Build Ollama timeout error handling in UI
 - [x] Add UI tests for core components
 
 ## Milestone 5: Packaging & Polish

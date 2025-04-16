@@ -6,6 +6,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import Login from './components/Login';
 import Layout from './components/Layout';
 import TemplateBuilder from './components/TemplateBuilder';
+import Generate from './components/Generate';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -30,8 +31,6 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-// Placeholder for Generate component
-const Generate = () => <div className="p-4">Generate & Audition - Coming soon!</div>;
 
 function App() {
   return (

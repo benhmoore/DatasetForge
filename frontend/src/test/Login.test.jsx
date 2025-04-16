@@ -21,9 +21,20 @@ vi.mock('react-toastify', () => ({
   },
 }));
 
+// Mock react-router-dom
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+    useLocation: () => ({ state: null }),
+    BrowserRouter: ({ children }) => <div>{children}</div>,
+  };
+});
+
 describe('Login Component', () => {
   const mockLogin = vi.fn();
-  const mockNavigate = vi.fn();
   
   // Set up mocks before each test
   beforeEach(() => {
@@ -34,16 +45,6 @@ describe('Login Component', () => {
       login: mockLogin,
       isAuthenticated: false,
       isLoading: false,
-    });
-    
-    // Mock useNavigate
-    vi.mock('react-router-dom', async () => {
-      const actual = await vi.importActual('react-router-dom');
-      return {
-        ...actual,
-        useNavigate: () => mockNavigate,
-        useLocation: () => ({ state: null }),
-      };
     });
   });
   
