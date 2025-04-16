@@ -27,6 +27,15 @@ async def login(
     Uses HTTP Basic Authentication
     Rate limited to prevent brute force attacks
     """
+    # Check if any users exist in the system
+    user_count = session.exec("SELECT COUNT(*) FROM user").first()
+    if user_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No users found in system. Please run 'python backend/app/cli.py create-user' to create a user.",
+            headers={"WWW-Authenticate": "Basic", "X-Error-Code": "no_users_exist"},
+        )
+    
     try:
         user = authenticate_user(credentials, session)
         return {"message": "Login successful"}

@@ -7,7 +7,8 @@ services:
     ports: ["8000:8000"]
     volumes: ["./data:/app/data"]
     restart: unless-stopped
-    network_mode: "host"  # This allows direct access to localhost services like Ollama
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # This allows access to host services like Ollama
 
   frontend:
     build: ./frontend
