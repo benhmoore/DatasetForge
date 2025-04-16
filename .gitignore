@@ -48,4 +48,4 @@ Thumbs.db
 docker-compose.override.yml
 
 # Logs
-*.log
+*.logsecret.txt

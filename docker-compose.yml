@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: ["./ollama-models:/root/.ollama/models"]
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on: ["ollama"]
+    volumes: ["./data:/app/data"]
+    restart: unless-stopped
+
+  frontend:
+    image: node:18
+    working_dir: /app
+    volumes: ["./frontend:/app"]
+    command: ["npm","run","dev"]
+    ports: ["3000:3000"]
+    depends_on: ["backend"]
+    restart: unless-stopped

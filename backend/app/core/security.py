@@ -1,0 +1,125 @@
+import os
+import base64
+import bcrypt
+import hashlib
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from sqlmodel import Session, select
+from ..api.models import User
+from ..db import get_session
+from .config import settings
+
+# Set up HTTP Basic Auth
+security = HTTPBasic()
+
+# In-memory session store
+# Format: {"username": {"valid_until": datetime, "key": derived_key}}
+active_sessions: Dict[str, Dict] = {}
+
+
+def get_password_hash(password: str, salt: bytes = None) -> tuple:
+    """Generate password hash and salt"""
+    if salt is None:
+        salt = bcrypt.gensalt()
+    
+    # Hash the password with the salt
+    password_hash = bcrypt.hashpw(password.encode(), salt).decode()
+    
+    return password_hash, salt.decode()
+
+
+def verify_password(plain_password: str, hashed_password: str, salt: str) -> bool:
+    """Verify a password against a hash"""
+    return bcrypt.checkpw(
+        plain_password.encode(),
+        hashed_password.encode()
+    )
+
+
+def authenticate_user(
+    credentials: HTTPBasicCredentials = Depends(security),
+    session: Session = Depends(get_session)
+) -> User:
+    """Authenticate user with HTTP Basic Auth"""
+    # Query for user
+    user = session.exec(
+        select(User).where(User.username == credentials.username)
+    ).first()
+    
+    # Check if user exists and password is correct
+    if not user or not verify_password(
+        credentials.password, user.password_hash, user.salt
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
+    # Create session with 30-minute expiry
+    now = datetime.utcnow()
+    active_sessions[user.username] = {
+        "valid_until": now + timedelta(minutes=settings.SESSION_TIMEOUT),
+        "user_id": user.id,
+    }
+    
+    return user
+
+
+def get_current_user(
+    credentials: HTTPBasicCredentials = Depends(security),
+    session: Session = Depends(get_session)
+) -> User:
+    """Get the current authenticated user or raise 401"""
+    # Check if user has an active session
+    user_session = active_sessions.get(credentials.username)
+    
+    if not user_session or datetime.utcnow() > user_session["valid_until"]:
+        # Session expired or doesn't exist
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or invalid",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
+    # Refresh session expiry time
+    user_session["valid_until"] = datetime.utcnow() + timedelta(minutes=settings.SESSION_TIMEOUT)
+    
+    # Get user from database
+    user = session.exec(
+        select(User).where(User.id == user_session["user_id"])
+    ).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
+    return user
+
+
+def derive_encryption_key(user_password: str, user_salt: str) -> bytes:
+    """Derive encryption key from password and salts"""
+    # Decode the base64 salt from settings
+    global_salt = base64.b64decode(settings.SECRET_SALT)
+    
+    # Create a key using PBKDF2HMAC with both user salt and global salt
+    key = hashlib.pbkdf2_hmac(
+        'sha256',
+        user_password.encode('utf-8'),
+        user_salt.encode('utf-8') + global_salt,
+        100000,  # iterations
+        32  # key length in bytes
+    )
+    
+    return key
+
+
+def logout_user(username: str) -> None:
+    """Remove a user's session"""
+    if username in active_sessions:
+        del active_sessions[username]
