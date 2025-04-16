@@ -1,0 +1,51 @@
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Data directory (contains SQLite database and encrypted datasets)
+/data/*
+!data/.gitkeep
+
+# Ollama models
+/ollama-models/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+ENV/
+
+# JavaScript/Node.js
+node_modules/
+/frontend/.npm
+/frontend/dist
+/frontend/build
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Alembic migrations (keep the directory structure but ignore version files)
+/backend/app/migrations/versions/*.py
+!/backend/app/migrations/versions/.gitkeep
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Logs
+*.log
