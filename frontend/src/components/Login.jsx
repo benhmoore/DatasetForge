@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import useAuth from '../hooks/useAuth';
 
@@ -9,6 +9,7 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,7 +26,10 @@ const Login = () => {
       
       if (success) {
         toast.success('Login successful');
-        navigate('/app');
+        
+        // If the user was redirected to login from another page, go back there
+        const from = location.state?.from?.pathname || '/';
+        navigate(from);
       } else {
         toast.error('Invalid credentials');
       }

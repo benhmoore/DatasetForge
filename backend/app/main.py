@@ -5,7 +5,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from .api import health, auth
+from .api import health, auth, templates, datasets, generate, paraphrase
 from .core.config import settings
 from .core.logging import LoggingMiddleware
 from .db import create_db_and_tables
@@ -37,6 +37,10 @@ app.add_middleware(LoggingMiddleware)
 # Include API routers
 app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, tags=["auth"])
+app.include_router(templates.router, tags=["templates"])
+app.include_router(datasets.router, tags=["datasets"])
+app.include_router(generate.router, tags=["generate"])
+app.include_router(paraphrase.router, tags=["paraphrase"])
 
 
 # Global exception handler

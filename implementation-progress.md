@@ -14,25 +14,25 @@
 - [x] Complete unit tests for core functionality
 
 ## Milestone 2: Templates & Datasets CRUD
-- [ ] Implement Templates API endpoints (create, read, update, archive)
+- [x] Implement Templates API endpoints (create, read, update, archive)
 - [x] Set up AES-GCM encryption helpers
-- [ ] Build Datasets API endpoints (create, read, update, archive)
-- [ ] Create system prompt history functionality
-- [ ] Implement Ollama integration with timeout handling
-- [ ] Build /generate endpoint
-- [ ] Build /paraphrase endpoint
-- [ ] Set up examples data model and API
-- [ ] Implement JSONL export functionality
+- [x] Build Datasets API endpoints (create, read, update, archive)
+- [x] Create system prompt history functionality
+- [x] Implement Ollama integration with timeout handling
+- [x] Build /generate endpoint
+- [x] Build /paraphrase endpoint
+- [x] Set up examples data model and API
+- [x] Implement JSONL export functionality
 - [ ] Complete unit tests for all endpoints
 
 ## Milestone 3: Frontend Scaffolding
 - [x] Set up React + Vite project with Tailwind CSS
 - [x] Implement responsive layout structure
 - [x] Build Login component with client-side session expiry
-- [ ] Create Settings modal with model preferences
-- [ ] Implement DatasetSelector component
-- [ ] Build TemplateBuilder UI (sidebar, editor, slot manager)
-- [ ] Implement SystemPromptEditor with history dropdown
+- [x] Create Settings modal with model preferences
+- [x] Implement DatasetSelector component
+- [x] Build TemplateBuilder UI (sidebar, editor, slot manager)
+- [x] Implement SystemPromptEditor with history dropdown
 - [x] Create JWT/auth hook and API client
 - [x] Add React-Toastify for user feedback
 - [x] Implement navigation and routing
