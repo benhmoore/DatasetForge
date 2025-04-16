@@ -10,10 +10,7 @@ services:
     network_mode: "host"  # This allows direct access to localhost services like Ollama
 
   frontend:
-    image: node:18
-    working_dir: /app
-    volumes: ["./frontend:/app"]
-    command: ["npm","run","dev"]
+    build: ./frontend
     ports: ["3000:3000"]
     depends_on: ["backend"]
     restart: unless-stopped

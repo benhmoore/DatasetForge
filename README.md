@@ -46,12 +46,12 @@ This project targets modern browsers only (Chrome, Firefox, Safari, Edge) and is
    docker-compose up --build
    ```
 
-4. Create a user:
+5. Create a user:
    ```
    python backend/app/cli.py create-user
    ```
 
-5. Access the application at http://localhost:3000
+6. Access the application at http://localhost:3000
 
 ## Development
 
@@ -86,6 +86,8 @@ This project targets modern browsers only (Chrome, Firefox, Safari, Edge) and is
 - **Backend**: FastAPI (Python) with SQLite database
 - **Frontend**: React with Tailwind CSS
 - **Containerization**: Docker Compose setup for easy deployment
+  - Backend: Python FastAPI container with host network mode to access local Ollama
+  - Frontend: Node.js container built with architecture-independent setup
 
 ## Browser Support
 

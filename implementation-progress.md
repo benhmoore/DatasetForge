@@ -63,6 +63,6 @@
 - [ ] Conduct final end-to-end testing
 
 ## Additional Tasks & Bug Fixes
-- [ ] 
+- [x] Fix frontend Docker container architecture compatibility issues
 - [ ] 
 - [ ]
