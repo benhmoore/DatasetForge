@@ -1,19 +1,13 @@
 version: "3.8"
 
 services:
-  ollama:
-    image: ollama/ollama:latest
-    ports: ["11434:11434"]
-    volumes: ["./ollama-models:/root/.ollama/models"]
-    restart: unless-stopped
-
   backend:
     build: ./backend
     env_file: .env
     ports: ["8000:8000"]
-    depends_on: ["ollama"]
     volumes: ["./data:/app/data"]
     restart: unless-stopped
+    network_mode: "host"  # This allows direct access to localhost services like Ollama
 
   frontend:
     image: node:18

@@ -16,7 +16,7 @@ This project targets modern browsers only (Chrome, Firefox, Safari, Edge) and is
 ## Prerequisites
 
 - Docker and Docker Compose
-- Ollama with language models installed
+- Ollama running locally with language models installed (e.g., `ollama run gemma:7b`)
 
 ## Setup
 
@@ -36,7 +36,12 @@ This project targets modern browsers only (Chrome, Firefox, Safari, Edge) and is
    python -c "import base64, os; print(base64.b64encode(os.urandom(16)).decode())"
    ```
 
-3. Start the services:
+3. Start Ollama on your local machine:
+   ```
+   ollama serve
+   ```
+
+4. Start the application services:
    ```
    docker-compose up --build
    ```

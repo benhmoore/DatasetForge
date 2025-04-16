@@ -1,52 +1,61 @@
-# Environment variables
-.env
-.env.*
-!.env.example
-
-# Data directory (contains SQLite database and encrypted datasets)
-/data/*
-!data/.gitkeep
-
-# Ollama models
-/ollama-models/
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-.pytest_cache/
-.coverage
-htmlcov/
-.venv/
-venv/
+*.so
+.Python
 env/
-ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+datasetforge-env/
 
-# JavaScript/Node.js
+# Frontend
 node_modules/
-/frontend/.npm
-/frontend/dist
-/frontend/build
+/dist
+.npm
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.eslintcache
 
-# Editor directories and files
-.idea/
-.vscode/
-*.swp
-*.swo
-.DS_Store
-Thumbs.db
+# Database
+*.db
+*.db-journal
 
-# Alembic migrations (keep the directory structure but ignore version files)
-/backend/app/migrations/versions/*.py
-!/backend/app/migrations/versions/.gitkeep
+# Environment
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Docker
 .docker/
 docker-compose.override.yml
 
 # Logs
-*.logsecret.txt
-datasetforge-env/
+*.log
+
+# Secret files
+secret.txt
+
+# Other
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
