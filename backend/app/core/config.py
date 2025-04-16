@@ -1,3 +1,4 @@
+import os
 from typing import List
 from pydantic import BaseSettings, validator
 
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
         return v.split(",")
 
     class Config:
-        env_file = ".env"
+        env_file = os.environ.get("ENV_FILE", ".env")
 
 
 settings = Settings()

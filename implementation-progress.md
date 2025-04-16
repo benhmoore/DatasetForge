@@ -23,7 +23,7 @@
 - [x] Build /paraphrase endpoint
 - [x] Set up examples data model and API
 - [x] Implement JSONL export functionality
-- [ ] Complete unit tests for all endpoints
+- [x] Complete unit tests for all endpoints
 
 ## Milestone 3: Frontend Scaffolding
 - [x] Set up React + Vite project with Tailwind CSS
@@ -48,7 +48,7 @@
 - [ ] Add pagination for example lists
 - [ ] Implement "Add to Dataset" action
 - [ ] Build Ollama timeout error handling in UI
-- [ ] Add UI tests for core components
+- [x] Add UI tests for core components
 
 ## Milestone 5: Packaging & Polish
 - [x] Create Docker configuration for all services

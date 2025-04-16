@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlmodel import Session, select
 from slowapi import Limiter
@@ -19,7 +19,8 @@ limiter = Limiter(key_func=get_remote_address)
 @limiter.limit(f"{settings.LOGIN_RATE_LIMIT}/minute")
 async def login(
     credentials: HTTPBasicCredentials = Depends(HTTPBasic()),
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    request: Request = None
 ):
     """
     Login endpoint to authenticate users
