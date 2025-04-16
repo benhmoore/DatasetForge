@@ -87,10 +87,26 @@ const ExampleTable = ({ datasetId }) => {
     return (
       <div className="p-4">
         <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-1/4 mb-4"></div>
-          <div className="h-10 bg-gray-200 rounded w-full mb-2"></div>
-          <div className="h-10 bg-gray-200 rounded w-full mb-2"></div>
-          <div className="h-10 bg-gray-200 rounded w-full mb-2"></div>
+          <div className="flex justify-between items-center mb-4">
+            <div className="h-6 bg-gray-200 rounded w-1/4"></div>
+            <div className="h-8 bg-gray-200 rounded w-24"></div>
+          </div>
+          
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="h-10 bg-gray-100 px-4 flex items-center">
+              <div className="h-4 bg-gray-200 rounded w-24"></div>
+              <div className="h-4 bg-gray-200 rounded w-24 ml-6"></div>
+              <div className="h-4 bg-gray-200 rounded w-24 ml-6"></div>
+            </div>
+            
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-14 border-t border-gray-200 px-4 py-4 flex items-center animate-fadeIn" style={{ animationDelay: `${i * 150}ms` }}>
+                <div className="h-4 bg-gray-200 rounded w-1/6"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/5 ml-6"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/3 ml-6"></div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -104,10 +120,15 @@ const ExampleTable = ({ datasetId }) => {
         
         <button
           onClick={handleExport}
-          className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm"
+          className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm transition-all duration-200 transform hover:shadow active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed"
           disabled={examples.length === 0}
         >
-          Export JSONL
+          <span className="flex items-center">
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Export JSONL
+          </span>
         </button>
       </div>
       
@@ -118,7 +139,7 @@ const ExampleTable = ({ datasetId }) => {
       ) : (
         <>
           {/* Table */}
-          <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <div className="overflow-x-auto border border-gray-200 rounded-lg shadow-sm hover:shadow transition-shadow duration-300">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -145,11 +166,17 @@ const ExampleTable = ({ datasetId }) => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {examples.map((example) => (
-                  <tr key={example.id}>
+                {examples.map((example, index) => (
+                  <tr 
+                    key={example.id} 
+                    className="hover:bg-gray-50 transition-colors duration-150 animate-fadeIn"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate">
-                      {example.system_prompt.substring(0, 50)}
-                      {example.system_prompt.length > 50 ? '...' : ''}
+                      <div className="tooltip">
+                        <span>{example.system_prompt.substring(0, 50)}{example.system_prompt.length > 50 ? '...' : ''}</span>
+                        <span className="tooltip-text hidden group-hover:block">{example.system_prompt}</span>
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate">
                       {example.variation_prompt}
@@ -165,9 +192,11 @@ const ExampleTable = ({ datasetId }) => {
                       </td>
                     ))}
                     
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate">
-                      {example.output.substring(0, 50)}
-                      {example.output.length > 50 ? '...' : ''}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate group">
+                      <div className="tooltip">
+                        <span>{example.output.substring(0, 50)}{example.output.length > 50 ? '...' : ''}</span>
+                        <span className="tooltip-text hidden group-hover:block">{example.output}</span>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -182,19 +211,31 @@ const ExampleTable = ({ datasetId }) => {
                 <button
                   onClick={() => handlePageChange(page - 1)}
                   disabled={page === 1 || isLoading}
-                  className="px-3 py-1 rounded-l-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+                  className="px-3 py-1 rounded-l-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
                 >
-                  Previous
+                  <span className="flex items-center">
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Previous
+                  </span>
                 </button>
-                <div className="px-3 py-1 bg-white border-t border-b border-gray-300">
-                  Page {page} of {totalPages}
+                <div className="px-3 py-1 bg-white border-t border-b border-gray-300 flex items-center">
+                  <span className="px-2 py-0.5 bg-primary-50 text-primary-700 rounded-md text-sm font-medium">
+                    Page {page} of {totalPages}
+                  </span>
                 </div>
                 <button
                   onClick={() => handlePageChange(page + 1)}
                   disabled={page === totalPages || isLoading}
-                  className="px-3 py-1 rounded-r-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+                  className="px-3 py-1 rounded-r-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
                 >
-                  Next
+                  <span className="flex items-center">
+                    Next
+                    <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
                 </button>
               </nav>
             </div>

@@ -84,21 +84,45 @@ const TemplateBuilder = () => {
       };
       
       if (selectedTemplate) {
-        // Update existing template
+        // Update existing template with optimistic UI update
+        const updatedTemplate = {
+          ...selectedTemplate,
+          ...templateData
+        };
+        
+        // Update local state immediately for responsive UI
+        setTemplates(templates.map(t => 
+          t.id === selectedTemplate.id ? updatedTemplate : t
+        ));
+        
+        // Update on server
         await api.updateTemplate(selectedTemplate.id, templateData);
         toast.success('Template updated successfully');
       } else {
-        // Create new template
+        // Create placeholder template with temporary ID for responsive UI
+        const temporaryTemplate = {
+          id: `temp-${Date.now()}`,
+          ...templateData,
+          archived: false
+        };
+        
+        // Update local state immediately
+        setTemplates([temporaryTemplate, ...templates]);
+        
+        // Create on server
         const newTemplate = await api.createTemplate(templateData);
         setSelectedTemplate(newTemplate);
         toast.success('Template created successfully');
       }
       
-      // Refresh templates
+      // Refresh templates to sync with server
       fetchTemplates();
     } catch (error) {
       console.error('Failed to save template:', error);
       toast.error('Failed to save template');
+      
+      // Revert optimistic updates on error
+      fetchTemplates();
     } finally {
       setIsSaving(false);
     }
@@ -214,14 +238,24 @@ const TemplateBuilder = () => {
             {templates.map(template => (
               <li
                 key={template.id}
-                className={`p-2 rounded-md cursor-pointer ${
+                className={`p-2 rounded-md cursor-pointer transition-all duration-200 ${
                   selectedTemplate?.id === template.id
-                    ? 'bg-primary-100 border-l-4 border-primary-500'
-                    : 'hover:bg-gray-100'
+                    ? 'bg-primary-100 border-l-4 border-primary-500 translate-x-1 shadow-sm'
+                    : 'hover:bg-gray-100 hover:translate-x-1 border-l-4 border-transparent'
                 }`}
                 onClick={() => handleSelectTemplate(template)}
               >
-                {template.name}
+                {typeof template.id === 'string' && template.id.startsWith('temp-') ? (
+                  <span className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    {template.name}
+                  </span>
+                ) : (
+                  template.name
+                )}
               </li>
             ))}
           </ul>
