@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'; // Added useCallback
+import { useLocation } from 'react-router-dom'; // Import useLocation
 import { toast } from 'react-toastify';
-// Removed useOutletContext, Navigate
 import api from '../api/apiClient';
 import SeedForm from './SeedForm';
 import VariationCard from './VariationCard';
@@ -11,10 +11,14 @@ import CustomSelect from './CustomSelect';
 const Generate = ({ context }) => { // Accept context as prop
   // Destructure selectedDataset from context
   const { selectedDataset } = context;
+  const location = useLocation(); // Get location object
 
   const [templates, setTemplates] = useState([]);
+  // Store ID instead of object directly from selection
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  // Derived state holding the actual template object
   const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // Keep track of loading state
   const [isGenerating, setIsGenerating] = useState(false);
   const [variations, setVariations] = useState([]);
   const [starredVariations, setStarredVariations] = useState(new Set());
@@ -27,25 +31,65 @@ const Generate = ({ context }) => { // Accept context as prop
     variationsRef.current = variations;
   }, [variations]);
 
-  // Fetch templates on mount
+  // Fetch templates when the component becomes active (navigates to /generate)
   useEffect(() => {
+    let isMounted = true; // Prevent state updates on unmounted component
+
     const fetchTemplates = async () => {
-      setIsLoading(true);
+      console.log('Generate component is active, fetching templates...');
+      // Set loading true only when actually fetching
+      if (isMounted) setIsLoading(true);
       try {
         const fetchedTemplates = await api.getTemplates();
-        setTemplates(fetchedTemplates.filter(t => !t.archived));
+        if (isMounted) {
+          const activeTemplates = fetchedTemplates.filter(t => !t.archived);
+          setTemplates(activeTemplates);
+
+          // If a template was previously selected, find its updated version
+          if (selectedTemplateId) {
+            const updatedSelected = activeTemplates.find(t => t.id === selectedTemplateId);
+            if (updatedSelected) {
+              console.log('Re-selecting updated template:', updatedSelected.name);
+              // Update the selected template object state
+              setSelectedTemplate(updatedSelected);
+            } else {
+              // The previously selected template might have been archived/deleted
+              console.log('Previously selected template not found after refresh, clearing selection.');
+              setSelectedTemplateId(null); // Clear the ID
+              setSelectedTemplate(null);  // Clear the object
+              setVariations([]); // Clear variations as template is gone
+              setStarredVariations(new Set());
+            }
+          }
+        }
       } catch (error) {
         console.error('Failed to fetch templates:', error);
-        toast.error('Failed to load templates.');
+        if (isMounted) {
+          toast.error('Failed to load templates.');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false); // Set loading false after fetch attempt
+        }
       }
     };
-    fetchTemplates();
-  }, []);
 
-  // Handle template selection change
+    // Only fetch if the current path is /generate
+    if (location.pathname === '/generate') {
+      fetchTemplates();
+    } else {
+      if (isMounted) setIsLoading(false);
+    }
+
+    return () => {
+      isMounted = false; // Cleanup function
+    };
+  }, [location.pathname, selectedTemplateId]);
+
+  // Handle template selection change (updates the ID)
   const handleTemplateChange = (templateId) => {
+    setSelectedTemplateId(templateId); // Store the ID
+    // Find the template object from the *current* list and set it immediately
     const template = templates.find(t => t.id === templateId);
     setSelectedTemplate(template);
     setVariations([]); // Clear variations when template changes
@@ -59,15 +103,9 @@ const Generate = ({ context }) => { // Accept context as prop
       return;
     }
 
-    if (!data.template_id) {
-      console.error('Missing template_id in generate request:', data);
-      toast.error('Missing template ID. Please refresh and try again.');
-      return;
-    }
-    
-    if (!data.seeds || data.seeds.length === 0) {
-      console.error('Missing seeds in generate request:', data);
-      toast.error('No seeds provided for generation.');
+    if (!data.template_id || data.template_id !== selectedTemplate.id) {
+      console.error('Mismatched template_id in generate request:', data.template_id, 'vs selected:', selectedTemplate.id);
+      toast.error('Template mismatch. Please try selecting the template again.');
       return;
     }
 
@@ -75,22 +113,22 @@ const Generate = ({ context }) => { // Accept context as prop
 
     setIsGenerating(true);
     const totalVariations = data.seeds.length * data.count;
-    
+
     // Initialize variations with placeholders for all expected results
     const initialVariations = Array.from({ length: totalVariations }, (_, globalIndex) => {
       const seedIndex = Math.floor(globalIndex / data.count);
       const variationIndex = globalIndex % data.count;
       const seedData = data.seeds[seedIndex];
-      
+
       return {
         variation: `Seed ${seedIndex + 1} / Variation ${variationIndex + 1}`, // Initial label
-        output: '', 
+        output: '',
         tool_calls: null,
-        processed_prompt: '', 
+        processed_prompt: '',
         slots: seedData.slots, // Store the slots used for this seed
         seed_index: seedIndex, // Store seed index
         variation_index: variationIndex, // Store variation index within the seed
-        isGenerating: true, 
+        isGenerating: true,
         error: null,
         id: `temp-${seedIndex}-${variationIndex}-${Date.now()}` // Unique temporary ID
       };
@@ -101,7 +139,6 @@ const Generate = ({ context }) => { // Accept context as prop
     try {
       // Use the streaming API call
       await api.generate(data, (result) => {
-        // This callback runs for each received variation
         console.log('Received variation data:', result);
 
         // Calculate the global index in the variations array
@@ -129,31 +166,27 @@ const Generate = ({ context }) => { // Accept context as prop
     } catch (error) {
       console.error('Generation stream failed:', error);
       toast.error(`Generation failed: ${error.message}`);
-      // Mark all remaining generating variations as failed
       setVariations(prev => prev.map(v => v.isGenerating ? { ...v, isGenerating: false, error: 'Stream failed' } : v));
     } finally {
       setIsGenerating(false);
     }
-  }, [selectedDataset, selectedTemplate]); // Dependencies for useCallback
+  }, [selectedDataset, selectedTemplate]);
 
   // Handle star button click
   const handleStar = (index, output) => {
-    // Index is the global index in the variations array
     const newStarred = new Set(starredVariations);
 
     if (newStarred.has(index)) {
       newStarred.delete(index);
     } else {
-      // Only allow starring if there's no error
       if (!variationsRef.current[index]?.error) {
         newStarred.add(index);
       } else {
         toast.warning("Cannot star an item with an error.");
-        return; // Don't proceed with starring or updating output
+        return;
       }
     }
 
-    // Update output if it was edited before starring
     if (output !== variationsRef.current[index]?.output) {
       setVariations(prevVariations => {
         const updatedVariations = [...prevVariations];
@@ -167,11 +200,9 @@ const Generate = ({ context }) => { // Accept context as prop
 
   // Handle edit button save
   const handleEdit = (index, newOutput) => {
-    // Index is the global index
     setVariations(prevVariations => {
       const updatedVariations = [...prevVariations];
       updatedVariations[index] = { ...updatedVariations[index], output: newOutput };
-      // If the item was starred, unstar it because it has been edited
       if (starredVariations.has(index)) {
         const newStarred = new Set(starredVariations);
         newStarred.delete(index);
@@ -184,7 +215,6 @@ const Generate = ({ context }) => { // Accept context as prop
 
   // Handle regenerate button click
   const handleRegenerate = useCallback(async (index, instruction = '') => {
-    // Index is the global index
     if (!selectedTemplate || isGenerating) return;
 
     const currentVariation = variationsRef.current[index];
@@ -193,15 +223,14 @@ const Generate = ({ context }) => { // Accept context as prop
       return;
     }
 
-    // Mark this specific variation as regenerating
     setVariations(prevVariations => {
       const updated = [...prevVariations];
       updated[index] = { 
         ...updated[index], 
         isGenerating: true,
         error: null,
-        output: '', // Clear previous output
-        tool_calls: null // Clear previous tool calls
+        output: '',
+        tool_calls: null
       };
       return updated;
     });
@@ -215,33 +244,28 @@ const Generate = ({ context }) => { // Accept context as prop
         throw new Error('Cannot regenerate: missing slot data');
       }
 
-      // Prepare a request for a single seed (the one being regenerated) and count 1
       const regenParams = {
         template_id: selectedTemplate.id,
-        seeds: [{ slots: slotData }], // Send as a single seed in the seeds array
+        seeds: [{ slots: slotData }],
         count: 1,
         ...(instruction && instruction.trim() !== '' && { instruction: instruction.trim() })
       };
 
       console.log('Final regenerate payload:', regenParams);
 
-      // Use the same streaming API, but expect only one result
       await api.generate(regenParams, (result) => {
         console.log('Received regenerated variation data:', result);
-        // The result will have seed_index 0 and variation_index 0
-        // We need to update the original global index
         setVariations(prevVariations => {
           const updated = [...prevVariations];
           updated[index] = {
-            ...updated[index], // Keep original id, seed_index, variation_index, slots
-            ...result, // Overwrite with new output, variation label, tool_calls, etc.
+            ...updated[index],
+            ...result,
             isGenerating: false,
             error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
           };
           return updated;
         });
 
-        // Ensure the regenerated item is not starred
         if (starredVariations.has(index)) {
           setStarredVariations(prevStarred => {
             const newStarred = new Set(prevStarred);
@@ -263,9 +287,8 @@ const Generate = ({ context }) => { // Accept context as prop
         };
         return updated;
       });
-    } 
-    // No finally block needed here as isGenerating is managed per-card for regeneration
-  }, [selectedTemplate, isGenerating, starredVariations]); // Dependencies for useCallback
+    }
+  }, [selectedTemplate, isGenerating, starredVariations]);
 
   // Handle save to dataset
   const handleSaveToDataset = async () => {
@@ -273,8 +296,7 @@ const Generate = ({ context }) => { // Accept context as prop
       toast.warning('Please select a dataset first');
       return;
     }
-    
-    // Ensure a template is selected to get the system prompt
+
     if (!selectedTemplate) {
       toast.warning('Cannot save: Template not selected.');
       return;
@@ -295,10 +317,9 @@ const Generate = ({ context }) => { // Accept context as prop
         console.warn('Missing slots for variation at index', index, '- attempting to save anyway');
       }
 
-      // Construct the example payload based on ExampleCreate schema
       return {
-        system_prompt: selectedTemplate.system_prompt || "", // Add system_prompt from the selected template
-        user_prompt: variation.processed_prompt || "", // Use the processed prompt from the result
+        system_prompt: selectedTemplate.system_prompt || "",
+        user_prompt: variation.processed_prompt || "",
         slots: slotData,
         output: variation.output,
         tool_calls: variation.tool_calls || null
@@ -311,20 +332,18 @@ const Generate = ({ context }) => { // Accept context as prop
       await api.saveExamples(selectedDataset.id, examplesToSave);
       toast.success(`${examplesToSave.length} example(s) saved to ${selectedDataset.name}`);
       
-      // Remove saved variations from the UI
-      const savedIndices = new Set(starredVariations); // Keep track of saved indices
+      const savedIndices = new Set(starredVariations);
       setVariations(prevVariations => 
         prevVariations.filter((_, index) => !savedIndices.has(index))
       );
-      setStarredVariations(new Set()); // Clear stars after saving and filtering
-      setRefreshExamplesTrigger(prev => prev + 1); // Trigger refresh in ExampleTable
+      setStarredVariations(new Set());
+      setRefreshExamplesTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Failed to save examples:', error);
       toast.error(`Failed to save examples: ${error.response?.data?.detail || error.message}`);
     }
   };
 
-  // Prepare template options for CustomSelect
   const templateOptions = templates.map(template => ({
     value: template.id,
     label: template.name
@@ -333,7 +352,6 @@ const Generate = ({ context }) => { // Accept context as prop
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left Column: Template Selection & Seed Form */}
         <div className="md:col-span-1 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -341,7 +359,7 @@ const Generate = ({ context }) => { // Accept context as prop
             </label>
             <CustomSelect
               options={templateOptions}
-              value={selectedTemplate?.id || ''}
+              value={selectedTemplateId || ''}
               onChange={handleTemplateChange}
               placeholder="Select a template..."
               isLoading={isLoading}
@@ -352,16 +370,15 @@ const Generate = ({ context }) => { // Accept context as prop
           <SeedForm
             template={selectedTemplate}
             onGenerate={handleGenerate}
-            isGenerating={isGenerating} // Pass global isGenerating flag
+            isGenerating={isGenerating}
           />
 
-          {/* Save Button - appears only if there are starred variations */}
           {variations.length > 0 && starredVariations.size > 0 && (
             <div className="mt-4">
               <button
                 onClick={handleSaveToDataset}
                 className="w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
-                disabled={starredVariations.size === 0} // Only disable if no variations are starred
+                disabled={starredVariations.size === 0}
               >
                 Save {starredVariations.size} to Dataset
               </button>
@@ -369,7 +386,6 @@ const Generate = ({ context }) => { // Accept context as prop
           )}
         </div>
 
-        {/* Right Column: Generated Variations */}
         <div className="md:col-span-2">
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
 
@@ -383,13 +399,13 @@ const Generate = ({ context }) => { // Accept context as prop
             <div className="space-y-4">
               {variations.map((variation, index) => (
                 <VariationCard
-                  key={variation.id} // Use the unique temporary ID
-                  variation={variation.variation} // Display the combined label
+                  key={variation.id}
+                  variation={variation.variation}
                   output={variation.output}
                   tool_calls={variation.tool_calls}
                   processed_prompt={variation.processed_prompt}
                   isStarred={starredVariations.has(index)}
-                  isGenerating={variation.isGenerating || false} // Use per-variation generating flag
+                  isGenerating={variation.isGenerating || false}
                   error={variation.error || null}
                   onStar={(output) => handleStar(index, output)}
                   onEdit={(output) => handleEdit(index, output)}
@@ -401,7 +417,6 @@ const Generate = ({ context }) => { // Accept context as prop
         </div>
       </div>
 
-      {/* Example Table Section */}
       {selectedDataset && (
         <div className="border-t pt-6">
           <ExampleTable 
@@ -412,7 +427,6 @@ const Generate = ({ context }) => { // Accept context as prop
         </div>
       )}
 
-      {/* Settings Modal */}
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
