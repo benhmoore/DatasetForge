@@ -232,6 +232,7 @@ async def add_examples(
             system_prompt=example_data.system_prompt,
             slots=example_data.slots,
             output=example_data.output,
+            tool_calls=example_data.tool_calls,
             timestamp=datetime.utcnow()
         )
         db_examples.append(example)
@@ -281,6 +282,7 @@ async def update_example(
     example.system_prompt = example_data.system_prompt
     example.slots = example_data.slots
     example.output = example_data.output
+    example.tool_calls = example_data.tool_calls
     
     session.add(example)
     session.commit()
@@ -373,6 +375,10 @@ async def export_dataset(
                 "output": example.output,
                 "timestamp": example.timestamp.isoformat()
             }
+            
+            # Include tool calls if present
+            if example.tool_calls:
+                record["tool_calls"] = example.tool_calls
             yield json.dumps(record) + "\n"
     
     # Return streaming response

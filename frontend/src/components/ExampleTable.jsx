@@ -282,6 +282,25 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
     }
   };
   
+  // Render tool calls
+  const renderToolCalls = (toolCalls) => {
+    if (!toolCalls || toolCalls.length === 0) return null;
+    
+    return (
+      <div className="space-y-1 max-w-xs">
+        {toolCalls.map((call, idx) => (
+          <div key={idx} className="text-xs bg-gray-50 p-1 rounded">
+            <div className="font-medium">{call.name}</div>
+            <div className="truncate">
+              {JSON.stringify(call.parameters || {}).substring(0, 50)}
+              {JSON.stringify(call.parameters || {}).length > 50 ? '...' : ''}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+  
   // Extract unique slot keys from all examples
   const slotKeys = examples.length > 0 
     ? [...new Set(examples.flatMap(ex => Object.keys(ex.slots)))]
@@ -473,6 +492,13 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Output
                   </th>
+                  
+                  {/* Add Tool Calls column if any examples have tool calls */}
+                  {examples.some(ex => ex.tool_calls && ex.tool_calls.length > 0) && (
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tool Calls
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -673,6 +699,13 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                         </div>
                       )}
                     </td>
+                    
+                    {/* Tool Calls column */}
+                    {examples.some(ex => ex.tool_calls && ex.tool_calls.length > 0) && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {renderToolCalls(example.tool_calls)}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

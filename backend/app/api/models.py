@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, JSON, Column
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 
 class User(SQLModel, table=True):
@@ -20,6 +20,8 @@ class Template(SQLModel, table=True):
     user_prompt: str
     slots: List[str] = Field(sa_column=Column(JSON))
     archived: bool = False
+    tool_definitions: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
+    is_tool_calling_template: bool = Field(default=False)
 
 
 class Dataset(SQLModel, table=True):
@@ -37,4 +39,5 @@ class Example(SQLModel, table=True):
     system_prompt: str
     slots: Dict[str, str] = Field(sa_column=Column(JSON))
     output: str
+    tool_calls: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
     timestamp: datetime = Field(default_factory=datetime.utcnow)

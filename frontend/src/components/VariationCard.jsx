@@ -9,7 +9,8 @@ const VariationCard = ({
   onRegenerate, 
   isStarred = false,
   isGenerating = false,
-  error = null
+  error = null,
+  tool_calls = null
 }) => {
   const [editedOutput, setEditedOutput] = useState(output);
   const [isEditing, setIsEditing] = useState(false);
@@ -23,6 +24,55 @@ const VariationCard = ({
       regenerateInputRef.current.focus();
     }
   }, [isRegenerateModalOpen]);
+  
+  // Function to render tool calls
+  const renderToolCalls = (toolCalls) => {
+    if (!toolCalls || !Array.isArray(toolCalls) || toolCalls.length === 0) {
+      return null;
+    }
+    
+    // For debugging
+    console.log("Rendering tool calls:", toolCalls);
+    
+    return (
+      <div className="mt-2 pt-2 border-t border-gray-200">
+        <h5 className="text-xs font-medium text-gray-700 mb-1">Tool Calls:</h5>
+        <div className="space-y-1">
+          {toolCalls.map((call, index) => {
+            // Handle different tool call formats
+            let name = "Unknown Tool";
+            let parameters = {};
+            
+            if (call.function && typeof call.function === 'object') {
+              // Standard format (function.name & function.arguments)
+              name = call.function.name || "Unknown Tool";
+              try {
+                parameters = typeof call.function.arguments === 'string' 
+                  ? JSON.parse(call.function.arguments) 
+                  : call.function.arguments || {};
+              } catch (e) {
+                console.error("Error parsing tool call arguments:", e);
+                parameters = { error: "Failed to parse arguments", raw: call.function.arguments };
+              }
+            } else if (call.name) {
+              // Simple format (name & parameters directly)
+              name = call.name;
+              parameters = call.parameters || {};
+            }
+            
+            return (
+              <div key={index} className="p-1 bg-blue-50 border border-blue-100 rounded text-xs">
+                <div className="font-medium text-blue-700">{name}</div>
+                <pre className="text-xs mt-1 whitespace-pre-wrap text-gray-700 overflow-x-auto">
+                  {JSON.stringify(parameters, null, 2)}
+                </pre>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
   
   // Handle star button click
   const handleStar = () => {
@@ -177,6 +227,7 @@ const VariationCard = ({
       ) : (
         <div className="p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap transition-all duration-200 hover:border-gray-200">
           {output}
+          {renderToolCalls(tool_calls)}
         </div>
       )}
       

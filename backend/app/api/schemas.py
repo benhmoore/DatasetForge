@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 
 
@@ -21,6 +21,8 @@ class TemplateBase(BaseModel):
     system_prompt: str
     user_prompt: str
     slots: List[str]
+    tool_definitions: Optional[List[Dict[str, Any]]] = None
+    is_tool_calling_template: bool = False
 
 
 class TemplateCreate(TemplateBase):
@@ -61,6 +63,7 @@ class ExampleBase(BaseModel):
     system_prompt: str
     slots: Dict[str, str]
     output: str
+    tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 class ExampleCreate(ExampleBase):
@@ -90,6 +93,7 @@ class GenerationResult(BaseModel):
     variation: str
     output: str
     slots: Dict[str, str]
+    tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 # Paraphrase schemas

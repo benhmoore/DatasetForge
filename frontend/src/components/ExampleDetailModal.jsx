@@ -157,6 +157,25 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
               </div>
             )}
           </div>
+          
+          {/* Tool Calls */}
+          {example.tool_calls && example.tool_calls.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tool Calls
+              </label>
+              <div className="p-3 bg-gray-50 rounded-md">
+                {example.tool_calls.map((call, index) => (
+                  <div key={index} className="mb-2 pb-2 border-b border-gray-200 last:border-0">
+                    <div className="font-medium">{call.name}</div>
+                    <pre className="text-xs mt-1 bg-gray-100 p-2 rounded overflow-x-auto">
+                      {JSON.stringify(call.parameters || {}, null, 2)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Action buttons */}

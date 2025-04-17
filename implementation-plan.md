@@ -235,18 +235,18 @@ class Example(SQLModel, table=True):
 | /user/preferences | GET | Get user name & default models | { name, default_gen_model, default_para_model } |
 | /user/preferences | PUT | Update default models | { default_gen_model, default_para_model } → 204 |
 | /templates | GET | List non-archived templates | [{ id,name,system_prompt,user_prompt,slots }] |
-| /templates | POST | Create template | { name,system_prompt,user_prompt,slots } → { id,... } |
+| /templates | POST | Create template | { name,system_prompt,user_prompt,slots,is_tool_calling_template,tool_definitions } → { id,... } |
 | /templates/{id} | PUT | Update template | same as POST → 204 |
 | /templates/{id}/archive | PUT | Archive template | 204 |
 | /templates/{id}/history | GET | Recent system_prompts (last 10, deduped) | ["...", "..."] |
 | /paraphrase | POST | Generate paraphrases | { text,count } → ["para1","para2",...] |
-| /generate | POST | Generate outputs | { template_id,slots,count } → [{ variation,output }] |
+| /generate | POST | Generate outputs | { template_id,slots,count } → [{ variation,output,tool_calls }] |
 | /datasets | GET | List non-archived datasets (optional pagination) | ?page&size → { items:[...],total } |
 | /datasets | POST | Create new dataset | { name } → { id,name,created_at } |
 | /datasets/{id}/archive | PUT | Archive dataset | 204 |
 | /datasets/{id}/examples | GET | Get examples (paginated) | ?page&size → { items:Example[], total } |
 | /datasets/{id}/examples | POST | Append starred examples (explicit save action) | [ExampleInput] → 204 |
-| /datasets/{id}/export | GET | Stream JSONL export | Lines of {"system_prompt",...} |
+| /datasets/{id}/export | GET | Stream JSONL export | Lines of {"system_prompt",...,"tool_calls":[...]} |
 
 **Note**: Examples are saved only when the user clicks "Add to Dataset". Inline edits in the table are local until that action.
 
@@ -290,6 +290,8 @@ class Example(SQLModel, table=True):
   - `<SystemPromptEditor>` (collapsed; explicit save, history)
   - `<TemplateEditor>` code & Insert Slot
   - `<SlotManager>`
+  - `<ToolDefinitionManager>` for tool-calling templates
+  - Tool-calling template toggle
   - Preview with dummy values
   - Save Template → POST/PUT → toast
 
@@ -307,9 +309,10 @@ class Example(SQLModel, table=True):
 
 - **Component**: `<ExampleTable>`
 - **Features**:
-  - Columns: dynamic slots + output
+  - Columns: dynamic slots + output + tool calls (if present)
   - Inline edits (local)
   - Bulk delete/regenerate
+  - Tool call display in detailed view
   - Pagination controls if total > page size
 
 ### 6.7 Dataset Selector
@@ -333,6 +336,15 @@ class Example(SQLModel, table=True):
   "variation_prompt": "...",
   "slots": { "input": "..." },
   "output": "...",
+  "tool_calls": [
+    {
+      "name": "tool_name",
+      "parameters": {
+        "param1": "value1",
+        "param2": "value2"
+      }
+    }
+  ],
   "timestamp": "2025-04-17T12:34:56Z"
 }
 ```
@@ -470,3 +482,4 @@ python backend/cli.py create-user
 3. **Third Stage**: Frontend scaffolding (Login, Settings, DatasetSelector, TemplateBuilder)
 4. **Fourth Stage**: Generation UI, VariationCard, ExampleTable, Export, Logout
 5. **Fifth Stage**: Containerization, CI, pre-commit, README polish
+6. **Sixth Stage**: Tool-calling support for LLM fine-tuning datasets

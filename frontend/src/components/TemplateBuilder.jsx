@@ -21,6 +21,11 @@ const TemplateBuilder = () => {
   const [userPrompt, setUserPrompt] = useState('');
   const [slots, setSlots] = useState([]);
   const [newSlot, setNewSlot] = useState('');
+  const [isToolCallingTemplate, setIsToolCallingTemplate] = useState(false);
+  const [toolDefinitions, setToolDefinitions] = useState([]);
+  const [newToolName, setNewToolName] = useState('');
+  const [newToolDescription, setNewToolDescription] = useState('');
+  const [newToolParameters, setNewToolParameters] = useState('{}');
 
   // Fetch templates from API
   const fetchTemplates = async () => {
@@ -55,12 +60,16 @@ const TemplateBuilder = () => {
       setSystemPrompt(template.system_prompt);
       setUserPrompt(template.user_prompt);
       setSlots(template.slots);
+      setIsToolCallingTemplate(template.is_tool_calling_template || false);
+      setToolDefinitions(template.tool_definitions || []);
     } else {
       // Clear form
       setName('');
       setSystemPrompt('');
       setUserPrompt('');
       setSlots([]);
+      setIsToolCallingTemplate(false);
+      setToolDefinitions([]);
     }
   };
 
@@ -84,7 +93,9 @@ const TemplateBuilder = () => {
         name,
         system_prompt: systemPrompt,
         user_prompt: userPrompt,
-        slots
+        slots,
+        is_tool_calling_template: isToolCallingTemplate,
+        tool_definitions: isToolCallingTemplate ? toolDefinitions : null
       };
       
       if (selectedTemplate) {
@@ -202,6 +213,38 @@ const TemplateBuilder = () => {
     // Close the modal
     setIsModalOpen(false);
     setNewTemplateName('');
+  };
+
+  // Add tool definition
+  const handleAddToolDefinition = () => {
+    try {
+      const parameters = JSON.parse(newToolParameters);
+      
+      if (!newToolName.trim()) {
+        toast.error('Please enter a tool name');
+        return;
+      }
+      
+      const newTool = {
+        name: newToolName,
+        description: newToolDescription,
+        parameters
+      };
+      
+      setToolDefinitions([...toolDefinitions, newTool]);
+      setNewToolName('');
+      setNewToolDescription('');
+      setNewToolParameters('{}');
+    } catch (e) {
+      toast.error('Invalid JSON for parameters');
+    }
+  };
+  
+  // Remove tool definition
+  const handleRemoveToolDefinition = (index) => {
+    const newTools = [...toolDefinitions];
+    newTools.splice(index, 1);
+    setToolDefinitions(newTools);
   };
 
   // Generate a preview with sample values for slots
@@ -376,6 +419,76 @@ const TemplateBuilder = () => {
             </div>
           </div>
           
+          {/* Tool Calling Toggle */}
+          <div className="mb-4">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="toolCallingToggle"
+                checked={isToolCallingTemplate}
+                onChange={(e) => setIsToolCallingTemplate(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <label htmlFor="toolCallingToggle" className="text-sm font-medium text-gray-700">
+                Tool Calling Template
+              </label>
+            </div>
+          </div>
+          
+          {/* Tool Definitions Section - only show if toolCallingTemplate is enabled */}
+          {isToolCallingTemplate && (
+            <div className="mb-4 p-3 border border-gray-200 rounded-md">
+              <h3 className="text-md font-semibold mb-2">Tool Definitions</h3>
+              
+              {toolDefinitions.map((tool, index) => (
+                <div key={index} className="p-2 mb-2 bg-gray-50 rounded border flex justify-between items-start">
+                  <div>
+                    <div className="font-medium">{tool.name}</div>
+                    <div className="text-sm text-gray-600">{tool.description}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Parameters: {JSON.stringify(tool.parameters)}
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleRemoveToolDefinition(index)} 
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              
+              <div className="mt-2 space-y-2">
+                <input
+                  type="text"
+                  placeholder="Tool Name"
+                  value={newToolName}
+                  onChange={(e) => setNewToolName(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                />
+                <input
+                  type="text"
+                  placeholder="Tool Description"
+                  value={newToolDescription}
+                  onChange={(e) => setNewToolDescription(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                />
+                <textarea
+                  placeholder="Parameters JSON Schema"
+                  value={newToolParameters}
+                  onChange={(e) => setNewToolParameters(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md h-24"
+                />
+                <button
+                  onClick={handleAddToolDefinition}
+                  className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                >
+                  Add Tool
+                </button>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Preview

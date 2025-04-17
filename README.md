@@ -7,6 +7,8 @@ A personal web application for generating fine-tuning datasets. DatasetForge hel
 DatasetForge is designed as a single-user tool that helps you:
 
 -   Create templates with slots for generating training examples
+-   Design tool definitions for tool-calling models
+-   Generate structured tool calls in example outputs
 -   Generate variations of prompts using LLMs via Ollama
 -   Edit and curate the examples before saving to datasets
 -   Export datasets in standard JSONL format for fine-tuning
@@ -162,6 +164,7 @@ DatasetForge includes several command-line tools to help you manage your install
 
 -   **Authentication**: Secure login with session timeout
 -   **Templates**: Create reusable templates with customizable slots
+-   **Tool Calling**: Design tool interfaces and generate structured tool calls
 -   **Generation**: Use Ollama models to generate variations
 -   **Datasets**: Organize examples into named datasets
 -   **Export**: Export datasets in JSONL format for fine-tuning

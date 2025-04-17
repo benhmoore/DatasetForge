@@ -62,7 +62,15 @@
 - [ ] Perform cross-browser testing
 - [ ] Conduct final end-to-end testing
 
+## Milestone 6: Tool-Calling Support
+- [x] Add tool definitions to Template model
+- [x] Add tool calls to Example model 
+- [x] Update backend API to include tool calls in generation
+- [x] Modify TemplateBuilder to support tool definitions
+- [x] Update ExampleTable to display tool calls 
+- [x] Include tool calls in dataset exports
+- [x] Add comprehensive test coverage for tool-calling features
+- [x] Create database migration script
+
 ## Additional Tasks & Bug Fixes
 - [x] Fix frontend Docker container architecture compatibility issues
-- [ ] 
-- [ ]

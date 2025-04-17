@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 import base64
+from unittest.mock import patch
 
 # Add parent directory to path so we can import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -65,6 +66,38 @@ def test_user_fixture(session):
     
     return user
 
+
+@pytest.fixture(name="disable_rate_limit", autouse=True)
+def disable_rate_limit_fixture(monkeypatch):
+    """Disable rate limiting for all tests"""
+    # No-op decorator to replace the rate limiter
+    def dummy_decorator(*args, **kwargs):
+        def inner(func):
+            return func
+        return inner
+    
+    # Import the limiter and replace its limit method
+    from app.api.auth import limiter
+    original_limit = limiter.limit
+    monkeypatch.setattr(limiter, "limit", dummy_decorator)
+    
+    yield
+    
+    # Restore the original limiter after the test
+    monkeypatch.setattr(limiter, "limit", original_limit)
+
+
+@pytest.fixture(name="login")
+def login_fixture(client, test_user):
+    """Log in the test user"""
+    credentials = f"{test_user.username}:testpassword"
+    response = client.post(
+        "/login",
+        headers={"Authorization": f"Basic {base64.b64encode(credentials.encode()).decode()}"}
+    )
+    assert response.status_code == 200
+    return response
+    
 
 @pytest.fixture(name="auth_headers")
 def auth_headers_fixture(test_user):

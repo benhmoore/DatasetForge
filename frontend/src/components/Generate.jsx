@@ -299,11 +299,20 @@ const Generate = () => {
         slotData = { "_default": "No slot data available" };
       }
       
-      return {
+      // Include tool_calls if they exist in the variation
+      const example = {
         system_prompt: selectedTemplate.system_prompt,
         slots: slotData,
         output: variation.output
       };
+      
+      // Add tool_calls if they exist in the variation
+      if (variation.tool_calls && Array.isArray(variation.tool_calls) && variation.tool_calls.length > 0) {
+        example.tool_calls = variation.tool_calls;
+        console.log('Including tool calls in saved example:', variation.tool_calls);
+      }
+      
+      return example;
     });
     
     try {
@@ -390,6 +399,7 @@ const Generate = () => {
                   key={index}
                   variation={variation.variation}
                   output={variation.output}
+                  tool_calls={variation.tool_calls}
                   isStarred={starredVariations.has(index)}
                   isGenerating={variation.isGenerating || false}
                   error={variation.error || null}

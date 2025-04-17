@@ -9,6 +9,7 @@ from .api import health, auth, templates, datasets, generate, paraphrase
 from .core.config import settings
 from .core.logging import LoggingMiddleware
 from .db import create_db_and_tables
+from .db_migration import migrate_database
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -65,6 +66,8 @@ def on_startup():
     """Run when the application starts"""
     # Create database tables
     create_db_and_tables()
+    # Run database migrations
+    migrate_database()
 
 
 if __name__ == "__main__":

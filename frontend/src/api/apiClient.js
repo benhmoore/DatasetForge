@@ -98,6 +98,17 @@ const api = {
     return apiClient.post('/generate', data)
       .then(response => {
         console.log('Generation response received:', response.status);
+        console.log('Generation response data:', JSON.stringify(response.data));
+        
+        // Check if there are tool calls in the response
+        if (response.data && Array.isArray(response.data)) {
+          response.data.forEach((item, index) => {
+            if (item.tool_calls && Array.isArray(item.tool_calls)) {
+              console.log(`Variation ${index} has ${item.tool_calls.length} tool calls:`, item.tool_calls);
+            }
+          });
+        }
+        
         return response.data;
       });
   },
