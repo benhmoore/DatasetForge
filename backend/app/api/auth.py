@@ -28,8 +28,9 @@ async def login(
     Rate limited to prevent brute force attacks
     """
     # Check if any users exist in the system
-    user_count = session.exec("SELECT COUNT(*) FROM user").first()
-    if user_count == 0:
+    from sqlmodel import text
+    user_count = session.exec(select(User)).first()
+    if user_count is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No users found in system. Please run 'python backend/app/cli.py create-user' to create a user.",
