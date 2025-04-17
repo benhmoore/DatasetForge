@@ -9,6 +9,7 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
+  const [formatFilter, setFormatFilter] = useState('all');
 
   // Fetch templates when dialog opens or when template manager closes
   useEffect(() => {
@@ -21,12 +22,35 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
     setIsLoading(true);
     try {
       const response = await api.getExportTemplates(1, 100);
-      setTemplates(response.items);
       
-      // Preselect the raw format template
-      const rawTemplate = response.items.find(t => t.format_name === 'raw' && t.is_default);
-      if (rawTemplate) {
-        setSelectedTemplateId(rawTemplate.id);
+      // Sort templates to show defaults first, grouped by similar formats
+      const sortedTemplates = [...response.items].sort((a, b) => {
+        // First prioritize default templates
+        if (a.is_default && !b.is_default) return -1;
+        if (!a.is_default && b.is_default) return 1;
+        
+        // Then group by format type
+        const formatPriority = {
+          'mlx-chat': 1,
+          'mlx-instruct': 2,
+          'openai-chatml': 3,
+          'llama': 4,
+          'tool-calling': 5,
+          'raw': 6
+        };
+        
+        const aPriority = formatPriority[a.format_name] || 100;
+        const bPriority = formatPriority[b.format_name] || 100;
+        
+        return aPriority - bPriority;
+      });
+      
+      setTemplates(sortedTemplates);
+      
+      // Preselect the first default template or first template if no defaults
+      const defaultTemplate = sortedTemplates.find(t => t.is_default) || sortedTemplates[0];
+      if (defaultTemplate) {
+        setSelectedTemplateId(defaultTemplate.id);
       }
     } catch (error) {
       console.error('Failed to fetch export templates:', error);
@@ -103,7 +127,7 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
         <div className="p-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Export Dataset</h2>
           
-          <div className="mb-6">
+          <div className="mb-4">
             <div className="flex justify-between items-center">
               <p className="text-sm text-gray-600 mb-2">
                 Select an export format for your dataset. Each format structures the data differently to match specific fine-tuning requirements.
@@ -122,6 +146,52 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
             </div>
           </div>
           
+          {/* Quick Format Filter */}
+          <div className="mb-6">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setFormatFilter('all')}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  formatFilter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                All Formats
+              </button>
+              <button
+                onClick={() => setFormatFilter('mlx')}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  formatFilter === 'mlx' ? 'bg-purple-800 text-white' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                }`}
+              >
+                MLX
+              </button>
+              <button
+                onClick={() => setFormatFilter('openai')}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  formatFilter === 'openai' ? 'bg-green-800 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'
+                }`}
+              >
+                OpenAI
+              </button>
+              <button
+                onClick={() => setFormatFilter('llama')}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  formatFilter === 'llama' ? 'bg-yellow-800 text-white' : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                }`}
+              >
+                Llama/Mistral
+              </button>
+              <button
+                onClick={() => setFormatFilter('tool')}
+                className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                  formatFilter === 'tool' ? 'bg-indigo-800 text-white' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+                }`}
+              >
+                Function Calling
+              </button>
+            </div>
+          </div>
+          
           {isLoading ? (
             <div className="flex justify-center items-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
@@ -129,7 +199,16 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
           ) : (
             <div className="space-y-4">
               <div className="grid gap-4">
-                {templates.map(template => (
+                {templates
+                  .filter(template => {
+                    if (formatFilter === 'all') return true;
+                    if (formatFilter === 'mlx' && (template.format_name === 'mlx-chat' || template.format_name === 'mlx-instruct')) return true;
+                    if (formatFilter === 'openai' && template.format_name === 'openai-chatml') return true;
+                    if (formatFilter === 'llama' && template.format_name === 'llama') return true;
+                    if (formatFilter === 'tool' && template.format_name === 'tool-calling') return true;
+                    return false;
+                  })
+                  .map(template => (
                   <div 
                     key={template.id}
                     className={`border rounded-lg p-4 cursor-pointer transition-all ${
@@ -150,10 +229,43 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
                           )}
                         </h3>
                         <p className="text-sm text-gray-600 mt-1">{template.description}</p>
-                        <div className="mt-2">
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {/* Format Tag */}
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                             {template.format_name}
                           </span>
+                          
+                          {/* Model Tags */}
+                          {template.format_name === 'mlx-chat' && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                              MLX
+                            </span>
+                          )}
+                          {template.format_name === 'mlx-instruct' && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                              MLX
+                            </span>
+                          )}
+                          {template.format_name === 'openai-chatml' && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              OpenAI
+                            </span>
+                          )}
+                          {template.format_name === 'llama' && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              Llama/Mistral
+                            </span>
+                          )}
+                          {template.format_name === 'tool-calling' && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                              Function Calling
+                            </span>
+                          )}
+                          {template.format_name === 'raw' && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                              Generic
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center ml-4">

@@ -121,8 +121,30 @@ def migrate_database():
                 "archived": 0
             }
             
+            # OpenAI ChatML format template
+            openai_chatml_template = {
+                "name": "OpenAI ChatML",
+                "description": "Format for OpenAI chat fine-tuning (ChatGPT, GPT-4)",
+                "format_name": "openai-chatml",
+                "template": '''{"messages": [{"role": "system", "content": {{ system_prompt|tojson }}}, {% for key, value in slots.items() %}{"role": "user", "content": {{ value|tojson }}},{% endfor %}{"role": "assistant", "content": {{ output|tojson }}}]}''',
+                "is_default": 1,
+                "created_at": "datetime('now')",
+                "archived": 0
+            }
+            
+            # Llama format template
+            llama_template = {
+                "name": "Llama Format",
+                "description": "Format for Llama, Mistral and similar models",
+                "format_name": "llama",
+                "template": '''<s>[INST] {{ system_prompt }}\\n\\n{% for key, value in slots.items() %}{{ value }}{% endfor %} [/INST] {{ output }}</s>''',
+                "is_default": 1,
+                "created_at": "datetime('now')",
+                "archived": 0
+            }
+            
             # Insert default templates
-            for template in [mlx_chat_template, mlx_instruct_template, tool_calling_template, raw_template]:
+            for template in [mlx_chat_template, mlx_instruct_template, tool_calling_template, raw_template, openai_chatml_template, llama_template]:
                 cursor.execute("""
                 INSERT INTO exporttemplate (name, description, format_name, template, is_default, created_at, archived)
                 VALUES (?, ?, ?, ?, ?, datetime('now'), ?)

@@ -26,7 +26,37 @@ const ExportTemplateManager = ({ isOpen, onClose }) => {
     setIsLoading(true);
     try {
       const response = await api.getExportTemplates(1, 100);
-      setTemplates(response.items);
+      
+      // Sort templates by various factors for better organization
+      const sortedTemplates = [...response.items].sort((a, b) => {
+        // First separate system vs user templates
+        if (a.owner_id === null && b.owner_id !== null) return -1;
+        if (a.owner_id !== null && b.owner_id === null) return 1;
+        
+        // Then prioritize default templates
+        if (a.is_default && !b.is_default) return -1;
+        if (!a.is_default && b.is_default) return 1;
+        
+        // Then group by format type
+        const formatPriority = {
+          'mlx-chat': 1,
+          'mlx-instruct': 2,
+          'openai-chatml': 3,
+          'llama': 4,
+          'tool-calling': 5,
+          'raw': 6
+        };
+        
+        const aPriority = formatPriority[a.format_name] || 100;
+        const bPriority = formatPriority[b.format_name] || 100;
+        
+        if (aPriority !== bPriority) return aPriority - bPriority;
+        
+        // Finally sort by name
+        return a.name.localeCompare(b.name);
+      });
+      
+      setTemplates(sortedTemplates);
     } catch (error) {
       console.error('Failed to fetch export templates:', error);
       toast.error('Failed to load export templates');
@@ -181,10 +211,44 @@ const ExportTemplateManager = ({ isOpen, onClose }) => {
                             )}
                           </h4>
                           <p className="text-sm text-gray-600 mt-1">{template.description}</p>
-                          <div className="mt-2 flex items-center">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                          <div className="mt-2 flex items-center flex-wrap gap-1">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                               {template.format_name}
                             </span>
+                            
+                            {/* Model Type Tags */}
+                            {template.format_name === 'mlx-chat' && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                MLX
+                              </span>
+                            )}
+                            {template.format_name === 'mlx-instruct' && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                MLX
+                              </span>
+                            )}
+                            {template.format_name === 'openai-chatml' && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                OpenAI
+                              </span>
+                            )}
+                            {template.format_name === 'llama' && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                Llama/Mistral
+                              </span>
+                            )}
+                            {template.format_name === 'tool-calling' && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                                Function Calling
+                              </span>
+                            )}
+                            {template.format_name === 'raw' && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                Generic
+                              </span>
+                            )}
+                            
+                            {/* Template Source Tag */}
                             {template.owner_id === null && (
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                 System
