@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import ExampleDetailModal from './ExampleDetailModal';
@@ -27,6 +27,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const searchInputRef = useRef(null);
   
   // Function to fetch examples that can be called programmatically 
   const fetchExamples = async () => {
@@ -50,11 +51,23 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
       
       if (searchParam) {
         setIsSearching(false);
+        // Restore focus to search input if it was active
+        if (document.activeElement === searchInputRef.current) {
+          setTimeout(() => {
+            searchInputRef.current?.focus();
+          }, 0);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch examples:', error);
       toast.error('Failed to load examples');
       setIsSearching(false);
+      // Restore focus after error
+      if (searchParam && document.activeElement === searchInputRef.current) {
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 0);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -252,6 +265,9 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
       const updatedExamples = [...examples];
       updatedExamples[exampleIndex] = updatedExample;
       setExamples(updatedExamples);
+      
+      // Also update the selected example to ensure the modal displays the latest data
+      setSelectedExample(updatedExample);
     }
   };
   
@@ -321,6 +337,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
             placeholder="Search examples..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            ref={searchInputRef}
           />
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             {isSearching ? (

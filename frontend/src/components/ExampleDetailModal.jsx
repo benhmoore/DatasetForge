@@ -7,10 +7,16 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
   const [isSaving, setIsSaving] = useState(false);
   const [editedExample, setEditedExample] = useState(null);
 
-  // Initialize edited example when the modal opens
+  // Initialize edited example when the modal opens or when example changes
   useEffect(() => {
     if (example) {
+      // Create a deep copy of the example to avoid reference issues
       setEditedExample(JSON.parse(JSON.stringify(example)));
+      
+      // Also reset editing state if example changes while modal is open
+      if (isEditing) {
+        setIsEditing(false);
+      }
     }
   }, [example]);
 
