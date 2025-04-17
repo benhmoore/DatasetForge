@@ -399,7 +399,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                           />
                           <div className="flex flex-col ml-2">
                             <button 
-                              onClick={handleSaveEdit}
+                              onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
                               disabled={isSaving}
                               className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
                               title="Save"
@@ -407,7 +407,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                               ✓
                             </button>
                             <button 
-                              onClick={handleCancelEdit}
+                              onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
                               disabled={isSaving}
                               className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
                               title="Cancel"
@@ -443,61 +443,6 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                       )}
                     </td>
                     
-                    {/* Slot values will appear here */}
-                        <div className="flex items-center">
-                          <textarea
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                            rows={3}
-                            autoFocus
-                          />
-                          <div className="flex flex-col ml-2">
-                            <button 
-                              onClick={handleSaveEdit}
-                              disabled={isSaving}
-                              className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
-                              title="Save"
-                            >
-                              ✓
-                            </button>
-                            <button 
-                              onClick={handleCancelEdit}
-                              disabled={isSaving}
-                              className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
-                              title="Cancel"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div 
-                          className="tooltip group relative cursor-pointer"
-                          onMouseEnter={(e) => {
-                            const tooltip = e.currentTarget.querySelector('.tooltip-text');
-                            if (tooltip) {
-                              tooltip.style.top = `${e.clientY - 20}px`;
-                              tooltip.style.left = `${e.clientX + 20}px`;
-                            }
-                          }}
-                          onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'variation_prompt'); }}
-                        >
-                          <div className="flex items-center">
-                            <span className="truncate flex-grow">{example.variation_prompt.substring(0, 50)}{example.variation_prompt.length > 50 ? '...' : ''}</span>
-                            <button 
-                              className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
-                              onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'variation_prompt'); }}
-                              title="Edit"
-                            >
-                              ✎
-                            </button>
-                          </div>
-                          <span className="tooltip-text">{example.variation_prompt}</span>
-                        </div>
-                      )}
-                    </td>
-                    
                     {/* Render slot values */}
                     {slotKeys.map(slot => (
                       <td 
@@ -515,7 +460,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                             />
                             <div className="flex flex-col ml-2">
                               <button 
-                                onClick={handleSaveEdit}
+                                onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
                                 disabled={isSaving}
                                 className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
                                 title="Save"
@@ -523,7 +468,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                                 ✓
                               </button>
                               <button 
-                                onClick={handleCancelEdit}
+                                onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
                                 disabled={isSaving}
                                 className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
                                 title="Cancel"
@@ -575,7 +520,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                           />
                           <div className="flex flex-col ml-2">
                             <button 
-                              onClick={handleSaveEdit}
+                              onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
                               disabled={isSaving}
                               className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
                               title="Save"
@@ -583,7 +528,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                               ✓
                             </button>
                             <button 
-                              onClick={handleCancelEdit}
+                              onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
                               disabled={isSaving}
                               className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
                               title="Cancel"
