@@ -126,6 +126,14 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
           </select>
         </div>
         
+        <button
+          className="px-3 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 flex items-center text-sm"
+          onClick={() => setIsModalOpen(true)}
+          title="Create new dataset"
+        >
+          <span className="mr-1">➕</span> New
+        </button>
+        
         {selectedDataset && (
           <button
             className="p-2 text-gray-500 hover:text-gray-700"

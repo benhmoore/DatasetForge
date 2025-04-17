@@ -84,7 +84,23 @@ const Layout = () => {
       {/* Main Content */}
       <main className="flex-grow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <Outlet context={{ selectedDataset, setSelectedDataset }} />
+          {/* Show special message if no dataset exists - but only on the generate page */}
+          {activeTab === 'generate' && !selectedDataset ? (
+            <div className="p-8 bg-gray-50 rounded-lg border border-gray-200 text-center">
+              <h2 className="text-xl font-medium text-gray-700 mb-4">No Dataset Selected</h2>
+              <p className="text-gray-500 mb-4">
+                Please create and select a dataset using the dropdown or button at the top of the page.
+              </p>
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+              >
+                Create New Dataset
+              </button>
+            </div>
+          ) : (
+            <Outlet context={{ selectedDataset, setSelectedDataset }} />
+          )}
         </div>
       </main>
       
