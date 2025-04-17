@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import ExampleDetailModal from './ExampleDetailModal';
@@ -33,6 +33,13 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const [isSearching, setIsSearching] = useState(false);
   const searchInputRef = useRef(null);
   
+  // For sorting
+  const [sortField, setSortField] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc');
+  
+  // For pagination loading state
+  const [isPaginationLoading, setIsPaginationLoading] = useState(false);
+
   // Function to fetch examples that can be called programmatically 
   const fetchExamples = async () => {
     if (!datasetId) return;
@@ -41,7 +48,11 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     const activeElementBeforeFetch = document.activeElement;
     const wasSearchFocused = activeElementBeforeFetch === searchInputRef.current;
     
-    setIsLoading(true);
+    if (page !== 1) {
+      setIsPaginationLoading(true);
+    } else {
+      setIsLoading(true);
+    }
     
     try {
       const searchParam = debouncedSearchTerm.trim() || null;
@@ -49,7 +60,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
         setIsSearching(true);
       }
       
-      const response = await api.getExamples(datasetId, page, pageSize, searchParam);
+      const response = await api.getExamples(datasetId, page, pageSize, searchParam, sortField, sortDirection);
       setExamples(response.items);
       
       // Calculate total pages
@@ -66,13 +77,13 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       setIsSearching(false);
     } finally {
       setIsLoading(false);
+      setIsPaginationLoading(false);
       
       // Restore focus after all state updates
       // Use requestAnimationFrame to ensure DOM has updated
       if (wasSearchFocused && searchInputRef.current) {
         requestAnimationFrame(() => {
           searchInputRef.current?.focus();
-          console.log("Restoring focus to search input after fetch");
         });
       }
     }
@@ -83,7 +94,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     fetchExamples();
     // Clear selections when changing pages or refreshing
     setSelectedExamples(new Set());
-  }, [datasetId, page, refreshTrigger, debouncedSearchTerm]);
+  }, [datasetId, page, refreshTrigger, debouncedSearchTerm, sortField, sortDirection]);
   
   // Debounce search term to avoid excessive API calls
   useEffect(() => {
@@ -113,6 +124,16 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     // Clear any editing state when changing pages
     setEditingCell(null);
     setPage(newPage);
+  };
+
+  // Handle sorting
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
   };
   
   // Start editing a cell
@@ -310,6 +331,72 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     ? [...new Set(examples.flatMap(ex => Object.keys(ex.slots)))]
     : [];
   
+  // Handle keyboard navigation
+  const handleKeyDown = useCallback((e, example, field) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Save changes on Enter
+      e.preventDefault();
+      handleSaveEdit();
+    } else if (e.key === 'Escape') {
+      // Cancel editing on Escape
+      e.preventDefault();
+      handleCancelEdit();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      
+      // Find the next editable cell
+      const currentExample = examples.findIndex(ex => ex.id === example.id);
+      const fields = ['system_prompt', ...slotKeys.map(slot => `slot:${slot}`), 'output'];
+      const currentFieldIndex = fields.indexOf(field);
+      
+      if (e.shiftKey) {
+        // Move to previous field or previous row's last field
+        if (currentFieldIndex > 0) {
+          const prevField = fields[currentFieldIndex - 1];
+          handleSaveEdit();
+          handleStartEdit(example, prevField);
+        } else if (currentExample > 0) {
+          const prevExample = examples[currentExample - 1];
+          const lastField = fields[fields.length - 1];
+          handleSaveEdit();
+          handleStartEdit(prevExample, lastField);
+        }
+      } else {
+        // Move to next field or next row's first field
+        if (currentFieldIndex < fields.length - 1) {
+          const nextField = fields[currentFieldIndex + 1];
+          handleSaveEdit();
+          handleStartEdit(example, nextField);
+        } else if (currentExample < examples.length - 1) {
+          const nextExample = examples[currentExample + 1];
+          handleSaveEdit();
+          handleStartEdit(nextExample, fields[0]);
+        }
+      }
+    }
+  }, [examples, slotKeys, handleSaveEdit, handleCancelEdit, handleStartEdit]);
+  
+  // Enhanced search with improved debounce and accessibility
+  const optimizedSearchDebounce = useCallback((searchValue) => {
+    setSearchTerm(searchValue);
+    // Visual feedback that search is happening
+    setIsSearching(true);
+  }, []);
+  
+  // Keyboard shortcut for search focus
+  useEffect(() => {
+    const handleSearchShortcut = (e) => {
+      // Ctrl+F or Cmd+F to focus search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && searchInputRef.current) {
+        e.preventDefault();
+        searchInputRef.current.focus();
+      }
+    };
+    
+    window.addEventListener('keydown', handleSearchShortcut);
+    return () => window.removeEventListener('keydown', handleSearchShortcut);
+  }, [searchInputRef]);
+
   // If no dataset is selected
   if (!datasetId) {
     return (
@@ -448,19 +535,28 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       {examples.length === 0 ? (
         <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
           {debouncedSearchTerm ? (
-            <p className="text-gray-500">
-              No examples found matching "{debouncedSearchTerm}".
-              {!isLoading && (
-                <button 
-                  className="ml-2 text-primary-600 hover:text-primary-800 underline focus:outline-none"
-                  onClick={() => setSearchTerm('')}
-                >
-                  Clear search
-                </button>
-              )}
-            </p>
+            <div className="py-8">
+              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <p className="mt-4 text-gray-500 text-lg">
+                No examples found matching "<span className="font-medium text-primary-600">{debouncedSearchTerm}</span>"
+              </p>
+              <button 
+                className="mt-3 px-4 py-2 text-sm font-medium text-primary-600 hover:text-primary-800 hover:underline focus:outline-none focus:ring-2 focus:ring-primary-500"
+                onClick={() => setSearchTerm('')}
+              >
+                Clear search
+              </button>
+            </div>
           ) : (
-            <p className="text-gray-500">No examples found in this dataset.</p>
+            <div className="py-8">
+              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              <p className="mt-4 text-gray-500 text-lg">No examples found in this dataset</p>
+              <p className="mt-2 text-gray-400">Create examples by uploading a JSONL file or using the generation feature</p>
+            </div>
           )}
         </div>
       ) : (
@@ -479,22 +575,44 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                       onChange={handleToggleSelectAll}
                     />
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('system_prompt')}
+                  >
                     System Prompt
+                    {sortField === 'system_prompt' && (
+                      <span className="ml-1">
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
                   </th>
                   
                   {/* Render a column for each slot */}
                   {slotKeys.map(slot => (
                     <th 
                       key={slot} 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                      onClick={() => handleSort(`slot:${slot}`)}
                     >
                       {slot}
+                      {sortField === `slot:${slot}` && (
+                        <span className="ml-1">
+                          {sortDirection === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
                     </th>
                   ))}
                   
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('output')}
+                  >
                     Output
+                    {sortField === 'output' && (
+                      <span className="ml-1">
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
                   </th>
                   
                   {/* Add Tool Calls column if any examples have tool calls */}
@@ -536,6 +654,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                             className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                             rows={3}
                             autoFocus
+                            onKeyDown={(e) => handleKeyDown(e, example, 'system_prompt')}
                           />
                           <div className="flex flex-col ml-2">
                             <button 
@@ -597,6 +716,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                               onChange={(e) => setEditValue(e.target.value)}
                               className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                               autoFocus
+                              onKeyDown={(e) => handleKeyDown(e, example, `slot:${slot}`)}
                             />
                             <div className="flex flex-col ml-2">
                               <button 
@@ -657,6 +777,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                             className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                             rows={3}
                             autoFocus
+                            onKeyDown={(e) => handleKeyDown(e, example, 'output')}
                           />
                           <div className="flex flex-col ml-2">
                             <button 
