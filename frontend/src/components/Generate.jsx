@@ -309,7 +309,13 @@ const Generate = () => {
     try {
       await api.saveExamples(selectedDataset.id, examplesToSave);
       toast.success(`${examplesToSave.length} example(s) saved to ${selectedDataset.name}`);
-      setStarredVariations(new Set()); // Clear stars after saving
+      
+      // Remove saved variations from the UI
+      const savedIndices = new Set(starredVariations); // Keep track of saved indices
+      setVariations(prevVariations => 
+        prevVariations.filter((_, index) => !savedIndices.has(index))
+      );
+      setStarredVariations(new Set()); // Clear stars after saving and filtering
       setRefreshExamplesTrigger(prev => prev + 1); // Trigger refresh in ExampleTable
     } catch (error) {
       console.error('Failed to save examples:', error);
@@ -360,7 +366,7 @@ const Generate = () => {
               <button
                 onClick={handleSaveToDataset}
                 className="w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
-                disabled={isGenerating} // Disable while any generation is happening
+                disabled={starredVariations.size === 0} // Only disable if no variations are starred
               >
                 Save {starredVariations.size} to Dataset
               </button>

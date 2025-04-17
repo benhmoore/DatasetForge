@@ -79,8 +79,10 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-full max-w-4xl p-6 shadow-xl max-h-90vh overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
+      {/* Make the modal container a flex column and set max height */}
+      <div className="bg-white rounded-lg w-full max-w-4xl shadow-xl max-h-[90vh] flex flex-col">
+        {/* Header - Make it non-shrinkable, add padding */}
+        <div className="flex justify-between items-center p-6 pb-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-xl font-semibold">Example Details</h2>
           <button
             className="text-gray-500 hover:text-gray-700"
@@ -90,7 +92,8 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
           </button>
         </div>
 
-        <div className="space-y-4">
+        {/* Content Area - Make it grow and scrollable, add padding */}
+        <div className="space-y-4 flex-grow overflow-y-auto p-6">
           {/* System Prompt */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -219,8 +222,8 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
           )}
         </div>
 
-        {/* Action buttons */}
-        <div className="flex justify-end space-x-2 mt-6">
+        {/* Action buttons - Make it non-shrinkable, add padding */}
+        <div className="flex justify-end space-x-2 p-6 pt-4 border-t border-gray-200 flex-shrink-0">
           {isEditing ? (
             <>
               <button

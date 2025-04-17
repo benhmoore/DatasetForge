@@ -102,10 +102,11 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     const isInputFocused = document.activeElement === searchInputRef.current;
     
     const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-      // Reset to page 1 when search changes
-      if (page !== 1) {
-        setPage(1);
+      // Only update and reset page if the search term actually changed
+      if (searchTerm !== debouncedSearchTerm) {
+        setDebouncedSearchTerm(searchTerm);
+        // Reset to page 1 when search changes
+        setPage(1); 
       }
       
       // If input was focused before the timeout, restore focus after state updates
@@ -117,7 +118,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     }, 500); // 500ms delay
     
     return () => clearTimeout(timer);
-  }, [searchTerm, page]);
+  }, [searchTerm, debouncedSearchTerm]); // Update dependencies: only run when searchTerm changes, compare against debouncedSearchTerm
   
   // Handle pagination
   const handlePageChange = (newPage) => {

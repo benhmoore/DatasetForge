@@ -97,6 +97,8 @@ const VariationCard = ({
       setIsEditing(false);
     } else {
       // Start editing
+      // Ensure the editor starts with the current output value
+      setEditedOutput(output);
       setIsEditing(true);
     }
   };
