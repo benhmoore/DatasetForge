@@ -131,14 +131,24 @@ DatasetForge includes several command-line tools to help you manage your install
     Add the `--force` flag to skip the confirmation prompt.
 
 9. Restore database from backup:
+
     ```
     docker exec -it datasetforge-backend-1 python -m app.cli restore-database
     ```
+
     Restores from the most recent auto-backup. To specify a different backup file:
+
     ```
     docker exec -it datasetforge-backend-1 python -m app.cli restore-database --file /path/to/backup.db.bak
     ```
+
     Add the `--force` (or `--yes` / `-y`) flag to skip the confirmation prompt.
+
+10. Run database migrations:
+    ```
+    docker exec -it datasetforge-backend-1 python -m app.cli run-migration
+    ```
+    Updates the database schema when upgrading to a new version of DatasetForge. This command adds any new tables or columns required by the latest version, ensuring compatibility with new features.
 
 ## Development
 
