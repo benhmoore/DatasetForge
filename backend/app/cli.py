@@ -1,12 +1,25 @@
 import os
 import typer
 import httpx
+import sys
 from typing import List, Optional
 from sqlmodel import Session, select
-from app.db import create_db_and_tables, engine
-from app.api.models import User
-from app.core.security import get_password_hash
-from app.core.config import settings
+
+# Support both ways of running:
+# 1. From the container's /app directory: python app/cli.py
+# 2. From the app directory directly: python cli.py
+try:
+    # Try relative imports first (when run directly from app directory)
+    from db import create_db_and_tables, engine
+    from api.models import User
+    from core.security import get_password_hash
+    from core.config import settings
+except ImportError:
+    # Fall back to absolute imports (when run from parent directory)
+    from app.db import create_db_and_tables, engine
+    from app.api.models import User
+    from app.core.security import get_password_hash
+    from app.core.config import settings
 
 app = typer.Typer()
 

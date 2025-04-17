@@ -48,7 +48,7 @@ This project targets modern browsers only (Chrome, Firefox, Safari, Edge) and is
 
 5. Create a user by running the CLI command in the backend container:
    ```
-   docker exec -it datasetforge-backend-1 python app/cli.py create-user
+   docker exec -it datasetforge-backend-1 python -m app.cli create-user
    ```
    Note: You must run this command in a separate terminal while the containers are running. This creates your first user account, which is required to log in.
 
@@ -103,7 +103,7 @@ This application is designed to work with current versions of:
 ### "No users exist in the system"
 If you see this error when trying to log in, it means you need to create your first user. Run this command in a terminal while the containers are running:
 ```
-docker exec -it datasetforge-backend-1 python app/cli.py create-user
+docker exec -it datasetforge-backend-1 python -m app.cli create-user
 ```
 
 ### Connection Issues with Ollama
