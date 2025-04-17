@@ -116,21 +116,24 @@ async def generate_outputs(
                 
                 results.append({
                     "variation": variation,
-                    "output": output
+                    "output": output,
+                    "slots": request.slots  # Include the slots in the response
                 })
                 
         except httpx.TimeoutException:
             # Handle timeout by adding an error message to results
             results.append({
                 "variation": variation,
-                "output": "[Ollama API timed out. Please try again.]"
+                "output": "[Ollama API timed out. Please try again.]",
+                "slots": request.slots  # Include the slots in the response
             })
             
         except Exception as e:
             # Handle other errors similarly
             results.append({
                 "variation": variation,
-                "output": f"[Error: {str(e)}]"
+                "output": f"[Error: {str(e)}]",
+                "slots": request.slots  # Include the slots in the response
             })
     
     return results

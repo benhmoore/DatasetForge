@@ -89,6 +89,7 @@ class GenerationRequest(BaseModel):
 class GenerationResult(BaseModel):
     variation: str
     output: str
+    slots: Dict[str, str]
 
 
 # Paraphrase schemas

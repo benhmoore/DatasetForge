@@ -173,10 +173,30 @@ const Generate = () => {
     
     try {
       // Get the last generation parameters
+      // Make sure we have the slots data
+      const slotData = variations[index].slots || {};
+      
+      // Debug log to see what's happening
+      console.log('Existing variation slots:', slotData);
+      
+      if (Object.keys(slotData).length === 0) {
+        toast.error('Cannot regenerate: missing slot data');
+        
+        // Update variation to show error
+        const errorVariations = [...variations];
+        errorVariations[index] = {
+          ...errorVariations[index],
+          isGenerating: false,
+          error: 'Missing slot data'
+        };
+        setVariations(errorVariations);
+        return;
+      }
+      
       // IMPORTANT: Use template_id (with underscore) to match backend API schema
       const lastGenParams = {
         template_id: selectedTemplate.id,
-        slots: variations[0].slots, // Assume all variations have the same slots
+        slots: slotData,
         count: 1
       };
       
@@ -233,10 +253,24 @@ const Generate = () => {
     // Prepare examples to save
     const examples = Array.from(starredVariations).map(index => {
       const variation = variations[index];
+      
+      // Make sure slots exist and are properly formatted
+      let slotData = variation.slots || {};
+      
+      // Log for debugging
+      console.log('Saving variation with slots:', slotData);
+      
+      // If slots is missing or empty, use an empty object
+      if (!slotData || Object.keys(slotData).length === 0) {
+        console.warn('Missing slots for variation', index);
+        // Create a default slot value to prevent API errors
+        slotData = { "_default": "No slot data available" };
+      }
+      
       return {
         system_prompt: selectedTemplate.system_prompt,
         variation_prompt: variation.variation,
-        slots: variation.slots,
+        slots: slotData,
         output: variation.output
       };
     });
