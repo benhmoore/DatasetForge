@@ -576,6 +576,18 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                       onChange={handleToggleSelectAll}
                     />
                   </th>
+                  {/* Add Example ID Header */}
+                  <th 
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    onClick={() => handleSort('id')}
+                  >
+                    ID
+                    {sortField === 'id' && (
+                      <span className="ml-1">
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </th>
                   <th 
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
                     onClick={() => handleSort('system_prompt')}
@@ -643,6 +655,10 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                         onChange={() => handleToggleSelect(example.id)}
                         onClick={(e) => e.stopPropagation()}
                       />
+                    </td>
+                    {/* Add Example ID Cell */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                      {example.id}
                     </td>
                     
                     {/* System Prompt */}

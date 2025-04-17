@@ -180,8 +180,19 @@ const api = {
     .then(response => response.data),
   
   // Examples
-  getExamples: (datasetId, page = 1, size = 20, search = null) => apiClient.get(`/datasets/${datasetId}/examples`, {
-    params: { page, size, ...(search ? { search } : {}) }
+  getExamples: (datasetId, page = 1, size = 20, search = null, sortField = null, sortDirection = 'asc') => apiClient.get(`/datasets/${datasetId}/examples`, {
+    params: { 
+      page, 
+      size, 
+      ...(search ? { search } : {}),
+      ...(sortField ? { 
+        // Handle special case for slot sorting
+        sort_by: sortField.startsWith('slot:') ? 'slot' : sortField,
+        // If sorting by slot, include the slot name as an additional parameter
+        ...(sortField.startsWith('slot:') ? { slot_name: sortField.split(':')[1] } : {}),
+        sort_direction: sortDirection 
+      } : {}) 
+    }
   }).then(response => response.data),
   
   saveExamples: (datasetId, examples) => apiClient.post(`/datasets/${datasetId}/examples`, examples)

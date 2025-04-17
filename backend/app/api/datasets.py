@@ -123,6 +123,15 @@ async def get_examples(
     search: Optional[str] = Query(
         None, description="Search term for filtering examples"
     ),
+    sort_by: Optional[str] = Query(
+        None, description="Field to sort by (id, system_prompt, output, or slot)"
+    ),
+    sort_direction: Optional[str] = Query(
+        "asc", description="Sort direction (asc or desc)"
+    ),
+    slot_name: Optional[str] = Query(
+        None, description="Slot name to sort by when sort_by=slot"
+    ),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -160,6 +169,18 @@ async def get_examples(
             | (Example.output.ilike(search_term))
         )
 
+    # Add sorting if provided
+    if sort_by:
+        # We'll handle slot sorting in memory after fetching, as SQL can't sort by JSON fields easily
+        # For standard fields, we can use SQL sorting
+        if sort_by == "id":
+            query = query.order_by(Example.id.desc() if sort_direction == "desc" else Example.id)
+        elif sort_by == "system_prompt":
+            query = query.order_by(Example.system_prompt.desc() if sort_direction == "desc" else Example.system_prompt)
+        elif sort_by == "output":
+            query = query.order_by(Example.output.desc() if sort_direction == "desc" else Example.output)
+        # We'll handle 'slot' sorting after fetching the results
+
     # Count total with search applied for pagination
     count_query = select(col(Example.id)).where(Example.dataset_id == dataset_id)
     if search:
@@ -176,6 +197,14 @@ async def get_examples(
 
     # Execute query
     examples = session.exec(query).all()
+
+    # Sort by slots if needed (this has to be done in memory)
+    if sort_by == "slot" and slot_name:
+        examples = sorted(
+            examples,
+            key=lambda ex: str(ex.slots.get(slot_name, "")).lower(),
+            reverse=(sort_direction == "desc")
+        )
 
     # Decrypt examples
     decrypted_examples = []
