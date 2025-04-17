@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import api from '../api/apiClient'; // Correct: Import the default export 'api'
 
 // Define the helper function to generate the prompt preview
 const generatePromptPreview = (promptTemplate, slotValues) => {
@@ -25,7 +26,8 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
   const [seedList, setSeedList] = useState([{}]); 
   const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
   const [variationsPerSeed, setVariationsPerSeed] = useState(3); // Renamed from batchSize
-  
+  const [isParaphrasing, setIsParaphrasing] = useState(false); // State for paraphrase loading
+
   // Initialize/Reset seeds when template changes
   useEffect(() => {
     console.log('Template in SeedForm:', template);
@@ -144,6 +146,60 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
       return prevIndex; // Stay within bounds
     });
   };
+
+  // Generate more seeds using paraphrasing
+  const handleParaphraseSeeds = async () => {
+    if (!template || !template.id) {
+      toast.error('Cannot paraphrase without a selected template.');
+      return;
+    }
+    if (seedList.length < 2) {
+      toast.info('Need at least two seeds to generate more via paraphrasing.');
+      return;
+    }
+
+    setIsParaphrasing(true);
+    try {
+      // Prepare the data: send existing seeds and template ID
+      const payload = {
+        template_id: template.id,
+        seeds: seedList.map(seed => ({ slots: seed })), // Ensure format matches backend expectation {slots: {...}}
+        // Optionally add a parameter for how many seeds to generate, e.g., count: 3
+      };
+      console.log('Sending data for paraphrasing:', payload);
+      // Correct: Use the imported 'api' object and its 'paraphraseSeeds' method
+      const response = await api.paraphraseSeeds(payload); 
+      
+      // Correct: Access data directly from the response (apiClient handles .data)
+      if (response && Array.isArray(response.generated_seeds)) {
+        // Ensure new seeds have the correct slot structure based on the template
+        const templateSlots = template.slots || [];
+        const newSeeds = response.generated_seeds.map(newSeedData => {
+          const seedSlots = newSeedData.slots || {};
+          // Filter/map to only include slots defined in the template
+          return templateSlots.reduce((acc, slotName) => {
+            acc[slotName] = seedSlots[slotName] || ''; // Keep existing or add empty string
+            return acc;
+          }, {});
+        });
+
+        setSeedList(prevList => [...prevList, ...newSeeds]);
+        toast.success(`Added ${newSeeds.length} new seeds using paraphrasing.`);
+        // Optionally navigate to the first new seed:
+        // setCurrentSeedIndex(seedList.length); 
+      } else {
+        console.error('Unexpected response format:', response);
+        toast.error('Failed to parse paraphrased seeds from response.');
+      }
+    } catch (error) {
+      console.error('Error paraphrasing seeds:', error);
+      // Correct: Access error details potentially nested under response.data
+      const errorMsg = error.response?.data?.detail || error.message || 'Failed to generate paraphrased seeds.';
+      toast.error(errorMsg);
+    } finally {
+      setIsParaphrasing(false);
+    }
+  };
   
   // If no template is selected, show a message
   if (!template) {
@@ -174,7 +230,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
               <button 
                 type="button" 
                 onClick={() => navigateSeeds(-1)} 
-                disabled={currentSeedIndex === 0 || isGenerating}
+                disabled={currentSeedIndex === 0 || isGenerating || isParaphrasing}
                 className="px-2 py-1 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
               >
                 Prev
@@ -182,7 +238,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
               <button 
                 type="button" 
                 onClick={() => navigateSeeds(1)} 
-                disabled={currentSeedIndex === seedList.length - 1 || isGenerating}
+                disabled={currentSeedIndex === seedList.length - 1 || isGenerating || isParaphrasing}
                 className="px-2 py-1 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
               >
                 Next
@@ -190,16 +246,35 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
               <button 
                 type="button" 
                 onClick={addSeed} 
-                disabled={isGenerating}
-                className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200"
+                disabled={isGenerating || isParaphrasing}
+                className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Add new seed (copies current)"
               >
-                + Add
+                + Add Manual
+              </button>
+              <button 
+                type="button" 
+                onClick={handleParaphraseSeeds} 
+                disabled={seedList.length < 2 || isGenerating || isParaphrasing}
+                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                title="Generate more seeds using AI paraphrasing (requires >= 2 seeds)"
+              >
+                {isParaphrasing ? (
+                  <>
+                    <svg className="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Generating...
+                  </>
+                ) : (
+                  "+ Add AI" 
+                )}
               </button>
               <button 
                 type="button" 
                 onClick={removeSeed} 
-                disabled={seedList.length <= 1 || isGenerating}
+                disabled={seedList.length <= 1 || isGenerating || isParaphrasing}
                 className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded disabled:opacity-50 hover:bg-red-200"
                 title="Remove current seed"
               >
@@ -220,7 +295,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
                 onChange={(e) => handleSlotChange(slot, e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
                 placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
-                disabled={isGenerating}
+                disabled={isGenerating || isParaphrasing}
               />
             </div>
           ))}
@@ -245,7 +320,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
               value={variationsPerSeed}
               onChange={(e) => setVariationsPerSeed(parseInt(e.target.value))}
               className="w-full"
-              disabled={isGenerating}
+              disabled={isGenerating || isParaphrasing}
             />
           </div>
           
@@ -254,7 +329,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
             <button
               type="submit"
               className="w-full py-2 px-4 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-primary-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:shadow-md active:scale-[0.98]"
-              disabled={isGenerating}
+              disabled={isGenerating || isParaphrasing}
             >
               {isGenerating ? (
                 <span className="flex items-center justify-center">
@@ -263,6 +338,14 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                   Generating ({seedList.length} Seeds)... 
+                </span>
+              ) : isParaphrasing ? (
+                 <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Generating Seeds...
                 </span>
               ) : `Generate (${seedList.length} Seeds)`}
             </button>

@@ -150,6 +150,17 @@ class ParaphraseRequest(BaseModel):
     count: int = Field(default=3, ge=1, le=10)
 
 
+class ParaphraseSeedsRequest(BaseModel):
+    template_id: int
+    seeds: List[SeedData] # Reuses SeedData from Generation schemas
+    # Optional: Add a count for how many new seeds to generate
+    # count: int = Field(default=3, ge=1, le=5) 
+
+
+class ParaphraseSeedsResponse(BaseModel):
+    generated_seeds: List[SeedData] # Returns a list of new seeds
+
+
 # Export schemas
 class ExportRequest(BaseModel):
     template_id: Optional[int] = None
