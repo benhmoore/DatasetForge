@@ -26,16 +26,29 @@ def get_password_hash(password: str, salt: bytes = None) -> tuple:
     
     # Hash the password with the salt
     password_hash = bcrypt.hashpw(password.encode(), salt).decode()
+    salt_str = salt.decode() if isinstance(salt, bytes) else salt
     
-    return password_hash, salt.decode()
+    # Print debugging info to help troubleshoot
+    print(f"Created hash: salt={salt_str}, hash_length={len(password_hash)}")
+    
+    return password_hash, salt_str
 
 
 def verify_password(plain_password: str, hashed_password: str, salt: str) -> bool:
     """Verify a password against a hash"""
-    return bcrypt.checkpw(
-        plain_password.encode(),
-        hashed_password.encode()
-    )
+    try:
+        # Salt is stored separately but should be encoded as part of the hash comparison
+        salt_bytes = salt.encode() if isinstance(salt, str) else salt
+        password_bytes = plain_password.encode()
+        hash_bytes = hashed_password.encode()
+        
+        # For debugging
+        print(f"Verifying password: salt length={len(salt_bytes)}, hash length={len(hash_bytes)}")
+        
+        return bcrypt.checkpw(password_bytes, hash_bytes)
+    except Exception as e:
+        print(f"Password verification error: {str(e)}")
+        return False
 
 
 def authenticate_user(
