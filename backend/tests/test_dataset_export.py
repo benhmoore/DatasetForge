@@ -227,3 +227,64 @@ def test_export_with_tool_calling_template(test_user_with_dataset):
     assert "tool_calls" in assistant_msg
     assert len(assistant_msg["tool_calls"]) == 1
     assert assistant_msg["tool_calls"][0]["function"]["name"] == "search_recipes"
+
+
+def test_export_with_user_prompt_field(test_user_with_dataset):
+    """Test that exports include the user_prompt field"""
+    user, dataset, token = test_user_with_dataset
+    
+    # First modify an example to have a user_prompt explicitly set
+    with Session(engine) as session:
+        example = session.exec(
+            select(Example).where(Example.dataset_id == dataset.id)
+        ).first()
+        
+        # Set a specific user_prompt
+        example.user_prompt = "This is a test user prompt with slot values filled in"
+        session.add(example)
+        session.commit()
+    
+    # Now export the dataset and check for user_prompt
+    response = client.get(
+        f"/datasets/{dataset.id}/export",
+        headers={"Authorization": f"Basic {token}"}
+    )
+    
+    assert response.status_code == 200
+    
+    # Parse JSONL content
+    content = response.content.decode('utf-8')
+    examples = [json.loads(line) for line in content.strip().split('\n')]
+    
+    # Verify user_prompt is included in the export
+    assert any(ex.get("user_prompt") == "This is a test user prompt with slot values filled in" for ex in examples)
+    
+    # Test with the MLX Chat template to ensure it uses user_prompt
+    with Session(engine) as session:
+        template = session.exec(
+            select(ExportTemplate).where(ExportTemplate.format_name == "mlx-chat")
+        ).first()
+        template_id = template.id
+    
+    response = client.get(
+        f"/datasets/{dataset.id}/export?template_id={template_id}",
+        headers={"Authorization": f"Basic {token}"}
+    )
+    
+    assert response.status_code == 200
+    
+    # Parse JSONL content for MLX Chat format
+    content = response.content.decode('utf-8')
+    examples = [json.loads(line) for line in content.strip().split('\n')]
+    
+    # Find the example with our specific user_prompt
+    for example in examples:
+        messages = example["messages"]
+        user_messages = [msg for msg in messages if msg["role"] == "user"]
+        if user_messages and any(msg["content"] == "This is a test user prompt with slot values filled in" for msg in user_messages):
+            test_passed = True
+            break
+    else:
+        test_passed = False
+    
+    assert test_passed, "User prompt not found in MLX Chat export format"

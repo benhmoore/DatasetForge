@@ -16,7 +16,7 @@ def get_default_templates():
         "name": "MLX Chat",
         "description": "Format for MLX Chat fine-tuning",
         "format_name": "mlx-chat",
-        "template": """{"messages": [{"role": "system", "content": {{ system_prompt|tojson }}}, {% for key, value in slots.items() %}{"role": "user", "content": {{ value|tojson }}},{% endfor %}{"role": "assistant", "content": {{ output|tojson }}}]}""",
+        "template": """{"messages": [{"role": "system", "content": {{ system_prompt|tojson }}}, {"role": "user", "content": {{ user_prompt|tojson }}}, {"role": "assistant", "content": {{ output|tojson }}}]}""",
         "is_default": 1,
         "created_at": "datetime('now')",
         "archived": 0,
@@ -27,7 +27,7 @@ def get_default_templates():
         "name": "MLX Instruct",
         "description": "Format for MLX Instruct fine-tuning",
         "format_name": "mlx-instruct",
-        "template": """{"instruction": {{ system_prompt|tojson }}, "input": {% if slots.input %}{{ slots.input|tojson }}{% else %}""{% endif %}, "output": {{ output|tojson }}}""",
+        "template": """{"instruction": {{ system_prompt|tojson }}, "input": {{ user_prompt|tojson }}, "output": {{ output|tojson }}}""",
         "is_default": 1,
         "created_at": "datetime('now')",
         "archived": 0,
@@ -38,7 +38,7 @@ def get_default_templates():
         "name": "Tool Calling",
         "description": "Format for function/tool calling fine-tuning",
         "format_name": "tool-calling",
-        "template": """{"messages": [{"role": "system", "content": {{ system_prompt|tojson }}}, {% for key, value in slots.items() %}{"role": "user", "content": {{ value|tojson }}},{% endfor %}{"role": "assistant", "content": {{ output|tojson }}, "tool_calls": {{ tool_calls|tojson if tool_calls else "[]" }}}]}""",
+        "template": """{"messages": [{"role": "system", "content": {{ system_prompt|tojson }}}, {"role": "user", "content": {{ user_prompt|tojson }}}, {"role": "assistant", "content": {{ output|tojson }}, "tool_calls": {{ tool_calls|tojson if tool_calls else "[]" }}}]}""",
         "is_default": 1,
         "created_at": "datetime('now')",
         "archived": 0,
@@ -49,7 +49,7 @@ def get_default_templates():
         "name": "Raw Format",
         "description": "Default raw format with all fields",
         "format_name": "raw",
-        "template": """{{ {"system_prompt": system_prompt, "slots": slots, "output": output, "tool_calls": tool_calls if tool_calls else None, "timestamp": timestamp}|tojson }}""",
+        "template": """{{ {"system_prompt": system_prompt, "user_prompt": user_prompt, "slots": slots, "output": output, "tool_calls": tool_calls if tool_calls else None, "timestamp": timestamp}|tojson }}""",
         "is_default": 1,
         "created_at": "datetime('now')",
         "archived": 0,
@@ -60,7 +60,7 @@ def get_default_templates():
         "name": "OpenAI ChatML",
         "description": "Format for OpenAI chat fine-tuning (ChatGPT, GPT-4)",
         "format_name": "openai-chatml",
-        "template": """{"messages": [{"role": "system", "content": {{ system_prompt|tojson }}}, {% for key, value in slots.items() %}{"role": "user", "content": {{ value|tojson }}},{% endfor %}{"role": "assistant", "content": {{ output|tojson }}}]}""",
+        "template": """{"messages": [{"role": "system", "content": {{ system_prompt|tojson }}}, {"role": "user", "content": {{ user_prompt|tojson }}}, {"role": "assistant", "content": {{ output|tojson }}}]}""",
         "is_default": 1,
         "created_at": "datetime('now')",
         "archived": 0,
@@ -71,7 +71,7 @@ def get_default_templates():
         "name": "Llama Format",
         "description": "Format for Llama, Mistral and similar models",
         "format_name": "llama",
-        "template": """<s>[INST] {{ system_prompt }}\\n\\n{% for key, value in slots.items() %}{{ value }}{% endfor %} [/INST] {{ output }}</s>""",
+        "template": """<s>[INST] {{ system_prompt }}\\n\\n{{ user_prompt }} [/INST] {{ output }}</s>""",
         "is_default": 1,
         "created_at": "datetime('now')",
         "archived": 0,
@@ -140,6 +140,46 @@ def migrate_database():
         if "tool_calls" not in column_names:
             logger.info("Adding tool_calls column to Example table")
             cursor.execute("ALTER TABLE example ADD COLUMN tool_calls TEXT")
+
+        # Add user_prompt column if it doesn't exist
+        if "user_prompt" not in column_names:
+            logger.info("Adding user_prompt column to Example table")
+            cursor.execute("ALTER TABLE example ADD COLUMN user_prompt TEXT DEFAULT ''")
+            
+            # For existing examples, populate user_prompt using template and slots
+            logger.info("Populating user_prompt field for existing examples")
+            # First, get all examples without a user_prompt
+            cursor.execute("""
+                SELECT e.id, e.slots, t.user_prompt
+                FROM example e
+                JOIN dataset d ON e.dataset_id = d.id
+                JOIN template t ON 1=1
+                WHERE e.user_prompt IS NULL OR e.user_prompt = ''
+            """)
+            examples_to_update = cursor.fetchall()
+            
+            # For each example, try to generate a user_prompt from the slots
+            for example_id, slots_json, template_prompt in examples_to_update:
+                try:
+                    slots = json.loads(slots_json)
+                    # A simple template population algorithm
+                    user_prompt = template_prompt
+                    for slot_name, slot_value in slots.items():
+                        user_prompt = user_prompt.replace("{" + slot_name + "}", slot_value)
+                    
+                    # Update the example with the populated user_prompt
+                    cursor.execute(
+                        "UPDATE example SET user_prompt = ? WHERE id = ?", 
+                        (user_prompt, example_id)
+                    )
+                    logger.info(f"Updated user_prompt for example {example_id}")
+                except Exception as e:
+                    logger.error(f"Error updating user_prompt for example {example_id}: {e}")
+                    # Set a default value if we can't populate properly
+                    cursor.execute(
+                        "UPDATE example SET user_prompt = ? WHERE id = ?", 
+                        ("[User prompt not available for existing examples]", example_id)
+                    )
 
         # Check if export_template table exists
         cursor.execute(
