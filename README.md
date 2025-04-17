@@ -94,6 +94,29 @@ DatasetForge includes several command-line tools to help you manage your install
    docker exec -it datasetforge-backend-1 python -m app.cli show-examples --limit 10 --query "question"
    ```
 
+7. Check database status:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli database-status
+   ```
+   Shows details about the database including file status, backup availability, and integrity check.
+
+8. Reset database:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli reset-database
+   ```
+   Completely resets the database by dropping all tables and recreating the schema. A backup is automatically created.
+   Add the `--force` flag to skip the confirmation prompt.
+
+9. Restore database from backup:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli restore-database
+   ```
+   Restores from the most recent auto-backup. To specify a different backup file:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli restore-database --file /path/to/backup.db.bak
+   ```
+   Add the `--force` (or `--yes` / `-y`) flag to skip the confirmation prompt.
+
 ## Development
 
 ### Backend
@@ -145,6 +168,14 @@ If you see this error when trying to log in, it means you need to create your fi
 ```
 docker exec -it datasetforge-backend-1 python -m app.cli create-user
 ```
+
+### Database corruption or inconsistency
+If you're experiencing database issues, you can use the database management commands:
+1. First, check the status: `python -m app.cli database-status`
+2. If needed, reset the database: `python -m app.cli reset-database`
+3. After resetting, you'll need to create users again: `python -m app.cli create-user`
+
+Remember that resetting the database will delete all data, but a backup is automatically created and can be restored if needed.
 
 ### Connection Issues with Ollama
 If you're having trouble connecting to Ollama:
