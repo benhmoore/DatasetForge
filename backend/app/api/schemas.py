@@ -120,18 +120,27 @@ class ExportTemplatePagination(BaseModel):
 
 
 # Generation schemas
+class SeedData(BaseModel):
+    slots: Dict[str, str]
+    # Optional instruction per seed could be added later if needed
+    # instruction: Optional[str] = None 
+
+
 class GenerationRequest(BaseModel):
     template_id: int
-    slots: Dict[str, str]
-    count: int = Field(default=3, ge=1, le=10)
-    instruction: Optional[str] = None
+    seeds: List[SeedData]  # Changed from slots: Dict[str, str]
+    count: int = Field(default=3, ge=1, le=10)  # Count per seed
+    # Global instruction applied to all seeds in the request
+    instruction: Optional[str] = None 
 
 
 class GenerationResult(BaseModel):
-    variation: str
+    seed_index: int  # Index of the seed in the request list
+    variation_index: int  # Index of the variation for this seed (0 to count-1)
+    variation: str  # Combined identifier (e.g., "Seed 1 / Variation 2")
     output: str
-    slots: Dict[str, str]
-    processed_prompt: str  # Add this field to include the processed user prompt
+    slots: Dict[str, str]  # Slots used for this specific generation
+    processed_prompt: str
     tool_calls: Optional[List[Dict[str, Any]]] = None
 
 

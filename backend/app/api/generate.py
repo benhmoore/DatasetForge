@@ -13,7 +13,7 @@ from ..db import get_session
 from ..core.security import get_current_user
 from ..core.config import settings
 from ..api.models import User, Template
-from ..api.schemas import GenerationRequest, GenerationResult
+from ..api.schemas import GenerationRequest, GenerationResult, SeedData
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -237,7 +237,7 @@ async def generate_outputs(
     session: Session = Depends(get_session),
 ) -> StreamingResponse:
     """
-    Generate outputs using a template and Ollama model, streaming results.
+    Generate outputs using a template and Ollama model, streaming results for multiple seeds.
     """
     # Log the incoming request for debugging
     instruction = getattr(request, "instruction", None)
@@ -258,19 +258,14 @@ async def generate_outputs(
             status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
         )
 
-    # Validate that all required slots are provided
-    for slot in template.slots:
-        if slot not in request.slots:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Missing value for slot '{slot}'",
-            )
-
-    # Replace slots in the template
-    user_prompt = template.user_prompt
-    for slot, value in request.slots.items():
-        pattern = "{" + slot + "}"
-        user_prompt = user_prompt.replace(pattern, value)
+    # Validate that all required slots are provided for *each* seed
+    for seed_index, seed_data in enumerate(request.seeds):
+        for slot in template.slots:
+            if slot not in seed_data.slots:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Missing value for slot '{slot}' in seed {seed_index + 1}",
+                )
 
     # Determine the model to use
     generation_model = template.model_override or user.default_gen_model
@@ -284,204 +279,177 @@ async def generate_outputs(
 
     # Define the async generator function for streaming
     async def stream_results() -> AsyncGenerator[str, None]:
-        for i in range(request.count):
-            variation = f"Variation {i+1}"
-            result = None  # Initialize result for this iteration
+        # Iterate through each seed provided in the request
+        for seed_index, seed_data in enumerate(request.seeds):
+            current_slots = seed_data.slots
+            
+            # Replace slots in the template for the current seed
+            user_prompt = template.user_prompt
+            for slot, value in current_slots.items():
+                pattern = "{" + slot + "}"
+                user_prompt = user_prompt.replace(pattern, value)
 
-            try:
-                # Start with the base system prompt
-                system_prompt = template.system_prompt
+            # Generate 'count' variations for the current seed
+            for i in range(request.count):
+                variation_index = i
+                variation_label = f"Seed {seed_index + 1} / Variation {variation_index + 1}"
+                result = None  # Initialize result for this iteration
 
-                # Safely get instruction if it exists
-                instruction = getattr(request, "instruction", None)
+                try:
+                    # Start with the base system prompt
+                    system_prompt = template.system_prompt
 
-                # Add instruction to system prompt if provided
-                if instruction and instruction.strip():
-                    clean_instruction = instruction.strip()
-                    logger.info(
-                        f"⚠️ Adding instruction to system prompt: '{clean_instruction}'"
+                    # Safely get global instruction if it exists
+                    instruction = getattr(request, "instruction", None)
+
+                    # Add global instruction to system prompt if provided
+                    if instruction and instruction.strip():
+                        clean_instruction = instruction.strip()
+                        # Check if instruction was already added (it shouldn't be, but safety first)
+                        if "Additional instruction:" not in system_prompt:
+                            logger.info(
+                                f"⚠️ Adding global instruction to system prompt for {variation_label}: '{clean_instruction}'"
+                            )
+                            system_prompt = f"{template.system_prompt}\n\nAdditional instruction: {clean_instruction}"
+                        # else: logger already logged adding instruction in previous iterations if applicable
+                    # else: logger already logged no instruction
+
+                    # Prepare API payload (mostly the same, but uses current seed's user_prompt)
+                    payload = {
+                        "model": generation_model,
+                        "prompt": user_prompt, # Use the user_prompt processed for this seed
+                        "system": system_prompt,
+                        "stream": False,
+                    }
+
+                    # Add tool definitions if this is a tool-calling template
+                    if getattr(template, "is_tool_calling_template", False) and getattr(
+                        template, "tool_definitions", None
+                    ):
+                        # Normalize the tool definition format to ensure compatibility
+                        normalized_tools = []
+                        for tool in template.tool_definitions:
+                            if "type" not in tool and "function" in tool:
+                                normalized_tool = {"type": "function", "function": tool["function"]}
+                            else:
+                                normalized_tool = tool.copy()
+                            if "function" in normalized_tool and "parameters" not in normalized_tool["function"]:
+                                normalized_tool["function"]["parameters"] = {"type": "object", "properties": {}}
+                            normalized_tools.append(normalized_tool)
+                        
+                        payload["tools"] = normalized_tools
+                        # Ensure system prompt includes tool instructions (might be redundant if instruction added above)
+                        tool_instruction_text = '\n\nIMPORTANT: You must use the tools provided when appropriate. When using tools, format your response using a JSON object with \'function_call\' containing \'name\' and \'arguments\'. For example: {"function_call": {"name": "ls", "arguments": "{}"}}. Do not explain how you would use the tool, actually call the tool.'
+                        if tool_instruction_text not in system_prompt:
+                             system_prompt += tool_instruction_text
+                        payload["system"] = system_prompt
+
+                    # Log the request being sent (truncated for readability)
+                    system_prompt_truncated = (
+                        payload["system"][:100] + "..."
+                        if len(payload["system"]) > 100
+                        else payload["system"]
                     )
-                    system_prompt = f"{template.system_prompt}\n\nAdditional instruction: {clean_instruction}"
-                    logger.info(f"✅ Final system prompt: '{system_prompt}'")
-                else:
-                    logger.info(f"ℹ️ Using default system prompt (no instruction)")
-
-                # Prepare API payload
-                payload = {
-                    "model": generation_model,  # Use the determined model
-                    "prompt": user_prompt,
-                    "system": system_prompt,
-                    "stream": False,
-                }
-
-                # Add tool definitions if this is a tool-calling template
-                if getattr(template, "is_tool_calling_template", False) and getattr(
-                    template, "tool_definitions", None
-                ):
-                    logger.info(
-                        f"Including tool definitions in request for tool-calling template: {template.tool_definitions}"
+                    user_prompt_truncated = (
+                        payload["prompt"][:100] + "..."
+                        if len(payload["prompt"]) > 100
+                        else payload["prompt"]
                     )
-                    # Normalize the tool definition format to ensure compatibility
-                    # Some models expect different formats, so we'll standardize it here
-                    normalized_tools = []
 
-                    for tool in template.tool_definitions:
-                        # Make sure it has the expected structure
-                        if "type" not in tool and "function" in tool:
-                            # Add the type field if missing
-                            normalized_tool = {
-                                "type": "function",
-                                "function": tool["function"],
-                            }
+                    logger.info(f"Sending request to Ollama API for {variation_label}:")
+                    logger.info(f"Model: {payload['model']}")
+                    logger.info(f"System prompt: {system_prompt_truncated}")
+                    logger.info(f"User prompt: {user_prompt_truncated}")
+
+                    # Call Ollama API
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(
+                            f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
+                            json=payload,
+                            timeout=settings.OLLAMA_TIMEOUT,
+                        )
+
+                        if response.status_code != 200:
+                            error_detail = f"Ollama API returned an error: {response.text}"
+                            logger.error(f"{variation_label}: {error_detail}")
+                            result = GenerationResult(
+                                seed_index=seed_index,
+                                variation_index=variation_index,
+                                variation=variation_label,
+                                output=f"[Error: {error_detail}]",
+                                slots=current_slots, # Use slots for this seed
+                                processed_prompt=user_prompt,
+                            )
                         else:
-                            normalized_tool = tool.copy()
+                            response_data = response.json()
+                            output = response_data.get("response", "")
 
-                        # Ensure function has all required fields
-                        if "function" in normalized_tool:
-                            if "parameters" not in normalized_tool["function"]:
-                                normalized_tool["function"]["parameters"] = {
-                                    "type": "object",
-                                    "properties": {},
-                                }
+                            # Parse tool calls from Ollama response
+                            tool_calls = None
+                            if "tool_calls" in response_data:
+                                tool_calls = response_data.get("tool_calls")
+                            elif output and output.strip():
+                                tool_calls = extract_tool_calls_from_text(output)
+                                if tool_calls:
+                                    if "_original_json" in tool_calls[0]:
+                                        output = output.replace(tool_calls[0]["_original_json"], "").strip()
+                                        for call in tool_calls:
+                                            if "_original_json" in call: del call["_original_json"]
+                                # Check for mentions of tools if no structured tool calls found
+                                elif getattr(template, "is_tool_calling_template", False) and getattr(template, "tool_definitions", None):
+                                    for tool_def in template.tool_definitions:
+                                        if "function" in tool_def and "name" in tool_def["function"]:
+                                            tool_name = tool_def["function"]["name"]
+                                            if tool_name in output.lower() or f"`{tool_name}`" in output.lower():
+                                                tool_calls = [
+                                                    {
+                                                        "type": "function",
+                                                        "function": {
+                                                            "name": tool_name,
+                                                            "arguments": "{}",
+                                                        },
+                                                    }
+                                                ]
+                                                break
 
-                        normalized_tools.append(normalized_tool)
+                            # Create result with new indices and current slots
+                            result = GenerationResult(
+                                seed_index=seed_index,
+                                variation_index=variation_index,
+                                variation=variation_label,
+                                output=output,
+                                slots=current_slots, # Use slots for this seed
+                                processed_prompt=user_prompt,
+                                tool_calls=tool_calls if tool_calls else None,
+                            )
 
-                    # Log the normalized tools
-                    logger.info(f"Normalized tool definitions: {normalized_tools}")
-
-                    # Add to the payload
-                    payload["tools"] = normalized_tools
-
-                    # Add instructions to use tools to the system prompt
-                    system_prompt += '\n\nIMPORTANT: You must use the tools provided when appropriate. When using tools, format your response using a JSON object with \'function_call\' containing \'name\' and \'arguments\'. For example: {"function_call": {"name": "ls", "arguments": "{}"}}. Do not explain how you would use the tool, actually call the tool.'
-
-                    # Update the system prompt in the payload
-                    payload["system"] = system_prompt
-
-                # Log the request being sent (truncated for readability)
-                system_prompt_truncated = (
-                    payload["system"][:100] + "..."
-                    if len(payload["system"]) > 100
-                    else payload["system"]
-                )
-                user_prompt_truncated = (
-                    payload["prompt"][:100] + "..."
-                    if len(payload["prompt"]) > 100
-                    else payload["prompt"]
-                )
-
-                logger.info(f"Sending request to Ollama API:")
-                logger.info(f"Model: {payload['model']}")
-                logger.info(f"System prompt: {system_prompt_truncated}")
-                logger.info(f"User prompt: {user_prompt_truncated}")
-
-                # Log the full payload for debugging
-                if getattr(template, "is_tool_calling_template", False):
-                    logger.info(f"Full tool request payload: {json.dumps(payload)}")
-
-                # Call Ollama API
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
-                        json=payload,
-                        timeout=settings.OLLAMA_TIMEOUT,
+                except httpx.TimeoutException:
+                    error_detail = "Ollama API timed out. Please try again."
+                    logger.error(f"{variation_label}: {error_detail}")
+                    result = GenerationResult(
+                        seed_index=seed_index,
+                        variation_index=variation_index,
+                        variation=variation_label,
+                        output=f"[{error_detail}]",
+                        slots=current_slots,
+                        processed_prompt=user_prompt,
                     )
 
-                    if response.status_code != 200:
-                        # Instead of raising HTTPException, yield an error result
-                        error_detail = f"Ollama API returned an error: {response.text}"
-                        logger.error(error_detail)
-                        result = GenerationResult(
-                            variation=variation,
-                            output=f"[Error: {error_detail}]",
-                            slots=request.slots,
-                            processed_prompt=user_prompt,
-                        )
-                    else:
-                        response_data = response.json()
-                        output = response_data.get("response", "")
+                except Exception as e:
+                    error_detail = f"Error generating variation: {str(e)}"
+                    logger.exception(f"{variation_label}: {error_detail}")
+                    result = GenerationResult(
+                        seed_index=seed_index,
+                        variation_index=variation_index,
+                        variation=variation_label,
+                        output=f"[Error: {error_detail}]",
+                        slots=current_slots,
+                        processed_prompt=user_prompt,
+                    )
 
-                        # Parse tool calls from Ollama response
-                        tool_calls = None
-                        if "tool_calls" in response_data:
-                            tool_calls = response_data.get("tool_calls")
-                            logger.info(f"Found direct tool_calls in response")
-                        elif output and output.strip():
-                            tool_calls = extract_tool_calls_from_text(output)
-                            if tool_calls:
-                                if "_original_json" in tool_calls[0]:
-                                    output = output.replace(
-                                        tool_calls[0]["_original_json"], ""
-                                    ).strip()
-                                    for call in tool_calls:
-                                        if "_original_json" in call:
-                                            del call["_original_json"]
-                                logger.info(
-                                    f"Successfully extracted {len(tool_calls)} tool call(s) from text output"
-                                )
-                            elif getattr(
-                                template, "is_tool_calling_template", False
-                            ) and getattr(template, "tool_definitions", None):
-                                logger.info(
-                                    f"No structured tool calls found, checking for mentions of tools"
-                                )
-                                for tool_def in template.tool_definitions:
-                                    if (
-                                        "function" in tool_def
-                                        and "name" in tool_def["function"]
-                                    ):
-                                        tool_name = tool_def["function"]["name"]
-                                        if (
-                                            tool_name in output.lower()
-                                            or f"`{tool_name}`" in output.lower()
-                                        ):
-                                            logger.info(
-                                                f"Found mention of tool '{tool_name}' in output, creating synthetic tool call"
-                                            )
-                                            tool_calls = [
-                                                {
-                                                    "type": "function",
-                                                    "function": {
-                                                        "name": tool_name,
-                                                        "arguments": "{}",
-                                                    },
-                                                }
-                                            ]
-                                            break
-
-                        # Create result including tool calls if available
-                        result = GenerationResult(
-                            variation=variation,
-                            output=output,
-                            slots=request.slots,
-                            processed_prompt=user_prompt,
-                            tool_calls=tool_calls if tool_calls else None,
-                        )
-
-            except httpx.TimeoutException:
-                error_detail = "Ollama API timed out. Please try again."
-                logger.error(error_detail)
-                result = GenerationResult(
-                    variation=variation,
-                    output=f"[{error_detail}]",
-                    slots=request.slots,
-                    processed_prompt=user_prompt,
-                )
-
-            except Exception as e:
-                error_detail = f"Error generating variation: {str(e)}"
-                logger.exception(error_detail)  # Log full traceback
-                result = GenerationResult(
-                    variation=variation,
-                    output=f"[Error: {error_detail}]",
-                    slots=request.slots,
-                    processed_prompt=user_prompt,
-                )
-
-            # Yield the result as a JSON string followed by a newline
-            # Use .json() for Pydantic v1 compatibility
-            yield result.json() + "\n"
-            await asyncio.sleep(0.01)  # Small sleep to allow context switching
+                # Yield the result as a JSON string followed by a newline
+                yield result.json() + "\n"
+                await asyncio.sleep(0.01)  # Small sleep to allow context switching
 
     # Return the streaming response
     return StreamingResponse(stream_results(), media_type="application/x-ndjson")

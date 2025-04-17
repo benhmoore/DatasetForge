@@ -2,15 +2,15 @@ import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 
 const SeedForm = ({ template, onGenerate, isGenerating }) => {
-  const [slots, setSlots] = useState({});
-  const [batchSize, setBatchSize] = useState(3);
+  // Store a list of seeds, each seed is an object with slot values
+  const [seedList, setSeedList] = useState([{}]); 
+  const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
+  const [variationsPerSeed, setVariationsPerSeed] = useState(3); // Renamed from batchSize
   
-  // Initialize slots when template changes
+  // Initialize/Reset seeds when template changes
   useEffect(() => {
     console.log('Template in SeedForm:', template);
-    
     if (template && template.slots && Array.isArray(template.slots)) {
-      // Create an object with empty strings for each slot
       const initialSlots = template.slots.reduce((acc, slot) => {
         if (typeof slot === 'string') {
           acc[slot] = '';
@@ -19,50 +19,100 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
         }
         return acc;
       }, {});
-      
-      console.log('Initialized slots:', initialSlots);
-      setSlots(initialSlots);
+      // Reset to a single seed with the correct structure
+      setSeedList([initialSlots]);
+      setCurrentSeedIndex(0);
     } else {
       console.warn('Invalid template or slots:', template);
-      setSlots({});
+      setSeedList([{}]); // Reset to single empty seed if template is invalid
+      setCurrentSeedIndex(0);
     }
   }, [template]);
-  
+
+  // Get current seed based on index
+  const currentSeed = seedList[currentSeedIndex] || {};
+
   // Handle form submission
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    // Validate slots
-    const emptySlots = Object.entries(slots)
-      .filter(([_, value]) => !value.trim())
-      .map(([key]) => key);
+    // Validate all seeds
+    let allValid = true;
+    const validatedSeeds = seedList.map((seed, index) => {
+      const currentSeedSlots = template?.slots || [];
+      const missingSlots = currentSeedSlots.filter(slot => !seed[slot]?.trim());
+      if (missingSlots.length > 0) {
+        toast.error(`Seed ${index + 1} is missing values for: ${missingSlots.join(', ')}`);
+        allValid = false;
+      }
+      // Ensure only defined slots are included
+      const validatedSeedData = currentSeedSlots.reduce((acc, slot) => {
+        acc[slot] = seed[slot] || '';
+        return acc;
+      }, {});
+      return { slots: validatedSeedData }; // Match SeedData schema { slots: {...} }
+    });
+
+    if (!allValid) return;
     
-    if (emptySlots.length > 0) {
-      toast.error(`Please fill in all slots: ${emptySlots.join(', ')}`);
-      return;
-    }
-    
-    // Make sure template and template.id exist
     if (!template || template.id === undefined) {
       toast.error('No template selected. Please select a template first.');
       return;
     }
     
-    // Call the onGenerate callback with slots and batch size
-    // IMPORTANT: Use template_id (with underscore) to match backend API schema
+    // Call the onGenerate callback with the list of seeds and count per seed
     onGenerate({
       template_id: template.id,
-      slots,
-      count: batchSize
+      seeds: validatedSeeds, // Pass the array of seed data
+      count: variationsPerSeed // Pass variations per seed
     });
   };
   
-  // Handle slot value changes
+  // Handle slot value changes for the current seed
   const handleSlotChange = (slot, value) => {
-    setSlots(prevSlots => ({
-      ...prevSlots,
-      [slot]: value
-    }));
+    setSeedList(prevList => {
+      const newList = [...prevList];
+      newList[currentSeedIndex] = {
+        ...newList[currentSeedIndex],
+        [slot]: value
+      };
+      return newList;
+    });
+  };
+
+  // Add a new seed (copying the current one)
+  const addSeed = () => {
+    setSeedList(prevList => [
+      ...prevList,
+      { ...currentSeed } // Copy current seed values
+    ]);
+    // Optionally switch to the new seed
+    // setCurrentSeedIndex(seedList.length);
+  };
+
+  // Remove the current seed
+  const removeSeed = () => {
+    if (seedList.length <= 1) {
+      toast.info("Cannot remove the last seed.");
+      return;
+    }
+    setSeedList(prevList => {
+      const newList = prevList.filter((_, index) => index !== currentSeedIndex);
+      // Adjust index if the last seed was removed
+      setCurrentSeedIndex(prevIndex => Math.min(prevIndex, newList.length - 1));
+      return newList;
+    });
+  };
+
+  // Navigate between seeds
+  const navigateSeeds = (direction) => {
+    setCurrentSeedIndex(prevIndex => {
+      const newIndex = prevIndex + direction;
+      if (newIndex >= 0 && newIndex < seedList.length) {
+        return newIndex;
+      }
+      return prevIndex; // Stay within bounds
+    });
   };
   
   // If no template is selected, show a message
@@ -79,14 +129,56 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900">{template.name}</h3>
-          {/* Add note for model override */}
           {template.model_override && (
             <p className="text-xs text-gray-500 -mt-3 mb-2">
               (Using model: {template.model_override})
             </p>
           )}
 
-          {/* Render slot inputs */}
+          {/* Seed Navigation and Management */}
+          <div className="flex items-center justify-between p-2 bg-gray-100 rounded-md">
+            <span className="text-sm font-medium text-gray-700">
+              Seed {currentSeedIndex + 1} of {seedList.length}
+            </span>
+            <div className="flex items-center space-x-1">
+              <button 
+                type="button" 
+                onClick={() => navigateSeeds(-1)} 
+                disabled={currentSeedIndex === 0 || isGenerating}
+                className="px-2 py-1 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
+              >
+                Prev
+              </button>
+              <button 
+                type="button" 
+                onClick={() => navigateSeeds(1)} 
+                disabled={currentSeedIndex === seedList.length - 1 || isGenerating}
+                className="px-2 py-1 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
+              >
+                Next
+              </button>
+              <button 
+                type="button" 
+                onClick={addSeed} 
+                disabled={isGenerating}
+                className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200"
+                title="Add new seed (copies current)"
+              >
+                + Add
+              </button>
+              <button 
+                type="button" 
+                onClick={removeSeed} 
+                disabled={seedList.length <= 1 || isGenerating}
+                className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded disabled:opacity-50 hover:bg-red-200"
+                title="Remove current seed"
+              >
+                - Remove
+              </button>
+            </div>
+          </div>
+
+          {/* Render slot inputs for the current seed */}
           {template.slots.map(slot => (
             <div key={slot}>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -94,26 +186,26 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
               </label>
               <input
                 type="text"
-                value={slots[slot] || ''}
+                value={currentSeed[slot] || ''} // Use currentSeed state
                 onChange={(e) => handleSlotChange(slot, e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
-                placeholder={`Enter ${slot}`}
+                placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
                 disabled={isGenerating}
               />
             </div>
           ))}
           
-          {/* Batch size slider */}
+          {/* Variations per Seed slider */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Batch Size: {batchSize}
+              Variations per Seed: {variationsPerSeed}
             </label>
             <input
               type="range"
               min="1"
               max="10"
-              value={batchSize}
-              onChange={(e) => setBatchSize(parseInt(e.target.value))}
+              value={variationsPerSeed}
+              onChange={(e) => setVariationsPerSeed(parseInt(e.target.value))}
               className="w-full"
               disabled={isGenerating}
             />
@@ -132,9 +224,9 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Generating...
+                  Generating ({seedList.length} Seeds)... 
                 </span>
-              ) : 'Generate Variations'}
+              ) : `Generate (${seedList.length} Seeds)`}
             </button>
           </div>
         </div>
