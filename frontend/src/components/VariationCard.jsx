@@ -10,13 +10,15 @@ const VariationCard = ({
   isStarred = false,
   isGenerating = false,
   error = null,
-  tool_calls = null
+  tool_calls = null,
+  processed_prompt = null  // Add processed_prompt parameter
 }) => {
   const [editedOutput, setEditedOutput] = useState(output);
   const [isEditing, setIsEditing] = useState(false);
   const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false);
   const [regenerateInstruction, setRegenerateInstruction] = useState('');
   const regenerateInputRef = useRef(null);
+  const [showPrompt, setShowPrompt] = useState(false);  // State to control prompt visibility
   
   // Focus the instruction input when the modal opens
   useEffect(() => {
@@ -228,6 +230,23 @@ const VariationCard = ({
         <div className="p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap transition-all duration-200 hover:border-gray-200">
           {output}
           {renderToolCalls(tool_calls)}
+        </div>
+      )}
+
+      {/* Collapsible Processed Prompt Section */}
+      {processed_prompt && (
+        <div className="mt-4">
+          <button
+            onClick={() => setShowPrompt(!showPrompt)}
+            className="text-primary-600 hover:text-primary-800 text-sm font-medium"
+          >
+            {showPrompt ? 'Hide Processed Prompt' : 'Show Processed Prompt'}
+          </button>
+          {showPrompt && (
+            <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap">
+              {processed_prompt}
+            </div>
+          )}
         </div>
       )}
       

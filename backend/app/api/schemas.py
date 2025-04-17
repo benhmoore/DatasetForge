@@ -126,6 +126,7 @@ class GenerationResult(BaseModel):
     variation: str
     output: str
     slots: Dict[str, str]
+    processed_prompt: str  # Add this field to include the processed user prompt
     tool_calls: Optional[List[Dict[str, Any]]] = None
 
 

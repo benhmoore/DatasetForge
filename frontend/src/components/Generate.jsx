@@ -400,6 +400,7 @@ const Generate = () => {
                   variation={variation.variation}
                   output={variation.output}
                   tool_calls={variation.tool_calls}
+                  processed_prompt={variation.processed_prompt}
                   isStarred={starredVariations.has(index)}
                   isGenerating={variation.isGenerating || false}
                   error={variation.error || null}
