@@ -91,8 +91,8 @@ const Generate = () => {
       return;
     }
     
-    if (!data.templateId) {
-      console.error('Missing template ID in generate request:', data);
+    if (!data.template_id) {
+      console.error('Missing template_id in generate request:', data);
       toast.error('Missing template ID. Please refresh and try again.');
       return;
     }
@@ -173,8 +173,9 @@ const Generate = () => {
     
     try {
       // Get the last generation parameters
+      // IMPORTANT: Use template_id (with underscore) to match backend API schema
       const lastGenParams = {
-        templateId: selectedTemplate.id,
+        template_id: selectedTemplate.id,
         slots: variations[0].slots, // Assume all variations have the same slots
         count: 1
       };

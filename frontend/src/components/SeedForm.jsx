@@ -49,8 +49,9 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
     }
     
     // Call the onGenerate callback with slots and batch size
+    // IMPORTANT: Use template_id (with underscore) to match backend API schema
     onGenerate({
-      templateId: template.id,
+      template_id: template.id,
       slots,
       count: batchSize
     });
