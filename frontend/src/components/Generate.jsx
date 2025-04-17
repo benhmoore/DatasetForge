@@ -302,6 +302,7 @@ const Generate = () => {
       // Include tool_calls if they exist in the variation
       const example = {
         system_prompt: selectedTemplate.system_prompt,
+        user_prompt: variation.processed_prompt, // Including the user prompt with slot values replaced
         slots: slotData,
         output: variation.output
       };

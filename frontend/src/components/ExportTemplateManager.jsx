@@ -341,7 +341,7 @@ const ExportTemplateManager = ({ isOpen, onClose }) => {
                         Template (Jinja2 format)
                       </label>
                       <div className="text-xs text-gray-500 mb-2">
-                        Available variables: system_prompt, slots, output, tool_calls, timestamp, dataset_name, dataset_id, example_id
+                        Available variables: system_prompt, user_prompt, slots, output, tool_calls, timestamp, dataset_name, dataset_id, example_id
                       </div>
                       <textarea
                         name="template"

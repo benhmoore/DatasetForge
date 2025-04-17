@@ -109,7 +109,25 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
               </div>
             )}
           </div>
-
+          
+          {/* User Prompt */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              User Prompt
+            </label>
+            {isEditing ? (
+              <textarea
+                value={editedExample.user_prompt}
+                onChange={(e) => handleInputChange('user_prompt', e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                rows={3}
+              />
+            ) : (
+              <div className="p-3 bg-gray-50 rounded-md whitespace-pre-wrap">
+                {example.user_prompt}
+              </div>
+            )}
+          </div>
 
           {/* Slots */}
           {slotKeys.length > 0 && (
