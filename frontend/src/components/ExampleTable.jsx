@@ -33,6 +33,10 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   const fetchExamples = async () => {
     if (!datasetId) return;
     
+    // Track active element before the fetch starts
+    const activeElementBeforeFetch = document.activeElement;
+    const wasSearchFocused = activeElementBeforeFetch === searchInputRef.current;
+    
     setIsLoading(true);
     
     try {
@@ -51,25 +55,22 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
       
       if (searchParam) {
         setIsSearching(false);
-        // Restore focus to search input if it was active
-        if (document.activeElement === searchInputRef.current) {
-          setTimeout(() => {
-            searchInputRef.current?.focus();
-          }, 0);
-        }
       }
     } catch (error) {
       console.error('Failed to fetch examples:', error);
       toast.error('Failed to load examples');
       setIsSearching(false);
-      // Restore focus after error
-      if (searchParam && document.activeElement === searchInputRef.current) {
-        setTimeout(() => {
-          searchInputRef.current?.focus();
-        }, 0);
-      }
     } finally {
       setIsLoading(false);
+      
+      // Restore focus after all state updates
+      // Use requestAnimationFrame to ensure DOM has updated
+      if (wasSearchFocused && searchInputRef.current) {
+        requestAnimationFrame(() => {
+          searchInputRef.current?.focus();
+          console.log("Restoring focus to search input after fetch");
+        });
+      }
     }
   };
   
@@ -82,16 +83,26 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   
   // Debounce search term to avoid excessive API calls
   useEffect(() => {
+    // Record current focus state before the debounce timeout
+    const isInputFocused = document.activeElement === searchInputRef.current;
+    
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
       // Reset to page 1 when search changes
       if (page !== 1) {
         setPage(1);
       }
+      
+      // If input was focused before the timeout, restore focus after state updates
+      if (isInputFocused && searchInputRef.current) {
+        requestAnimationFrame(() => {
+          searchInputRef.current?.focus();
+        });
+      }
     }, 500); // 500ms delay
     
     return () => clearTimeout(timer);
-  }, [searchTerm]);
+  }, [searchTerm, page]);
   
   // Handle pagination
   const handlePageChange = (newPage) => {
@@ -336,7 +347,13 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
             className="w-full md:w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             placeholder="Search examples..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+            }}
+            onFocus={() => {
+              // Track focus for debugging
+              console.log("Search input focused");
+            }}
             ref={searchInputRef}
           />
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">

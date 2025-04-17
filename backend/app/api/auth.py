@@ -18,7 +18,7 @@ limiter = Limiter(key_func=get_remote_address)
 @router.post("/login")
 @limiter.limit(f"{settings.LOGIN_RATE_LIMIT}/minute")
 async def login(
-    credentials: HTTPBasicCredentials = Depends(HTTPBasic()),
+    credentials: HTTPBasicCredentials = Depends(HTTPBasic(auto_error=False)),
     session: Session = Depends(get_session),
     request: Request = None
 ):
@@ -27,6 +27,13 @@ async def login(
     Uses HTTP Basic Authentication
     Rate limited to prevent brute force attacks
     """
+    # Check if credentials were provided
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    
     # Check if any users exist in the system
     from sqlmodel import text
     user_count = session.exec(select(User)).first()
@@ -34,7 +41,7 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No users found in system. Please run 'python backend/app/cli.py create-user' to create a user.",
-            headers={"WWW-Authenticate": "Basic", "X-Error-Code": "no_users_exist"},
+            headers={"X-Error-Code": "no_users_exist"},  # Removed WWW-Authenticate header
         )
     
     try:

@@ -11,8 +11,9 @@ from ..api.models import User
 from ..db import get_session
 from .config import settings
 
-# Set up HTTP Basic Auth
-security = HTTPBasic()
+# Set up HTTP Basic Auth with auto_error=False to prevent browser prompt
+# This allows our frontend to handle the redirect to login page
+security = HTTPBasic(auto_error=False)
 
 # In-memory session store
 # Format: {"username": {"valid_until": datetime, "key": derived_key}}
@@ -56,6 +57,13 @@ def authenticate_user(
     session: Session = Depends(get_session)
 ) -> User:
     """Authenticate user with HTTP Basic Auth"""
+    # Handle case when no credentials are provided
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+        
     # Query for user
     user = session.exec(
         select(User).where(User.username == credentials.username)
@@ -68,7 +76,6 @@ def authenticate_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
         )
     
     # Create session with 30-minute expiry
@@ -86,6 +93,13 @@ def get_current_user(
     session: Session = Depends(get_session)
 ) -> User:
     """Get the current authenticated user or raise 401"""
+    # Handle case when no credentials are provided
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+        
     # Check if user has an active session
     user_session = active_sessions.get(credentials.username)
     
@@ -94,7 +108,6 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expired or invalid",
-            headers={"WWW-Authenticate": "Basic"},
         )
     
     # Refresh session expiry time
@@ -109,7 +122,6 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
-            headers={"WWW-Authenticate": "Basic"},
         )
     
     return user
