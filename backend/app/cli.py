@@ -7,6 +7,7 @@ from typing import List, Optional
 from sqlmodel import Session, select, SQLModel
 from sqlalchemy.sql import func
 from sqlalchemy import inspect
+import datetime  # Added for database_status timestamp formatting
 
 # Support both ways of running:
 # 1. From the container's /app directory: python app/cli.py
@@ -559,8 +560,6 @@ def database_status():
         file_size = os.path.getsize(settings.DB_PATH)
         file_size_mb = file_size / (1024 * 1024)
         modified_time = os.path.getmtime(settings.DB_PATH)
-        import datetime
-
         modified_date = datetime.datetime.fromtimestamp(modified_time).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
@@ -656,8 +655,258 @@ def run_migration():
         raise typer.Exit(code=1)
 
 
+@app.command()
+def export_database(
+    target_path: str = typer.Argument(
+        ..., help="Path to export the database file(s) to (e.g., /path/to/backup.db)"
+    )
+):
+    """
+    Export the current database file(s) to a specified location.
+    This includes the main .db file and any associated -wal, -shm, or -journal files.
+    """
+    if settings.DB_PATH == ":memory:":
+        typer.echo("Error: Cannot export an in-memory database.")
+        raise typer.Exit(code=1)
+
+    if not os.path.exists(settings.DB_PATH):
+        typer.echo(f"Error: Database file not found at {settings.DB_PATH}")
+        raise typer.Exit(code=1)
+
+    # Ensure target directory exists
+    target_dir = os.path.dirname(target_path)
+    if target_dir and not os.path.exists(target_dir):
+        typer.echo(f"Target directory {target_dir} does not exist.")
+        create_dir = typer.confirm("Create the target directory?", default=True)
+        if create_dir:
+            try:
+                os.makedirs(target_dir)
+                typer.echo(f"Created directory: {target_dir}")
+            except Exception as e:
+                typer.echo(f"Error creating directory: {e}")
+                raise typer.Exit(code=1)
+        else:
+            typer.echo("Export cancelled.")
+            return
+
+    # Define source files
+    db_files_to_copy = {
+        "main": settings.DB_PATH,
+        "wal": f"{settings.DB_PATH}-wal",
+        "shm": f"{settings.DB_PATH}-shm",
+        "journal": f"{settings.DB_PATH}-journal",
+    }
+
+    # Define target file paths (append suffixes if needed)
+    base_target, main_ext = os.path.splitext(target_path)
+    target_files = {
+        "main": target_path,
+        "wal": f"{base_target}-wal",
+        "shm": f"{base_target}-shm",
+        "journal": f"{base_target}-journal",
+    }
+
+    exported_files = []
+    try:
+        typer.echo(f"Exporting database from {settings.DB_PATH}...")
+        # Close engine connections first to ensure file consistency
+        engine.dispose()
+        typer.echo("Closed active database connections.")
+
+        for key, source_file in db_files_to_copy.items():
+            if os.path.exists(source_file):
+                target_file = target_files[key]
+                typer.echo(f"Copying {source_file} to {target_file}...")
+                shutil.copy2(source_file, target_file)
+                exported_files.append(target_file)
+
+        if not exported_files:
+            typer.echo(f"Error: Main database file not found at {settings.DB_PATH}")
+            raise typer.Exit(code=1)
+
+        typer.echo("\nDatabase export successful!")
+        typer.echo("Exported files:")
+        for f in exported_files:
+            typer.echo(f"- {f}")
+
+    except Exception as e:
+        typer.echo(f"\nError during database export: {e}")
+        # Clean up partially copied files if error occurred
+        typer.echo("Cleaning up partially exported files...")
+        for f in exported_files:
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except Exception as remove_e:
+                    typer.echo(f"Warning: Could not remove {f}: {remove_e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def import_database(
+    source_path: str = typer.Argument(
+        ..., help="Path to the database file to import (e.g., /path/to/backup.db)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force import without confirmation, overwriting existing data."
+    ),
+):
+    """
+    Import a database from a specified file, replacing the current database.
+    WARNING: This will overwrite the current database file(s)!
+    """
+    if settings.DB_PATH == ":memory:":
+        typer.echo("Error: Cannot import into an in-memory database.")
+        raise typer.Exit(code=1)
+
+    # Check if source file exists
+    if not os.path.exists(source_path):
+        typer.echo(f"Error: Source database file not found: {source_path}")
+        raise typer.Exit(code=1)
+
+    # Check if destination exists and confirm overwrite
+    if os.path.exists(settings.DB_PATH):
+        if not force:
+            typer.echo(f"Warning: Database file already exists: {settings.DB_PATH}")
+            confirm = typer.confirm(
+                "This will overwrite the existing database. Continue?", default=False
+            )
+            if not confirm:
+                typer.echo("Import cancelled.")
+                return
+    else:
+        # Ensure target directory exists if DB doesn't exist yet
+        target_dir = os.path.dirname(settings.DB_PATH)
+        if target_dir and not os.path.exists(target_dir):
+            try:
+                os.makedirs(target_dir)
+                typer.echo(f"Created directory for database: {target_dir}")
+            except Exception as e:
+                typer.echo(f"Error creating directory {target_dir}: {e}")
+                raise typer.Exit(code=1)
+
+    # Define potential source files based on the input source_path
+    base_source, main_ext = os.path.splitext(source_path)
+    source_files_to_copy = {
+        "main": source_path,
+        "wal": f"{base_source}-wal",
+        "shm": f"{base_source}-shm",
+        "journal": f"{base_source}-journal",
+    }
+
+    # Define target file paths
+    target_files = {
+        "main": settings.DB_PATH,
+        "wal": f"{settings.DB_PATH}-wal",
+        "shm": f"{settings.DB_PATH}-shm",
+        "journal": f"{settings.DB_PATH}-journal",
+    }
+
+    temp_backup_files = {}
+    imported_files = []
+
+    try:
+        typer.echo(f"Importing database from {source_path} to {settings.DB_PATH}...")
+
+        # Close engine connections first
+        engine.dispose()
+        typer.echo("Closed active database connections.")
+
+        # Create temporary backups of current files if they exist
+        typer.echo("Creating temporary backups of current database files...")
+        for key, target_file in target_files.items():
+            if os.path.exists(target_file):
+                temp_backup_path = f"{target_file}.temp_import_bak"
+                try:
+                    shutil.copy2(target_file, temp_backup_path)
+                    temp_backup_files[key] = temp_backup_path
+                    typer.echo(f"  Backed up {target_file} to {temp_backup_path}")
+                except Exception as backup_e:
+                    typer.echo(f"Warning: Failed to backup {target_file}: {backup_e}")
+
+        # Delete existing target files before copying
+        typer.echo("Removing existing database files...")
+        for key, target_file in target_files.items():
+            if os.path.exists(target_file):
+                try:
+                    os.remove(target_file)
+                    typer.echo(f"  Removed {target_file}")
+                except Exception as remove_e:
+                    typer.echo(f"Warning: Could not remove existing file {target_file}: {remove_e}")
+
+        # Copy source files to target locations
+        typer.echo("Copying new database files...")
+        copied_something = False
+        for key, source_file in source_files_to_copy.items():
+            if os.path.exists(source_file):
+                target_file = target_files[key]
+                typer.echo(f"  Copying {source_file} to {target_file}...")
+                shutil.copy2(source_file, target_file)
+                imported_files.append(target_file)
+                if key == "main":
+                    copied_something = True
+
+        if not copied_something:
+            typer.echo(f"Error: Main source database file not found at {source_path}")
+            raise Exception("Main source file missing")  # Trigger recovery
+
+        # Clean up temporary backups
+        typer.echo("Cleaning up temporary backups...")
+        for key, backup_file in temp_backup_files.items():
+            if os.path.exists(backup_file):
+                try:
+                    os.remove(backup_file)
+                except Exception as clean_e:
+                    typer.echo(f"Warning: Could not remove temp backup {backup_file}: {clean_e}")
+
+        typer.echo("\nDatabase import successful!")
+        typer.echo(f"Database at {settings.DB_PATH} has been replaced.")
+        typer.echo("Imported files:")
+        for f in imported_files:
+            typer.echo(f"- {f}")
+        typer.echo("\nIt's recommended to restart the application server.")
+
+    except Exception as e:
+        typer.echo(f"\nError during database import: {e}")
+        typer.echo("Attempting to restore from temporary backups...")
+
+        restored_count = 0
+        failed_restore_count = 0
+        # Delete any partially imported files first
+        for f in imported_files:
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                except:
+                    pass  # Ignore errors here
+
+        # Restore from backups
+        for key, backup_file in temp_backup_files.items():
+            if os.path.exists(backup_file):
+                target_file = target_files[key]
+                try:
+                    shutil.copy2(backup_file, target_file)
+                    typer.echo(f"  Restored {target_file} from {backup_file}")
+                    os.remove(backup_file)  # Clean up successful restore
+                    restored_count += 1
+                except Exception as restore_e:
+                    typer.echo(f"  ERROR restoring {target_file}: {restore_e}")
+                    typer.echo(f"  Your backup might still be available at: {backup_file}")
+                    failed_restore_count += 1
+
+        if restored_count > 0 and failed_restore_count == 0:
+            typer.echo("Successfully restored previous database state.")
+        elif failed_restore_count > 0:
+            typer.echo("Failed to fully restore previous state. Manual check required.")
+        else:
+            typer.echo("No temporary backups were available or needed restoring.")
+
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     # Create data directory if it doesn't exist
-    os.makedirs(os.path.dirname(settings.DB_PATH), exist_ok=True)
+    if settings.DB_PATH and settings.DB_PATH != ":memory:":
+        os.makedirs(os.path.dirname(settings.DB_PATH), exist_ok=True)
 
     app()

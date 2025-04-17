@@ -150,6 +150,18 @@ DatasetForge includes several command-line tools to help you manage your install
     ```
     Updates the database schema when upgrading to a new version of DatasetForge. This command adds any new tables or columns required by the latest version, ensuring compatibility with new features.
 
+11. Export the database:
+    ```
+    docker exec -it datasetforge-backend-1 python -m app.cli export-database /path/to/your/backup.db
+    ```
+    Copies the current database file(s) (including `.db`, `-wal`, `-shm`) to the specified location.
+
+12. Import a database:
+    ```
+    docker exec -it datasetforge-backend-1 python -m app.cli import-database /path/to/your/backup.db
+    ```
+    Replaces the current database with the one specified. Use `--force` to skip confirmation.
+
 ## Running Tests
 
 To run the test suite locally:
@@ -225,11 +237,13 @@ To run the test suite locally:
 -   **Tool Calling**: Design tool interfaces and generate structured tool calls
 -   **Generation**: Use Ollama models to generate variations
 -   **Datasets**: Organize examples into named datasets
+-   **Searchable Selects**: Easily find items in long dropdown lists with integrated search.
 -   **Export Templates**: Configure export formats for different fine-tuning frameworks
     -   Built-in templates for MLX, OpenAI, Llama/Mistral, and tool-calling formats
     -   Custom template creation with Jinja2 syntax
     -   Format-specific export options with visual categorization
 -   **Export**: Export datasets in JSONL format for fine-tuning
+-   **Database Management**: CLI tools for backup, restore, and reset.
 
 ## Supported Fine-Tuning Formats
 
