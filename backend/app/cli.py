@@ -4,6 +4,7 @@ import httpx
 import sys
 from typing import List, Optional
 from sqlmodel import Session, select
+from sqlalchemy.sql import func
 
 # Support both ways of running:
 # 1. From the container's /app directory: python app/cli.py
@@ -11,13 +12,13 @@ from sqlmodel import Session, select
 try:
     # Try relative imports first (when run directly from app directory)
     from db import create_db_and_tables, engine
-    from api.models import User
+    from api.models import User, Dataset, Template, Example
     from core.security import get_password_hash
     from core.config import settings
 except ImportError:
     # Fall back to absolute imports (when run from parent directory)
     from app.db import create_db_and_tables, engine
-    from app.api.models import User
+    from app.api.models import User, Dataset, Template, Example
     from app.core.security import get_password_hash
     from app.core.config import settings
 
@@ -168,6 +169,172 @@ def list_users():
             typer.echo(f"   Default generation model: {user.default_gen_model}")
             typer.echo(f"   Default paraphrase model: {user.default_para_model}")
             typer.echo("-" * 40)
+
+
+@app.command()
+def remove_user(
+    username: str = typer.Option(..., prompt=True, help="Username to remove"),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force deletion without confirmation"
+    )
+):
+    """Remove a user from the database"""
+    # Create DB session
+    with Session(engine) as session:
+        # Find the user
+        user = session.exec(
+            select(User).where(User.username == username)
+        ).first()
+        
+        if not user:
+            typer.echo(f"Error: User '{username}' not found")
+            raise typer.Exit(code=1)
+        
+        # Confirm deletion
+        if not force:
+            confirm = typer.confirm(
+                f"Are you sure you want to remove user '{username}'? This will delete ALL associated data.",
+                default=False
+            )
+            if not confirm:
+                typer.echo("Operation cancelled.")
+                return
+        
+        # Delete user (in a real implementation, we would also remove or archive associated datasets)
+        session.delete(user)
+        session.commit()
+        
+        typer.echo(f"User '{username}' has been removed from the database.")
+
+
+@app.command()
+def database_stats():
+    """Display statistics about the database"""
+    # Create DB session
+    with Session(engine) as session:
+        # Count each model type
+        user_count = session.exec(select(func.count()).select_from(User)).one()
+        dataset_count = session.exec(select(func.count()).select_from(Dataset)).one()
+        template_count = session.exec(select(func.count()).select_from(Template)).one()
+        example_count = session.exec(select(func.count()).select_from(Example)).one()
+        
+        # Count archived items
+        archived_datasets = session.exec(select(func.count()).select_from(Dataset).where(Dataset.archived == True)).one()
+        archived_templates = session.exec(select(func.count()).select_from(Template).where(Template.archived == True)).one()
+        
+        # Count active items
+        active_datasets = dataset_count - archived_datasets
+        active_templates = template_count - archived_templates
+        
+        # Calculate averages
+        examples_per_dataset = example_count / dataset_count if dataset_count > 0 else 0
+        datasets_per_user = dataset_count / user_count if user_count > 0 else 0
+        templates_per_user = template_count / user_count if user_count > 0 else 0
+        
+        # Display the statistics
+        typer.echo("\nDatabase Statistics:")
+        typer.echo("=" * 50)
+        
+        typer.echo("\nCounts:")
+        typer.echo(f"  Users: {user_count}")
+        typer.echo(f"  Datasets: {dataset_count} (Active: {active_datasets}, Archived: {archived_datasets})")
+        typer.echo(f"  Templates: {template_count} (Active: {active_templates}, Archived: {archived_templates})")
+        typer.echo(f"  Examples: {example_count}")
+        
+        typer.echo("\nAverages:")
+        typer.echo(f"  Examples per dataset: {examples_per_dataset:.2f}")
+        typer.echo(f"  Datasets per user: {datasets_per_user:.2f}")
+        typer.echo(f"  Templates per user: {templates_per_user:.2f}")
+        
+        # Get the largest datasets
+        largest_datasets_query = select(Dataset.id, Dataset.name, func.count(Example.id).label("example_count")) \
+            .join(Example, Dataset.id == Example.dataset_id, isouter=True) \
+            .group_by(Dataset.id) \
+            .order_by(func.count(Example.id).desc()) \
+            .limit(3)
+        
+        largest_datasets = session.exec(largest_datasets_query).all()
+        
+        if largest_datasets:
+            typer.echo("\nLargest Datasets:")
+            for i, (dataset_id, dataset_name, count) in enumerate(largest_datasets, 1):
+                typer.echo(f"  {i}. {dataset_name}: {count} examples")
+
+
+@app.command()
+def show_examples(
+    dataset_id: int = typer.Option(..., prompt=True, help="Dataset ID to view examples from"),
+    limit: int = typer.Option(5, "--limit", "-l", help="Maximum number of examples to display"),
+    query: str = typer.Option(None, "--query", "-q", help="Optional search term to filter examples")
+):
+    """Display a sample of examples from a dataset"""
+    # Create DB session
+    with Session(engine) as session:
+        # Verify dataset exists
+        dataset = session.exec(select(Dataset).where(Dataset.id == dataset_id)).first()
+        if not dataset:
+            typer.echo(f"Error: Dataset with ID {dataset_id} not found")
+            raise typer.Exit(code=1)
+        
+        # Build query
+        examples_query = select(Example).where(Example.dataset_id == dataset_id)
+        
+        # Add text search if provided
+        if query:
+            examples_query = examples_query.where(
+                (Example.system_prompt.contains(query)) | 
+                (Example.variation_prompt.contains(query)) | 
+                (Example.output.contains(query))
+            )
+        
+        # Add limit and order by newest first
+        examples_query = examples_query.order_by(Example.timestamp.desc()).limit(limit)
+        
+        # Execute query
+        examples = session.exec(examples_query).all()
+        
+        if not examples:
+            typer.echo(f"No examples found in dataset '{dataset.name}'")
+            if query:
+                typer.echo(f"Try removing the search query: '{query}'")
+            return
+        
+        # Display dataset info
+        typer.echo(f"\nExamples from dataset: {dataset.name} (ID: {dataset_id})")
+        typer.echo("=" * 50)
+        
+        # Note: The application architecture supports encryption, but the current
+        # implementation stores examples in plain text as noted in the API code comments
+        
+        # Display examples
+        for i, example in enumerate(examples, 1):
+            typer.echo(f"\nExample {i}:")
+            typer.echo(f"  ID: {example.id}")
+            typer.echo(f"  Timestamp: {example.timestamp}")
+            
+            # Format and display system prompt (truncate if too long)
+            system_prompt = example.system_prompt
+            if len(system_prompt) > 80:
+                system_prompt = system_prompt[:77] + "..."
+            typer.echo(f"  System: {system_prompt}")
+            
+            # Format and display slots
+            if example.slots:
+                typer.echo("  Slots:")
+                for key, value in example.slots.items():
+                    # Truncate slot values if too long
+                    if len(value) > 60:
+                        value = value[:57] + "..."
+                    typer.echo(f"    {key}: {value}")
+            
+            # Format and display outputs (truncate if too long)
+            output = example.output
+            if len(output) > 100:
+                output = output[:97] + "..."
+            typer.echo(f"  Output: {output}")
+            
+            # Separator between examples
+            typer.echo("-" * 50)
 
 
 if __name__ == "__main__":

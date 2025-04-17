@@ -54,6 +54,46 @@ This project targets modern browsers only (Chrome, Firefox, Safari, Edge) and is
 
 6. Access the application at http://localhost:3000
 
+## CLI Commands
+
+DatasetForge includes several command-line tools to help you manage your installation:
+
+1. Create a user:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli create-user
+   ```
+
+2. Reset a user's password:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli reset-password
+   ```
+
+3. List all users:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli list-users
+   ```
+
+4. Remove a user:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli remove-user
+   ```
+   Add the `--force` flag to skip the confirmation prompt.
+
+5. View database statistics:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli database-stats
+   ```
+   This shows counts of users, datasets, templates, examples, and other useful metrics.
+
+6. View examples from a dataset:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli show-examples
+   ```
+   You can filter and limit the results:
+   ```
+   docker exec -it datasetforge-backend-1 python -m app.cli show-examples --limit 10 --query "question"
+   ```
+
 ## Development
 
 ### Backend
