@@ -2,6 +2,7 @@ from typing import List, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 import httpx
+import logging
 from pydantic import ValidationError
 
 from ..db import get_session
@@ -9,6 +10,9 @@ from ..core.security import get_current_user
 from ..core.config import settings
 from ..api.models import User, Template
 from ..api.schemas import GenerationRequest, GenerationResult
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -58,6 +62,17 @@ async def generate_outputs(
     """
     Generate outputs using a template and Ollama model
     """
+    # Log the incoming request for debugging
+    instruction = getattr(request, 'instruction', None)
+    
+    # Explicitly debug the entire request model for troubleshooting
+    logger.info(f"🔄 Generation request received: {request.dict()}")
+    
+    if instruction:
+        logger.info(f"🔍 Instruction provided: '{instruction}'")
+    else:
+        logger.info("ℹ️ No instruction provided in the request")
+    
     # Get the template
     template = session.get(Template, request.template_id)
     
@@ -93,16 +108,45 @@ async def generate_outputs(
         variation = f"Variation {i+1}"
         
         try:
+            # Start with the base system prompt
+            system_prompt = template.system_prompt
+            
+            # Safely get instruction if it exists
+            instruction = getattr(request, 'instruction', None)
+            
+            # Add instruction to system prompt if provided
+            if instruction and instruction.strip():
+                clean_instruction = instruction.strip()
+                logger.info(f"⚠️ Adding instruction to system prompt: '{clean_instruction}'")
+                
+                # Format the system prompt with the instruction
+                system_prompt = f"{template.system_prompt}\n\nAdditional instruction: {clean_instruction}"
+                logger.info(f"✅ Final system prompt: '{system_prompt}'")
+            else:
+                logger.info(f"ℹ️ Using default system prompt (no instruction)")
+            
+            # Prepare API payload
+            payload = {
+                "model": user.default_gen_model,
+                "prompt": user_prompt,
+                "system": system_prompt,
+                "stream": False
+            }
+            
+            # Log the request being sent (truncated for readability)
+            system_prompt_truncated = payload["system"][:100] + "..." if len(payload["system"]) > 100 else payload["system"]
+            user_prompt_truncated = payload["prompt"][:100] + "..." if len(payload["prompt"]) > 100 else payload["prompt"]
+            
+            logger.info(f"Sending request to Ollama API:")
+            logger.info(f"Model: {payload['model']}")
+            logger.info(f"System prompt: {system_prompt_truncated}")
+            logger.info(f"User prompt: {user_prompt_truncated}")
+            
             # Call Ollama API
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
-                    json={
-                        "model": user.default_gen_model,
-                        "prompt": user_prompt,
-                        "system": template.system_prompt,
-                        "stream": False
-                    },
+                    json=payload,
                     timeout=settings.OLLAMA_TIMEOUT
                 )
                 

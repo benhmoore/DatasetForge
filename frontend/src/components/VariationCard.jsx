@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { toast } from 'react-toastify';
 
 const VariationCard = ({ 
@@ -13,6 +13,16 @@ const VariationCard = ({
 }) => {
   const [editedOutput, setEditedOutput] = useState(output);
   const [isEditing, setIsEditing] = useState(false);
+  const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false);
+  const [regenerateInstruction, setRegenerateInstruction] = useState('');
+  const regenerateInputRef = useRef(null);
+  
+  // Focus the instruction input when the modal opens
+  useEffect(() => {
+    if (isRegenerateModalOpen && regenerateInputRef.current) {
+      regenerateInputRef.current.focus();
+    }
+  }, [isRegenerateModalOpen]);
   
   // Handle star button click
   const handleStar = () => {
@@ -42,7 +52,24 @@ const VariationCard = ({
   // Handle regenerate button click
   const handleRegenerate = () => {
     if (isGenerating) return;
-    onRegenerate();
+    setIsRegenerateModalOpen(true);
+  };
+  
+  // Handle regenerate with instruction
+  const handleRegenerateWithInstruction = () => {
+    onRegenerate(regenerateInstruction);
+    setIsRegenerateModalOpen(false);
+    setRegenerateInstruction('');
+  };
+  
+  // Handle regenerate modal key press
+  const handleRegenerateKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleRegenerateWithInstruction();
+    } else if (e.key === 'Escape') {
+      setIsRegenerateModalOpen(false);
+      setRegenerateInstruction('');
+    }
   };
   
   // Handle output text change
@@ -150,6 +177,47 @@ const VariationCard = ({
       ) : (
         <div className="p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap transition-all duration-200 hover:border-gray-200">
           {output}
+        </div>
+      )}
+      
+      {/* Regenerate Modal */}
+      {isRegenerateModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full shadow-xl animate-fadeIn">
+            <h3 className="text-lg font-medium mb-4">Regenerate with Instructions</h3>
+            <div className="mb-4">
+              <input
+                ref={regenerateInputRef}
+                type="text"
+                value={regenerateInstruction}
+                onChange={(e) => setRegenerateInstruction(e.target.value)}
+                onKeyDown={handleRegenerateKeyPress}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                placeholder="Provide additional instructions for the model (e.g., 'Make it more concise' or 'Add more detail')"
+              />
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => {
+                  setIsRegenerateModalOpen(false);
+                  setRegenerateInstruction('');
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRegenerateWithInstruction}
+                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+              >
+                Regenerate
+              </button>
+            </div>
+            <div className="mt-4 text-sm text-gray-500">
+              <p>Press Enter to regenerate or Escape to cancel.</p>
+              <p className="mt-1">Leave empty for standard regeneration.</p>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -91,8 +91,16 @@ const api = {
     .then(response => response.data),
   
   // Generation
-  generate: (data) => apiClient.post('/generate', data)
-    .then(response => response.data),
+  generate: (data) => {
+    // Debug log to verify data format
+    console.log('Sending generation request:', JSON.stringify(data));
+    
+    return apiClient.post('/generate', data)
+      .then(response => {
+        console.log('Generation response received:', response.status);
+        return response.data;
+      });
+  },
   
   paraphrase: (data) => apiClient.post('/paraphrase', data)
     .then(response => response.data),

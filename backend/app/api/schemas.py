@@ -84,6 +84,7 @@ class GenerationRequest(BaseModel):
     template_id: int
     slots: Dict[str, str]
     count: int = Field(default=3, ge=1, le=10)
+    instruction: Optional[str] = None
 
 
 class GenerationResult(BaseModel):

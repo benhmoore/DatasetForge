@@ -160,7 +160,7 @@ const Generate = () => {
   };
   
   // Handle regenerate button click
-  const handleRegenerate = async (index) => {
+  const handleRegenerate = async (index, instruction = '') => {
     if (!selectedTemplate || isGenerating) return;
     
     // Create a temporary loading state for this card
@@ -179,6 +179,7 @@ const Generate = () => {
       
       // Debug log to see what's happening
       console.log('Existing variation slots:', slotData);
+      console.log('Regeneration instruction:', instruction);
       
       if (Object.keys(slotData).length === 0) {
         toast.error('Cannot regenerate: missing slot data');
@@ -201,6 +202,13 @@ const Generate = () => {
         count: 1
       };
       
+      // Add instruction if provided
+      if (instruction && instruction.trim() !== '') {
+        lastGenParams.instruction = instruction.trim();
+        console.log('Adding instruction to request:', lastGenParams.instruction);
+      }
+      
+      console.log('Final request payload:', lastGenParams);
       const results = await api.generate(lastGenParams);
       
       // Update just this variation
@@ -365,7 +373,7 @@ const Generate = () => {
                   error={variation.error || null}
                   onStar={(output) => handleStar(index, output)}
                   onEdit={(output) => handleEdit(index, output)}
-                  onRegenerate={() => handleRegenerate(index)}
+                  onRegenerate={(instruction) => handleRegenerate(index, instruction)}
                 />
               ))}
             </div>
