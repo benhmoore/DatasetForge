@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT: int = 5
     SESSION_TIMEOUT: int = 30  # minutes
 
+    @validator("DB_PATH", pre=True)
+    def override_db_path_for_tests(cls, v):
+        if os.getenv("TESTING") == "1":
+            return ":memory:"
+        return v
+
     @validator("CORS_ORIGINS")
     def parse_cors_origins(cls, v):
         return v.split(",")
