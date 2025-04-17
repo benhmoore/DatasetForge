@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import { useOutletContext } from 'react-router-dom';
 import api from '../api/apiClient';
 import SeedForm from './SeedForm';
 import VariationCard from './VariationCard';
 import ExampleTable from './ExampleTable';
 
-const Generate = ({ selectedDataset }) => {
+const Generate = () => {
+  const { selectedDataset } = useOutletContext();
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [isLoading, setIsLoading] = useState(true);

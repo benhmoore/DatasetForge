@@ -1,14 +1,18 @@
 import { useState } from 'react';
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import DatasetSelector from './DatasetSelector';
 import SettingsModal from './SettingsModal';
 import LogoutButton from './LogoutButton';
-import Generate from './Generate';
 
 const Layout = () => {
   const [selectedDataset, setSelectedDataset] = useState(null);
-  const [activeTab, setActiveTab] = useState('templates');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Determine active tab based on current path
+  const activeTab = location.pathname === '/generate' ? 'generate' : 'templates';
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -47,7 +51,7 @@ const Layout = () => {
                     ? 'border-primary-500 text-primary-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
-                onClick={() => setActiveTab('templates')}
+                onClick={() => navigate('/')}
               >
                 Template Builder
               </button>
@@ -58,7 +62,14 @@ const Layout = () => {
                     ? 'border-primary-500 text-primary-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
-                onClick={() => setActiveTab('generate')}
+                onClick={() => {
+                  if (selectedDataset) {
+                    navigate('/generate');
+                  } else {
+                    // Inform user they need to select a dataset first
+                    toast.warning('Please select a dataset first');
+                  }
+                }}
                 disabled={!selectedDataset}
               >
                 Generate & Audition
@@ -71,12 +82,7 @@ const Layout = () => {
       {/* Main Content */}
       <main className="flex-grow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Conditional rendering based on activeTab */}
-          {activeTab === 'templates' ? (
-            <Outlet context={{ tab: 'templates' }} />
-          ) : (
-            <Generate selectedDataset={selectedDataset} />
-          )}
+          <Outlet context={{ selectedDataset }} />
         </div>
       </main>
       
