@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../api/apiClient';
-import CustomSelect from './CustomSelect'; // Assuming CustomSelect handles the UI
+import CustomSelect from './CustomSelect';
 
 const ModelSelector = ({ selectedModel, onModelChange, allowNone = false, label = "Select Model" }) => {
   const [models, setModels] = useState([]);
@@ -26,18 +26,19 @@ const ModelSelector = ({ selectedModel, onModelChange, allowNone = false, label 
     fetchModels();
   }, []);
 
-  const options = models.map(model => ({ value: model, label: model }));
+  // Memoize the options array for stable identity
+  const options = useMemo(() => {
+    const modelOpts = models.map(model => ({ value: model, label: model }));
+    if (allowNone) {
+      return [{ value: '', label: 'Default (User Setting)' }, ...modelOpts];
+    }
+    return modelOpts;
+  }, [models, allowNone]);
 
-  if (allowNone) {
-    options.unshift({ value: '', label: 'Default (User Setting)' }); // Add option for no override
-  }
-
-  const handleChange = (selectedOption) => {
-    onModelChange(selectedOption ? selectedOption.value : ''); // Pass the value or empty string
+  // Handle selection from CustomSelect
+  const handleChange = (selectedValue) => {
+    onModelChange(selectedValue);
   };
-
-  // Find the currently selected option object for the CustomSelect component
-  const currentOption = options.find(option => option.value === selectedModel) || null;
 
   if (error) {
     return <div className="text-red-500 text-sm">{error}</div>;
@@ -47,11 +48,11 @@ const ModelSelector = ({ selectedModel, onModelChange, allowNone = false, label 
     <CustomSelect
       label={label}
       options={options}
-      value={currentOption}
+      value={selectedModel} // Pass the raw value directly, not the option object
       onChange={handleChange}
       isLoading={isLoading}
       placeholder={isLoading ? "Loading models..." : "Select a model..."}
-      isClearable={allowNone} // Allow clearing only if allowNone is true
+      isClearable={allowNone}
     />
   );
 };
