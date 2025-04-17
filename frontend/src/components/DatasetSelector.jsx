@@ -18,9 +18,12 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
       const response = await api.getDatasets(1, 100, showArchived);
       setDatasets(response.items);
       
-      // Auto-select the first dataset if none is selected
+      // Auto-select the first non-archived dataset if none is selected
       if (!selectedDataset && response.items.length > 0) {
-        onSelectDataset(response.items[0]);
+        const activeDatasets = response.items.filter(d => !d.archived);
+        if (activeDatasets.length > 0) {
+          onSelectDataset(activeDatasets[0]);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch datasets:', error);

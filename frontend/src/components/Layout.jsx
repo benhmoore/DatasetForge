@@ -45,35 +45,37 @@ const Layout = () => {
           {/* Navigation Tabs */}
           <div className="mt-4 border-b border-gray-200">
             <nav className="-mb-px flex space-x-8">
-              <button
+              <Link
+                to="/"
                 className={`py-2 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'templates'
                     ? 'border-primary-500 text-primary-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
-                onClick={() => navigate('/')}
               >
                 Template Builder
-              </button>
+              </Link>
               
-              <button
-                className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'generate'
-                    ? 'border-primary-500 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-                onClick={() => {
-                  if (selectedDataset) {
-                    navigate('/generate');
-                  } else {
-                    // Inform user they need to select a dataset first
-                    toast.warning('Please select a dataset first');
-                  }
-                }}
-                disabled={!selectedDataset}
-              >
-                Generate & Audition
-              </button>
+              {selectedDataset ? (
+                <Link
+                  to="/generate"
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'generate'
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Generate & Audition
+                </Link>
+              ) : (
+                <button
+                  className="py-2 px-1 border-b-2 border-transparent text-gray-400 font-medium text-sm cursor-not-allowed"
+                  onClick={() => toast.warning('Please select a dataset first')}
+                  disabled
+                >
+                  Generate & Audition
+                </button>
+              )}
             </nav>
           </div>
         </div>
@@ -82,7 +84,7 @@ const Layout = () => {
       {/* Main Content */}
       <main className="flex-grow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <Outlet context={{ selectedDataset }} />
+          <Outlet context={{ selectedDataset, setSelectedDataset }} />
         </div>
       </main>
       
