@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient'; // Correct: Import the default export 'api'
+import AiSeedModal from './AiSeedModal'; // Import the new modal component
 
 // Define the helper function to generate the prompt preview
 const generatePromptPreview = (promptTemplate, slotValues) => {
@@ -27,6 +28,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
   const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
   const [variationsPerSeed, setVariationsPerSeed] = useState(3); // Renamed from batchSize
   const [isParaphrasing, setIsParaphrasing] = useState(false); // State for paraphrase loading
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false); // State for AI modal
 
   // Initialize/Reset seeds when template changes
   useEffect(() => {
@@ -148,7 +150,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
   };
 
   // Generate more seeds using paraphrasing
-  const handleParaphraseSeeds = async () => {
+  const handleParaphraseSeeds = async (count, instructions) => { // Accept count and instructions
     if (!template || !template.id) {
       toast.error('Cannot paraphrase without a selected template.');
       return;
@@ -158,19 +160,18 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
       return;
     }
 
+    setIsAiModalOpen(false); // Close modal before starting
     setIsParaphrasing(true);
     try {
-      // Prepare the data: send existing seeds and template ID
       const payload = {
         template_id: template.id,
-        seeds: seedList.map(seed => ({ slots: seed })), // Ensure format matches backend expectation {slots: {...}}
-        // Optionally add a parameter for how many seeds to generate, e.g., count: 3
+        seeds: seedList.map(seed => ({ slots: seed })), 
+        count: count, // Pass the desired number of seeds
+        instructions: instructions // Pass the additional instructions
       };
       console.log('Sending data for paraphrasing:', payload);
-      // Correct: Use the imported 'api' object and its 'paraphraseSeeds' method
-      const response = await api.paraphraseSeeds(payload); 
+      const response = await api.paraphraseSeeds(payload);
       
-      // Correct: Access data directly from the response (apiClient handles .data)
       if (response && Array.isArray(response.generated_seeds)) {
         // Ensure new seeds have the correct slot structure based on the template
         const templateSlots = template.slots || [];
@@ -185,15 +186,12 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
 
         setSeedList(prevList => [...prevList, ...newSeeds]);
         toast.success(`Added ${newSeeds.length} new seeds using paraphrasing.`);
-        // Optionally navigate to the first new seed:
-        // setCurrentSeedIndex(seedList.length); 
       } else {
         console.error('Unexpected response format:', response);
         toast.error('Failed to parse paraphrased seeds from response.');
       }
     } catch (error) {
       console.error('Error paraphrasing seeds:', error);
-      // Correct: Access error details potentially nested under response.data
       const errorMsg = error.response?.data?.detail || error.message || 'Failed to generate paraphrased seeds.';
       toast.error(errorMsg);
     } finally {
@@ -227,58 +225,84 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
               Seed {currentSeedIndex + 1} of {seedList.length}
             </span>
             <div className="flex items-center space-x-1">
-              <button 
-                type="button" 
-                onClick={() => navigateSeeds(-1)} 
+              {/* Prev Button */}
+              <button
+                type="button"
+                onClick={() => navigateSeeds(-1)}
                 disabled={currentSeedIndex === 0 || isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
+                className="p-1.5 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 flex items-center justify-center"
+                title="Previous Seed"
               >
-                Prev
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                </svg>
               </button>
-              <button 
-                type="button" 
-                onClick={() => navigateSeeds(1)} 
+              {/* Next Button */}
+              <button
+                type="button"
+                onClick={() => navigateSeeds(1)}
                 disabled={currentSeedIndex === seedList.length - 1 || isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50"
+                className="p-1.5 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 flex items-center justify-center"
+                title="Next Seed"
               >
-                Next
+                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-4 h-4">
+                   <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                 </svg>
               </button>
-              <button 
-                type="button" 
-                onClick={addSeed} 
+              {/* Add Button */}
+              <button
+                type="button"
+                onClick={addSeed}
                 disabled={isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
                 title="Add new seed (copies current)"
               >
-                + Add Manual
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-3 h-3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                <span>Add</span>
               </button>
-              <button 
-                type="button" 
-                onClick={handleParaphraseSeeds} 
+              {/* AI Button - Opens Modal */}
+              <button
+                type="button"
+                onClick={() => setIsAiModalOpen(true)} // Open modal instead of direct call
                 disabled={seedList.length < 2 || isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                title="Generate more seeds using AI paraphrasing (requires >= 2 seeds)"
+                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                title="Generate more seeds using AI (requires >= 2 seeds)"
               >
                 {isParaphrasing ? (
                   <>
-                    <svg className="animate-spin -ml-0.5 mr-1.5 h-3 w-3 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <svg className="animate-spin -ml-0.5 mr-1 h-3 w-3 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Generating...
+                    <span>AI...</span>
                   </>
                 ) : (
-                  "+ Add AI" 
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-3 h-3">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 21v-1.5M15.75 3v1.5m0 15v1.5M12 4.5v-1.5m0 18v-1.5" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75h.008v.008H12V6.75Zm-.75.75h.008v.008H11.25v-.008Zm0 1.5h.008v.008H11.25V9Zm0 1.5h.008v.008H11.25v-.008Zm0 1.5h.008v.008H11.25V12Zm0 1.5h.008v.008H11.25v-.008Zm0 1.5h.008v.008H11.25V15Zm0 1.5h.008v.008H11.25v-.008Zm.75.75h.008v.008H12v-.008Zm.75-.75h.008v.008H12.75V15Zm0-1.5h.008v.008H12.75v-.008Zm0-1.5h.008v.008H12.75V12Zm0-1.5h.008v.008H12.75v-.008Zm0-1.5h.008v.008H12.75V9Zm0-1.5h.008v.008H12.75V7.5Zm-.75-.75h.008v.008H12V6.75Z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 7.5h-.008v.008H7.5V7.5Zm-.75.75h.008v.008H6.75v-.008Zm0 1.5h.008v.008H6.75V10.5Zm0 1.5h.008v.008H6.75V12Zm0 1.5h.008v.008H6.75v-.008Zm0 1.5h.008v.008H6.75V15Zm.75.75h.008v.008H7.5v-.008Zm.75-.75h.008v.008H8.25V15Zm0-1.5h.008v.008H8.25v-.008Zm0-1.5h.008v.008H8.25V12Zm0-1.5h.008v.008H8.25v-.008Zm0-1.5h.008v.008H8.25V9Zm0-1.5h.008v.008H8.25V7.5Zm-.75-.75h.008v.008H7.5V6.75Z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 7.5h.008v.008H16.5V7.5Zm-.75.75h.008v.008H15.75v-.008Zm0 1.5h.008v.008H15.75V10.5Zm0 1.5h.008v.008H15.75V12Zm0 1.5h.008v.008H15.75v-.008Zm0 1.5h.008v.008H15.75V15Zm.75.75h.008v.008H16.5v-.008Zm.75-.75h.008v.008H17.25V15Zm0-1.5h.008v.008H17.25v-.008Zm0-1.5h.008v.008H17.25V12Zm0-1.5h.008v.008H17.25v-.008Zm0-1.5h.008v.008H17.25V9Zm0-1.5h.008v.008H17.25V7.5Zm-.75-.75h.008v.008H16.5V6.75Z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18.75a2.25 2.25 0 0 0 2.25 2.25h7.5a2.25 2.25 0 0 0 2.25-2.25v-7.5a2.25 2.25 0 0 0-2.25-2.25h-7.5a2.25 2.25 0 0 0-2.25 2.25v7.5Z" />
+                    </svg>
+                    <span>AI</span>
+                  </>
                 )}
               </button>
-              <button 
-                type="button" 
-                onClick={removeSeed} 
+              {/* Remove Button */}
+              <button
+                type="button"
+                onClick={removeSeed}
                 disabled={seedList.length <= 1 || isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded disabled:opacity-50 hover:bg-red-200"
+                className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded disabled:opacity-50 hover:bg-red-200 flex items-center space-x-1"
                 title="Remove current seed"
               >
-                - Remove
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-3 h-3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" />
+                </svg>
+                <span>Remove</span>
               </button>
             </div>
           </div>
@@ -352,6 +376,14 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
           </div>
         </div>
       </form>
+
+      {/* AI Seed Generation Modal */}
+      <AiSeedModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+        onGenerate={handleParaphraseSeeds} // Pass the updated handler
+        isGenerating={isParaphrasing} // Pass loading state
+      />
     </div>
   );
 };

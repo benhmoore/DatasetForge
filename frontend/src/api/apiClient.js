@@ -165,10 +165,7 @@ const api = {
     }
   },
   
-  paraphrase: (data) => apiClient.post('/paraphrase', data)
-    .then(response => response.data),
-    
-  paraphraseSeeds: (data) => apiClient.post('/paraphrase/seeds', data)
+  paraphraseSeeds: (data) => apiClient.post('/paraphrase', data)
     .then(response => response.data),
   
   // Datasets

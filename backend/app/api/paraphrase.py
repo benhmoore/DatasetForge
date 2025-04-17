@@ -1,107 +1,38 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 import httpx
 import json
+import asyncio  # Import asyncio for potential parallelization later if needed
+from pydantic import BaseModel, Field
 
 from ..core.security import get_current_user
 from ..core.config import settings
 from ..api.models import User, Template
-from ..api.schemas import ParaphraseRequest, ParaphraseSeedsRequest, ParaphraseSeedsResponse, SeedData
+from ..api.schemas import SeedData
 from ..db import get_session
 
 router = APIRouter()
 
+class SeedData(BaseModel):
+    slots: Dict[str, str]
 
-@router.post("/paraphrase", response_model=List[str])
-async def generate_paraphrases(
+class ParaphraseRequest(BaseModel):
+    template_id: int
+    seeds: List[SeedData]
+    count: Optional[int] = Field(default=3, ge=1, le=20, description="Number of new seeds to generate")
+    instructions: Optional[str] = Field(default=None, max_length=500, description="Additional instructions for the AI")
+
+class ParaphraseResponse(BaseModel):
+    generated_seeds: List[SeedData]
+
+@router.post("/paraphrase", response_model=ParaphraseResponse)
+async def paraphrase_seeds(
     request: ParaphraseRequest,
-    user: User = Depends(get_current_user)
-):
-    """
-    Generate paraphrases for a given text
-    """
-    if not request.text:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Text cannot be empty"
-        )
-    
-    # Check if user has default paraphrase model set
-    if not user.default_para_model:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Default paraphrase model is not set. Please set it in the settings."
-        )
-    
-    # Create a system prompt for paraphrasing
-    system_prompt = (
-        "You are an AI assistant that specializes in paraphrasing text. "
-        "Create variations of the input that keep the same meaning but use different wording."
-    )
-    
-    # Create a user prompt with the text
-    user_prompt = f"Generate {request.count} paraphrases of the following text. Output only the paraphrases, one per line, with no additional commentary.\n\nText: {request.text}"
-    
-    try:
-        # Call Ollama API
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
-                json={
-                    "model": user.default_para_model,
-                    "prompt": user_prompt,
-                    "system": system_prompt,
-                    "stream": False
-                },
-                timeout=settings.OLLAMA_TIMEOUT
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Ollama API returned an error: {response.text}"
-                )
-            
-            # Extract paraphrases from the response
-            result = response.json().get("response", "")
-            
-            # Split by newlines and clean up
-            paraphrases = [
-                line.strip() for line in result.split("\n") 
-                if line.strip() and not line.startswith("Paraphrase")
-            ]
-            
-            # Limit to requested count
-            paraphrases = paraphrases[:request.count]
-            
-            # If we didn't get enough paraphrases, add some placeholders
-            while len(paraphrases) < request.count:
-                paraphrases.append(request.text)
-            
-            return paraphrases
-            
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Ollama API timed out while generating paraphrases"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate paraphrases: {str(e)}"
-        )
-
-
-@router.post("/paraphrase/seeds", response_model=ParaphraseSeedsResponse)
-async def generate_paraphrased_seeds(
-    request: ParaphraseSeedsRequest,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
-    """
-    Generate new seeds based on existing seeds using paraphrasing.
-    """
+    """Generate new seeds by paraphrasing existing ones, one request per seed, updating context."""
     if not user.default_para_model:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -129,115 +60,107 @@ async def generate_paraphrased_seeds(
             detail="Template has no slots defined."
         )
 
-    # --- Construct the Prompt --- 
-    # System Prompt: Define the task VERY clearly
-    system_prompt = (
-        "You are an AI assistant that generates structured data. Your task is to create new seed examples based on provided ones. "
-        "Each seed example MUST be a JSON object containing specific keys (slots). "
-        f"The required slots for each object are: {json.dumps(slot_names)}. "
-        "You will be given existing examples. Generate new, distinct examples that follow the exact same JSON structure. "
-        "Your output MUST be ONLY a valid JSON list containing the new seed objects. Do NOT include any explanatory text, markdown formatting, or anything else before or after the JSON list."
+    num_to_generate = request.count
+    # Start with the initial seeds provided in the request
+    current_seed_pool = [seed.slots for seed in request.seeds]
+    generated_seeds_list = [] # Store the SeedData objects for the final response
+
+    # --- Construct the Base System Prompt (asking for ONE seed) --- 
+    system_prompt_base = (
+        "You are an AI assistant that generates structured data. Your task is to create ONE new seed example based on provided ones. "
+        "The seed example MUST be a JSON object containing specific keys (slots). "
+        f"The required slots for the object are: {json.dumps(slot_names)}. "
+        "You will be given existing examples. Generate ONE new, distinct example that follows the exact same JSON structure and is different from the provided examples. " # Added emphasis on difference
+        "Your output MUST be ONLY a single, valid JSON object representing the new seed. Do NOT include any explanatory text, markdown formatting, or anything else before or after the JSON object."
     )
 
-    # User Prompt: Provide context and examples
-    user_prompt_parts = [
-        f"Generate 3 new seed examples based on the following {len(request.seeds)} examples.",
-        "Each new example MUST be a JSON object with these slots:",
-        f"{json.dumps(slot_names)}",
-        "\nExisting Examples (JSON list format):",
-        json.dumps([seed.slots for seed in request.seeds], indent=2), # Format existing seeds as JSON
-        "\nOutput ONLY the new examples as a single JSON list below:"
-    ]
-    user_prompt = "\n".join(user_prompt_parts)
-    # --- End Prompt Construction ---
+    # Append additional instructions if provided
+    system_prompt = system_prompt_base
+    if request.instructions:
+        system_prompt += f"\n\nAdditional Instructions: {request.instructions}"
+    # --- End System Prompt Construction ---
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
-                json={
-                    "model": user.default_para_model,
-                    "prompt": user_prompt,
-                    "system": system_prompt,
-                    "stream": False,
-                    "format": "json" # Crucial: Request JSON output format
-                },
-                timeout=settings.OLLAMA_TIMEOUT * 2 
-            )
-
-            if response.status_code != 200:
-                error_detail = f"Ollama API error ({response.status_code})"
-                try:
-                    error_detail += f": {response.json().get('error', response.text)}"
-                except json.JSONDecodeError:
-                    error_detail += f": {response.text}"
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=error_detail
-                )
-
-            result_text = response.json().get("response", "")
+    async with httpx.AsyncClient() as client:
+        for i in range(num_to_generate):
+            print(f"Requesting seed {i+1} of {num_to_generate}...")
             
-            # --- Parse the LLM Response --- 
-            parsed_seeds = []
+            # --- Construct User Prompt dynamically inside the loop --- 
+            user_prompt_parts = [
+                f"Generate ONE new seed example based on the following {len(current_seed_pool)} examples.",
+                "The new example MUST be a JSON object with these slots:",
+                f"{json.dumps(slot_names)}",
+                "\nExisting Examples (JSON list format):",
+                json.dumps(current_seed_pool, indent=2), # Use the current pool of seeds
+                "\nOutput ONLY the new example as a single JSON object below:"
+            ]
+            user_prompt = "\n".join(user_prompt_parts)
+            # --- End User Prompt Construction ---
+            
             try:
-                # Attempt to parse the entire response as JSON
-                generated_data = json.loads(result_text)
-                
-                # Handle case where LLM returns a single object instead of a list
-                if isinstance(generated_data, dict):
-                    potential_seeds = [generated_data] # Wrap the single object in a list
-                elif isinstance(generated_data, list):
-                    potential_seeds = generated_data
-                else:
-                    raise ValueError("LLM response is not a JSON list or object.")
-                
-                # Validate each item in the list
-                for index, item in enumerate(potential_seeds):
-                    if isinstance(item, dict):
-                        # Check if all required slots are present
-                        missing_slots = [slot for slot in slot_names if slot not in item]
-                        if missing_slots:
-                            print(f"Warning: Skipping generated seed at index {index} due to missing slots: {missing_slots}. Item: {item}")
-                            continue # Skip this invalid seed
-                            
-                        # Create the seed using only the expected slots, converting values to string
-                        seed_slots = {slot: str(item.get(slot, '')) for slot in slot_names}
-                        parsed_seeds.append(SeedData(slots=seed_slots))
-                    else:
-                        print(f"Warning: Skipping non-dict item in LLM response list at index {index}: {item}")
-                        
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"Error parsing or validating LLM JSON response: {e}\nRaw response: {result_text}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to parse or validate generated seeds from LLM. Error: {e}. Raw response snippet: {result_text[:100]}..."
+                response = await client.post(
+                    f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
+                    json={
+                        "model": user.default_para_model,
+                        "prompt": user_prompt, # Use the dynamically generated user prompt
+                        "system": system_prompt,
+                        "stream": False,
+                        "format": "json"
+                    },
+                    timeout=settings.OLLAMA_TIMEOUT
                 )
-            # --- End Response Parsing ---
 
-            if not parsed_seeds:
-                 print(f"Warning: LLM generated no valid seeds after parsing and validation. Raw response: {result_text}")
-                 # Return empty list instead of erroring, frontend can handle this
-                 return ParaphraseSeedsResponse(generated_seeds=[])
-                 # Or raise error:
-                 # raise HTTPException(
-                 #    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                 #    detail="LLM did not generate any valid seeds after parsing and validation."
-                 # )
+                if response.status_code != 200:
+                    error_detail = f"Ollama API error on seed {i+1} ({response.status_code})"
+                    try:
+                        error_detail += f": {response.json().get('error', response.text)}"
+                    except json.JSONDecodeError:
+                        error_detail += f": {response.text}"
+                    print(f"Error generating seed {i+1}: {error_detail}")
+                    continue # Skip to the next iteration
 
-            return ParaphraseSeedsResponse(generated_seeds=parsed_seeds)
+                result_text = response.json().get("response", "")
+                
+                # --- Parse the SINGLE LLM Response --- 
+                try:
+                    generated_data = json.loads(result_text)
+                    
+                    if not isinstance(generated_data, dict):
+                         raise ValueError(f"LLM response for seed {i+1} is not a JSON object.")
 
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Ollama API timed out while generating paraphrased seeds."
-        )
-    except HTTPException as e:
-        # Re-raise HTTPExceptions directly
-        raise e
-    except Exception as e:
-        print(f"Unexpected error during seed paraphrasing: {e}")
-        raise HTTPException(
+                    # Validate the single object
+                    missing_slots = [slot for slot in slot_names if slot not in generated_data]
+                    if missing_slots:
+                        print(f"Warning: Skipping generated seed {i+1} due to missing slots: {missing_slots}. Item: {generated_data}")
+                        continue
+                        
+                    # Create the seed using only the expected slots, converting values to string
+                    seed_slots = {slot: str(generated_data.get(slot, '')) for slot in slot_names}
+                    
+                    # Add the newly generated slots to the pool for the next iteration
+                    current_seed_pool.append(seed_slots)
+                    
+                    # Store the validated SeedData object for the final response
+                    parsed_seed = SeedData(slots=seed_slots)
+                    generated_seeds_list.append(parsed_seed)
+                    print(f"Successfully generated and parsed seed {i+1}.")
+                        
+                except (json.JSONDecodeError, ValueError) as e:
+                    print(f"Error parsing or validating LLM JSON response for seed {i+1}: {e}\nRaw response: {result_text}")
+                    continue 
+                # --- End Response Parsing ---
+
+            except httpx.TimeoutException:
+                 print(f"Ollama API timed out while generating seed {i+1}. Skipping.")
+                 continue
+            except Exception as e:
+                print(f"Unexpected error generating seed {i+1}: {e}. Skipping.")
+                continue
+
+    print(f"Finished generation. Total seeds generated: {len(generated_seeds_list)} out of {num_to_generate} requested.")
+    if not generated_seeds_list and num_to_generate > 0:
+         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An unexpected error occurred: {str(e)}"
-        )
+            detail=f"Failed to generate any valid seeds after {num_to_generate} attempts. Check backend logs for details."
+         )
+
+    return ParaphraseResponse(generated_seeds=generated_seeds_list)
