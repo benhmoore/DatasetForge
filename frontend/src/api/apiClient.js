@@ -115,6 +115,13 @@ const api = {
   
   saveExamples: (datasetId, examples) => apiClient.post(`/datasets/${datasetId}/examples`, examples)
     .then(response => response.data),
+    
+  updateExample: (datasetId, exampleId, data) => apiClient.put(`/datasets/${datasetId}/examples/${exampleId}`, data)
+    .then(response => response.data),
+    
+  deleteExamples: (datasetId, exampleIds) => apiClient.delete(`/datasets/${datasetId}/examples`, {
+    data: { example_ids: exampleIds }
+  }).then(response => response.data),
   
   exportDataset: (datasetId) => apiClient.get(`/datasets/${datasetId}/export`, {
     responseType: 'blob'

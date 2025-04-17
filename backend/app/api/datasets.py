@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from fastapi.responses import StreamingResponse
 import io
 import json
@@ -224,6 +224,92 @@ async def add_examples(
     session.commit()
     
     return None
+
+
+@router.put("/datasets/{dataset_id}/examples/{example_id}")
+async def update_example(
+    dataset_id: int,
+    example_id: int,
+    example_data: ExampleCreate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Update an example in a dataset
+    """
+    # Verify dataset exists and user owns it
+    dataset = session.get(Dataset, dataset_id)
+    
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dataset not found"
+        )
+    
+    if dataset.owner_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to modify this dataset"
+        )
+    
+    # Find the example
+    example = session.get(Example, example_id)
+    
+    if not example or example.dataset_id != dataset_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Example not found in dataset"
+        )
+    
+    # Update example fields
+    example.system_prompt = example_data.system_prompt
+    example.variation_prompt = example_data.variation_prompt
+    example.slots = example_data.slots
+    example.output = example_data.output
+    
+    session.add(example)
+    session.commit()
+    session.refresh(example)
+    
+    return example
+
+
+@router.delete("/datasets/{dataset_id}/examples")
+async def delete_examples(
+    dataset_id: int,
+    example_ids: List[int] = Body(..., embed=True),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Delete examples from a dataset
+    """
+    # Verify dataset exists and user owns it
+    dataset = session.get(Dataset, dataset_id)
+    
+    if not dataset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dataset not found"
+        )
+    
+    if dataset.owner_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to modify this dataset"
+        )
+    
+    # Delete examples that match both dataset_id and are in the example_ids list
+    deleted_count = 0
+    for example_id in example_ids:
+        example = session.get(Example, example_id)
+        if example and example.dataset_id == dataset_id:
+            session.delete(example)
+            deleted_count += 1
+    
+    session.commit()
+    
+    return {"deleted_count": deleted_count}
 
 
 @router.get("/datasets/{dataset_id}/export")
