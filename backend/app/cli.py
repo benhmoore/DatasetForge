@@ -2,9 +2,11 @@ import os
 import typer
 import httpx
 import sys
+import shutil
 from typing import List, Optional
-from sqlmodel import Session, select
+from sqlmodel import Session, select, SQLModel
 from sqlalchemy.sql import func
+from sqlalchemy import inspect
 
 # Support both ways of running:
 # 1. From the container's /app directory: python app/cli.py
@@ -334,6 +336,267 @@ def show_examples(
             
             # Separator between examples
             typer.echo("-" * 50)
+
+
+@app.command()
+def reset_database(
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Force reset without confirmation"
+    )
+):
+    """
+    Reset the database by dropping all tables and recreating the schema.
+    WARNING: This will delete ALL data in the database!
+    """
+    # Ensure we're not in memory mode
+    if settings.DB_PATH == ":memory:":
+        typer.echo("Error: Cannot reset in-memory database")
+        raise typer.Exit(code=1)
+    
+    # Get user confirmation unless force flag is used
+    if not force:
+        typer.echo("WARNING: This will permanently delete ALL data in the database!")
+        typer.echo(f"Database file: {settings.DB_PATH}")
+        confirm = typer.confirm(
+            "Are you sure you want to reset the database?",
+            default=False
+        )
+        if not confirm:
+            typer.echo("Database reset cancelled.")
+            return
+        
+    # Create a backup before deletion
+    backup_path = f"{settings.DB_PATH}.bak"
+    try:
+        if os.path.exists(settings.DB_PATH):
+            typer.echo(f"Creating backup at: {backup_path}")
+            shutil.copy2(settings.DB_PATH, backup_path)
+            typer.echo("Backup created successfully.")
+    except Exception as e:
+        typer.echo(f"Warning: Failed to create backup: {e}")
+        if not force:
+            confirm = typer.confirm(
+                "Continue without backup?",
+                default=False
+            )
+            if not confirm:
+                typer.echo("Database reset cancelled.")
+                return
+    
+    try:
+        # Method 1: Drop all tables using SQLAlchemy
+        typer.echo("Dropping all tables...")
+        
+        # First check if the database file exists
+        if not os.path.exists(settings.DB_PATH):
+            typer.echo("No database file found. Creating a new one.")
+            create_db_and_tables()
+            typer.echo("Database initialized successfully.")
+            return
+        
+        # Drop all tables
+        inspector = inspect(engine)
+        
+        # For SQLite, we can simply delete the file and recreate it
+        typer.echo(f"Deleting database file: {settings.DB_PATH}")
+        
+        try:
+            # Close engine connections first
+            engine.dispose()
+            
+            # Delete the file
+            if os.path.exists(settings.DB_PATH):
+                os.remove(settings.DB_PATH)
+            
+            # Also delete any journal or WAL files that might exist
+            wal_file = f"{settings.DB_PATH}-wal"
+            if os.path.exists(wal_file):
+                os.remove(wal_file)
+            
+            shm_file = f"{settings.DB_PATH}-shm"
+            if os.path.exists(shm_file):
+                os.remove(shm_file)
+            
+            journal_file = f"{settings.DB_PATH}-journal"
+            if os.path.exists(journal_file):
+                os.remove(journal_file)
+            
+            # Recreate the database
+            create_db_and_tables()
+            
+            typer.echo("Database reset successful!")
+            typer.echo("You can now recreate users with the create_user command.")
+            if os.path.exists(backup_path):
+                typer.echo(f"A backup was created at: {backup_path}")
+                typer.echo("You can restore it using the restore_database command if needed.")
+            
+        except Exception as e:
+            typer.echo(f"Error resetting database: {e}")
+            typer.echo("The database may be in an inconsistent state.")
+            raise typer.Exit(code=1)
+    
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def restore_database(
+    backup_file: str = typer.Option(
+        None, "--file", "-f", help="Path to the backup file to restore. If not provided, uses the default .bak file."
+    ),
+    force: bool = typer.Option(
+        False, "--force", "--yes", "-y", help="Force restore without confirmation"
+    )
+):
+    """
+    Restore the database from a backup file.
+    """
+    # Ensure we're not in memory mode
+    if settings.DB_PATH == ":memory:":
+        typer.echo("Error: Cannot restore in-memory database")
+        raise typer.Exit(code=1)
+    
+    # Determine backup file path
+    if not backup_file:
+        backup_file = f"{settings.DB_PATH}.bak"
+    
+    # Check if backup file exists
+    if not os.path.exists(backup_file):
+        typer.echo(f"Error: Backup file not found: {backup_file}")
+        raise typer.Exit(code=1)
+    
+    # Check if destination exists
+    if os.path.exists(settings.DB_PATH):
+        if not force:
+            typer.echo(f"Warning: Database file already exists: {settings.DB_PATH}")
+            confirm = typer.confirm(
+                "This will overwrite the existing database. Continue?",
+                default=False
+            )
+            if not confirm:
+                typer.echo("Restore cancelled.")
+                return
+    
+    try:
+        # Close engine connections first
+        engine.dispose()
+        
+        # Create a temporary backup of the current DB if it exists
+        temp_backup = None
+        if os.path.exists(settings.DB_PATH):
+            temp_backup = f"{settings.DB_PATH}.temp"
+            typer.echo(f"Creating temporary backup of current database: {temp_backup}")
+            shutil.copy2(settings.DB_PATH, temp_backup)
+        
+        # Restore from backup
+        typer.echo(f"Restoring from backup: {backup_file}")
+        shutil.copy2(backup_file, settings.DB_PATH)
+        
+        # Clean up temporary backup
+        if temp_backup and os.path.exists(temp_backup):
+            os.remove(temp_backup)
+        
+        typer.echo("Database restored successfully!")
+        
+    except Exception as e:
+        typer.echo(f"Error restoring database: {e}")
+        
+        # Try to recover from temp backup if it exists
+        if temp_backup and os.path.exists(temp_backup):
+            typer.echo("Attempting to recover from temporary backup...")
+            try:
+                shutil.copy2(temp_backup, settings.DB_PATH)
+                typer.echo("Recovery successful. Database is back to its previous state.")
+                os.remove(temp_backup)
+            except Exception as recover_e:
+                typer.echo(f"Failed to recover: {recover_e}")
+                typer.echo(f"Your temporary backup is still available at: {temp_backup}")
+        
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def database_status():
+    """
+    Show the status of the database, including file information and backup availability.
+    """
+    typer.echo("\nDatabase Status:")
+    typer.echo("=" * 50)
+    
+    # File information
+    typer.echo(f"\nDatabase Path: {settings.DB_PATH}")
+    
+    if settings.DB_PATH == ":memory:":
+        typer.echo("Using in-memory database - no file status available.")
+        return
+    
+    # Check if the database file exists
+    if os.path.exists(settings.DB_PATH):
+        # Get file info
+        file_size = os.path.getsize(settings.DB_PATH)
+        file_size_mb = file_size / (1024 * 1024)
+        modified_time = os.path.getmtime(settings.DB_PATH)
+        import datetime
+        modified_date = datetime.datetime.fromtimestamp(modified_time).strftime('%Y-%m-%d %H:%M:%S')
+        
+        typer.echo(f"File Exists: Yes")
+        typer.echo(f"File Size: {file_size_mb:.2f} MB")
+        typer.echo(f"Last Modified: {modified_date}")
+        
+        # Check for backup
+        backup_path = f"{settings.DB_PATH}.bak"
+        if os.path.exists(backup_path):
+            backup_size = os.path.getsize(backup_path)
+            backup_size_mb = backup_size / (1024 * 1024)
+            backup_time = os.path.getmtime(backup_path)
+            backup_date = datetime.datetime.fromtimestamp(backup_time).strftime('%Y-%m-%d %H:%M:%S')
+            
+            typer.echo(f"\nBackup Available: Yes")
+            typer.echo(f"Backup Path: {backup_path}")
+            typer.echo(f"Backup Size: {backup_size_mb:.2f} MB")
+            typer.echo(f"Backup Date: {backup_date}")
+        else:
+            typer.echo(f"\nBackup Available: No")
+        
+        # Check for related SQLite files
+        related_files = {
+            "WAL": f"{settings.DB_PATH}-wal",
+            "SHM": f"{settings.DB_PATH}-shm",
+            "Journal": f"{settings.DB_PATH}-journal"
+        }
+        
+        has_related = False
+        for name, path in related_files.items():
+            if os.path.exists(path):
+                if not has_related:
+                    typer.echo(f"\nRelated SQLite Files:")
+                    has_related = True
+                
+                file_size = os.path.getsize(path)
+                file_size_kb = file_size / 1024
+                typer.echo(f"- {name}: {path} ({file_size_kb:.2f} KB)")
+        
+        # Database integrity check
+        try:
+            with Session(engine) as session:
+                # Try a simple query to test connection
+                result = session.execute("PRAGMA integrity_check").scalar()
+                if result == "ok":
+                    typer.echo(f"\nDatabase Integrity: OK")
+                else:
+                    typer.echo(f"\nDatabase Integrity: FAILED - {result}")
+        except Exception as e:
+            typer.echo(f"\nDatabase Integrity: ERROR - {e}")
+    else:
+        typer.echo("File Exists: No")
+        typer.echo("Database has not been created yet.")
+        
+        # Check for backup
+        backup_path = f"{settings.DB_PATH}.bak"
+        if os.path.exists(backup_path):
+            typer.echo(f"\nBackup Available: Yes (but current database doesn't exist)")
+            typer.echo(f"You can restore using: cli.py restore-database")
 
 
 if __name__ == "__main__":
