@@ -31,9 +31,16 @@ const Generate = () => {
         const data = await api.getTemplates();
         setTemplates(data);
         
-        // Select the first template if available
-        if (data.length > 0) {
+        // Select the first non-archived template if available
+        const activeTemplates = data.filter(t => !t.archived);
+        if (activeTemplates.length > 0) {
+          console.log('Setting initial template:', activeTemplates[0]);
+          setSelectedTemplate(activeTemplates[0]);
+        } else if (data.length > 0) {
+          console.log('No active templates, setting first available:', data[0]);
           setSelectedTemplate(data[0]);
+        } else {
+          console.warn('No templates available');
         }
       } catch (error) {
         console.error('Failed to fetch templates:', error);
@@ -48,13 +55,31 @@ const Generate = () => {
   
   // Handle template selection
   const handleTemplateChange = (e) => {
-    const templateId = parseInt(e.target.value);
-    const template = templates.find(t => t.id === templateId);
-    setSelectedTemplate(template);
-    
-    // Clear variations when changing template
-    setVariations([]);
-    setStarredVariations(new Set());
+    try {
+      const templateId = parseInt(e.target.value);
+      if (isNaN(templateId)) {
+        console.warn('Invalid template ID:', e.target.value);
+        setSelectedTemplate(null);
+        return;
+      }
+      
+      const template = templates.find(t => t.id === templateId);
+      if (!template) {
+        console.warn('Template not found for ID:', templateId);
+        toast.error('Selected template was not found. Please try another template.');
+        return;
+      }
+      
+      console.log('Selected template:', template);
+      setSelectedTemplate(template);
+      
+      // Clear variations when changing template
+      setVariations([]);
+      setStarredVariations(new Set());
+    } catch (error) {
+      console.error('Error selecting template:', error);
+      toast.error('Error selecting template. Please try again.');
+    }
   };
   
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -65,6 +90,15 @@ const Generate = () => {
       toast.warning('Please select a dataset first');
       return;
     }
+    
+    if (!data.templateId) {
+      console.error('Missing template ID in generate request:', data);
+      toast.error('Missing template ID. Please refresh and try again.');
+      return;
+    }
+    
+    // Log the request for debugging
+    console.log('Generation request data:', data);
     
     setIsGenerating(true);
     

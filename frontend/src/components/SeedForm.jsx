@@ -7,14 +7,24 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
   
   // Initialize slots when template changes
   useEffect(() => {
-    if (template && template.slots) {
+    console.log('Template in SeedForm:', template);
+    
+    if (template && template.slots && Array.isArray(template.slots)) {
       // Create an object with empty strings for each slot
       const initialSlots = template.slots.reduce((acc, slot) => {
-        acc[slot] = '';
+        if (typeof slot === 'string') {
+          acc[slot] = '';
+        } else {
+          console.warn('Invalid slot format:', slot);
+        }
         return acc;
       }, {});
       
+      console.log('Initialized slots:', initialSlots);
       setSlots(initialSlots);
+    } else {
+      console.warn('Invalid template or slots:', template);
+      setSlots({});
     }
   }, [template]);
   
@@ -29,6 +39,12 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
     
     if (emptySlots.length > 0) {
       toast.error(`Please fill in all slots: ${emptySlots.join(', ')}`);
+      return;
+    }
+    
+    // Make sure template and template.id exist
+    if (!template || template.id === undefined) {
+      toast.error('No template selected. Please select a template first.');
       return;
     }
     
