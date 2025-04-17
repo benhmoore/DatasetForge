@@ -104,24 +104,6 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
             )}
           </div>
 
-          {/* Variation Prompt */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Variation Prompt
-            </label>
-            {isEditing ? (
-              <textarea
-                value={editedExample.variation_prompt}
-                onChange={(e) => handleInputChange('variation_prompt', e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-                rows={4}
-              />
-            ) : (
-              <div className="p-3 bg-gray-50 rounded-md whitespace-pre-wrap">
-                {example.variation_prompt}
-              </div>
-            )}
-          </div>
 
           {/* Slots */}
           {slotKeys.length > 0 && (

@@ -278,7 +278,6 @@ const Generate = () => {
       
       return {
         system_prompt: selectedTemplate.system_prompt,
-        variation_prompt: variation.variation,
         slots: slotData,
         output: variation.output
       };

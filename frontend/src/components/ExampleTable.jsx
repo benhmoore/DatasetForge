@@ -65,8 +65,6 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
     let currentValue;
     if (field === 'system_prompt') {
       currentValue = example.system_prompt;
-    } else if (field === 'variation_prompt') {
-      currentValue = example.variation_prompt;
     } else if (field === 'output') {
       currentValue = example.output;
     } else if (field.startsWith('slot:')) {
@@ -102,8 +100,6 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
       
       if (field === 'system_prompt') {
         updateData = { ...example, system_prompt: editValue };
-      } else if (field === 'variation_prompt') {
-        updateData = { ...example, variation_prompt: editValue };
       } else if (field === 'output') {
         updateData = { ...example, output: editValue };
       } else if (field.startsWith('slot:')) {
@@ -353,9 +349,6 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     System Prompt
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Variation
-                  </th>
                   
                   {/* Render a column for each slot */}
                   {slotKeys.map(slot => (
@@ -450,9 +443,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                       )}
                     </td>
                     
-                    {/* Variation Prompt */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs">
-                      {editingCell && editingCell.exampleId === example.id && editingCell.field === 'variation_prompt' ? (
+                    {/* Slot values will appear here */}
                         <div className="flex items-center">
                           <textarea
                             value={editValue}

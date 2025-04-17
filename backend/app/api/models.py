@@ -35,7 +35,6 @@ class Example(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset.id")
     system_prompt: str
-    variation_prompt: str
     slots: Dict[str, str] = Field(sa_column=Column(JSON))
     output: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)

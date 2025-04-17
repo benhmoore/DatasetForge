@@ -213,7 +213,6 @@ async def add_examples(
         example = Example(
             dataset_id=dataset_id,
             system_prompt=example_data.system_prompt,
-            variation_prompt=example_data.variation_prompt,
             slots=example_data.slots,
             output=example_data.output,
             timestamp=datetime.utcnow()
@@ -263,7 +262,6 @@ async def update_example(
     
     # Update example fields
     example.system_prompt = example_data.system_prompt
-    example.variation_prompt = example_data.variation_prompt
     example.slots = example_data.slots
     example.output = example_data.output
     
@@ -354,7 +352,6 @@ async def export_dataset(
             # For now, just output as is
             record = {
                 "system_prompt": example.system_prompt,
-                "variation_prompt": example.variation_prompt,
                 "slots": example.slots,
                 "output": example.output,
                 "timestamp": example.timestamp.isoformat()

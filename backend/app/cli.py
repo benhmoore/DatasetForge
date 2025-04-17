@@ -283,7 +283,6 @@ def show_examples(
         if query:
             examples_query = examples_query.where(
                 (Example.system_prompt.contains(query)) | 
-                (Example.variation_prompt.contains(query)) | 
                 (Example.output.contains(query))
             )
         

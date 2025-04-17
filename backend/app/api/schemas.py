@@ -59,7 +59,6 @@ class DatasetPagination(BaseModel):
 # Example schemas
 class ExampleBase(BaseModel):
     system_prompt: str
-    variation_prompt: str
     slots: Dict[str, str]
     output: str
 
