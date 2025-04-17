@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
+import ExampleDetailModal from './ExampleDetailModal';
 
 const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   const [examples, setExamples] = useState([]);
@@ -17,6 +18,10 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   // For bulk operations
   const [selectedExamples, setSelectedExamples] = useState(new Set());
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // For detail modal
+  const [selectedExample, setSelectedExample] = useState(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   
   // Function to fetch examples that can be called programmatically 
   const fetchExamples = async () => {
@@ -206,6 +211,26 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
     }
   };
   
+  // Handle row click to open detail modal
+  const handleRowClick = (example) => {
+    // Don't open modal if user is selecting examples or editing a cell
+    if (editingCell || isProcessing) return;
+    
+    setSelectedExample(example);
+    setIsDetailModalOpen(true);
+  };
+  
+  // Handle example update from the modal
+  const handleExampleUpdated = (updatedExample) => {
+    // Update the example in the local state
+    const exampleIndex = examples.findIndex(ex => ex.id === updatedExample.id);
+    if (exampleIndex !== -1) {
+      const updatedExamples = [...examples];
+      updatedExamples[exampleIndex] = updatedExample;
+      setExamples(updatedExamples);
+    }
+  };
+  
   // Extract unique slot keys from all examples
   const slotKeys = examples.length > 0 
     ? [...new Set(examples.flatMap(ex => Object.keys(ex.slots)))]
@@ -353,8 +378,9 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                     key={example.id} 
                     className={`transition-colors duration-150 animate-fadeIn ${
                       selectedExamples.has(example.id) ? 'bg-primary-50 hover:bg-primary-100' : 'hover:bg-gray-50'
-                    }`}
+                    } cursor-pointer`}
                     style={{ animationDelay: `${index * 50}ms` }}
+                    onClick={() => handleRowClick(example)}
                   >
                     {/* Selection checkbox */}
                     <td className="px-3 py-4 text-center">
@@ -363,6 +389,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                         className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                         checked={selectedExamples.has(example.id)}
                         onChange={() => handleToggleSelect(example.id)}
+                        onClick={(e) => e.stopPropagation()}
                       />
                     </td>
                     
@@ -406,13 +433,13 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                               tooltip.style.left = `${e.clientX + 20}px`;
                             }
                           }}
-                          onDoubleClick={() => handleStartEdit(example, 'system_prompt')}
+                          onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
                         >
                           <div className="flex items-center">
                             <span className="truncate flex-grow">{example.system_prompt.substring(0, 50)}{example.system_prompt.length > 50 ? '...' : ''}</span>
                             <button 
                               className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
-                              onClick={() => handleStartEdit(example, 'system_prompt')}
+                              onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
                               title="Edit"
                             >
                               ✎
@@ -463,13 +490,13 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                               tooltip.style.left = `${e.clientX + 20}px`;
                             }
                           }}
-                          onDoubleClick={() => handleStartEdit(example, 'variation_prompt')}
+                          onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'variation_prompt'); }}
                         >
                           <div className="flex items-center">
                             <span className="truncate flex-grow">{example.variation_prompt.substring(0, 50)}{example.variation_prompt.length > 50 ? '...' : ''}</span>
                             <button 
                               className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
-                              onClick={() => handleStartEdit(example, 'variation_prompt')}
+                              onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'variation_prompt'); }}
                               title="Edit"
                             >
                               ✎
@@ -524,13 +551,13 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                                 tooltip.style.left = `${e.clientX + 20}px`;
                               }
                             }}
-                            onDoubleClick={() => handleStartEdit(example, `slot:${slot}`)}
+                            onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, `slot:${slot}`); }}
                           >
                             <div className="flex items-center">
                               <span className="truncate flex-grow">{(example.slots[slot] || '').substring(0, 30)}{(example.slots[slot] || '').length > 30 ? '...' : ''}</span>
                               <button 
                                 className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
-                                onClick={() => handleStartEdit(example, `slot:${slot}`)}
+                                onClick={(e) => { e.stopPropagation(); handleStartEdit(example, `slot:${slot}`); }}
                                 title="Edit"
                               >
                                 ✎
@@ -584,13 +611,13 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
                               tooltip.style.left = `${e.clientX + 20}px`;
                             }
                           }}
-                          onDoubleClick={() => handleStartEdit(example, 'output')}
+                          onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'output'); }}
                         >
                           <div className="flex items-center">
                             <span className="truncate flex-grow">{example.output.substring(0, 50)}{example.output.length > 50 ? '...' : ''}</span>
                             <button 
                               className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
-                              onClick={() => handleStartEdit(example, 'output')}
+                              onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'output'); }}
                               title="Edit"
                             >
                               ✎
@@ -644,6 +671,15 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
           )}
         </>
       )}
+      
+      {/* Detail Modal */}
+      <ExampleDetailModal
+        isOpen={isDetailModalOpen}
+        example={selectedExample}
+        datasetId={datasetId}
+        onClose={() => setIsDetailModalOpen(false)}
+        onExampleUpdated={handleExampleUpdated}
+      />
     </div>
   );
 };
