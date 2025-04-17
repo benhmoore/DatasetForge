@@ -288,15 +288,38 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
     
     return (
       <div className="space-y-1 max-w-xs">
-        {toolCalls.map((call, idx) => (
-          <div key={idx} className="text-xs bg-gray-50 p-1 rounded">
-            <div className="font-medium">{call.name}</div>
-            <div className="truncate">
-              {JSON.stringify(call.parameters || {}).substring(0, 50)}
-              {JSON.stringify(call.parameters || {}).length > 50 ? '...' : ''}
+        {toolCalls.map((call, idx) => {
+          // Extract function name and arguments based on the structure
+          let name = "Unknown Tool";
+          let args = {};
+          
+          if (call.function) {
+            // Standard OpenAI format
+            name = call.function.name || "Unknown Tool";
+            try {
+              args = typeof call.function.arguments === 'string' 
+                ? JSON.parse(call.function.arguments) 
+                : call.function.arguments || {};
+            } catch (e) {
+              console.error("Error parsing tool call arguments:", e);
+              args = { error: "Failed to parse", raw: call.function.arguments };
+            }
+          } else if (call.name) {
+            // Simple format with name and parameters directly
+            name = call.name;
+            args = call.parameters || {};
+          }
+          
+          return (
+            <div key={idx} className="text-xs bg-blue-50 border border-blue-100 p-2 rounded">
+              <div className="font-medium text-blue-700">{name}</div>
+              <div className="truncate mt-1 text-gray-700">
+                {JSON.stringify(args).substring(0, 50)}
+                {JSON.stringify(args).length > 50 ? '...' : ''}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   };

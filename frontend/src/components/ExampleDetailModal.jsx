@@ -165,14 +165,37 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
                 Tool Calls
               </label>
               <div className="p-3 bg-gray-50 rounded-md">
-                {example.tool_calls.map((call, index) => (
-                  <div key={index} className="mb-2 pb-2 border-b border-gray-200 last:border-0">
-                    <div className="font-medium">{call.name}</div>
-                    <pre className="text-xs mt-1 bg-gray-100 p-2 rounded overflow-x-auto">
-                      {JSON.stringify(call.parameters || {}, null, 2)}
-                    </pre>
-                  </div>
-                ))}
+                {example.tool_calls.map((call, index) => {
+                  // Extract function name and arguments based on the structure
+                  let name = "Unknown Tool";
+                  let args = {};
+                  
+                  if (call.function) {
+                    // Standard OpenAI format
+                    name = call.function.name || "Unknown Tool";
+                    try {
+                      args = typeof call.function.arguments === 'string' 
+                        ? JSON.parse(call.function.arguments) 
+                        : call.function.arguments || {};
+                    } catch (e) {
+                      console.error("Error parsing tool call arguments:", e);
+                      args = { error: "Failed to parse", raw: call.function.arguments };
+                    }
+                  } else if (call.name) {
+                    // Simple format with name and parameters directly
+                    name = call.name;
+                    args = call.parameters || {};
+                  }
+                  
+                  return (
+                    <div key={index} className="mb-2 pb-2 border-b border-gray-200 last:border-0">
+                      <div className="font-medium text-blue-700">{name}</div>
+                      <pre className="text-xs mt-1 bg-gray-100 p-2 rounded overflow-x-auto">
+                        {JSON.stringify(args, null, 2)}
+                      </pre>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

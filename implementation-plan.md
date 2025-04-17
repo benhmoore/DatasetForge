@@ -483,3 +483,10 @@ python backend/cli.py create-user
 4. **Fourth Stage**: Generation UI, VariationCard, ExampleTable, Export, Logout
 5. **Fifth Stage**: Containerization, CI, pre-commit, README polish
 6. **Sixth Stage**: Tool-calling support for LLM fine-tuning datasets
+   - Database model extensions for tool definitions and calls
+   - Migration script to add new columns
+   - Enhanced template builder UI for tool definitions
+   - Improved generation endpoint for tool-calling support
+   - Robust tool call extraction from LLM responses
+   - Tool call display in UI for variations and examples
+   - JSONL export format updated for tool calls
