@@ -22,12 +22,10 @@ const Layout = () => {
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">
               <h1 className="text-xl font-bold text-primary-800">DatasetForge</h1>
-              <div className="w-64">
-                <DatasetSelector
-                  selectedDataset={selectedDataset}
-                  onSelectDataset={setSelectedDataset}
-                />
-              </div>
+              <DatasetSelector
+                selectedDataset={selectedDataset}
+                onSelectDataset={setSelectedDataset}
+              />
             </div>
             
             <div className="flex items-center space-x-2">
@@ -89,14 +87,12 @@ const Layout = () => {
             <div className="p-8 bg-gray-50 rounded-lg border border-gray-200 text-center">
               <h2 className="text-xl font-medium text-gray-700 mb-4">No Dataset Selected</h2>
               <p className="text-gray-500 mb-4">
-                Please create and select a dataset using the dropdown or button at the top of the page.
+                Please create and select a dataset using the dropdown at the top of the page.
               </p>
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-              >
-                Create New Dataset
-              </button>
+              <DatasetSelector
+                selectedDataset={selectedDataset}
+                onSelectDataset={setSelectedDataset}
+              />
             </div>
           ) : (
             <Outlet context={{ selectedDataset, setSelectedDataset }} />
