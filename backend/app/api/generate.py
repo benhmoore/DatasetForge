@@ -80,6 +80,13 @@ async def generate_outputs(
     for slot, value in request.slots.items():
         user_prompt = user_prompt.replace(f"{{{slot}}}", value)
     
+    # Check if user has default generation model set
+    if not user.default_gen_model:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Default generation model is not set. Please set it in the settings."
+        )
+    
     # Generate responses
     results = []
     for i in range(request.count):

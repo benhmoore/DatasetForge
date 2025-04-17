@@ -24,6 +24,13 @@ async def generate_paraphrases(
             detail="Text cannot be empty"
         )
     
+    # Check if user has default paraphrase model set
+    if not user.default_para_model:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Default paraphrase model is not set. Please set it in the settings."
+        )
+    
     # Create a system prompt for paraphrasing
     system_prompt = (
         "You are an AI assistant that specializes in paraphrasing text. "

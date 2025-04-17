@@ -5,6 +5,7 @@ import api from '../api/apiClient';
 import SeedForm from './SeedForm';
 import VariationCard from './VariationCard';
 import ExampleTable from './ExampleTable';
+import SettingsModal from './SettingsModal';
 
 const Generate = () => {
   const { selectedDataset } = useOutletContext();
@@ -56,6 +57,8 @@ const Generate = () => {
     setStarredVariations(new Set());
   };
   
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  
   // Handle generate button click
   const handleGenerate = async (data) => {
     if (!selectedDataset) {
@@ -73,6 +76,17 @@ const Generate = () => {
       
       if (error.response && error.response.status === 504) {
         toast.error('Generation timed out. Please try again or use a different model.');
+      } else if (error.response && error.response.status === 422) {
+        // Check if it's the specific error about missing model
+        const errorMessage = error.response.data?.detail || 'Failed to process request';
+        
+        if (errorMessage.includes('Default generation model is not set')) {
+          toast.error('Default generation model is not set. Please configure it in Settings.');
+          // Open settings modal automatically
+          setSettingsOpen(true);
+        } else {
+          toast.error(errorMessage);
+        }
       } else {
         toast.error('Failed to generate variations');
       }
@@ -292,6 +306,12 @@ const Generate = () => {
           <ExampleTable datasetId={selectedDataset.id} />
         </div>
       )}
+      
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
     </div>
   );
 };
