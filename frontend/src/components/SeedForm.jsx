@@ -1,6 +1,25 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 
+// Define the helper function to generate the prompt preview
+const generatePromptPreview = (promptTemplate, slotValues) => {
+  if (!promptTemplate) return '';
+  let preview = promptTemplate;
+  // Match placeholders like {slot_name}
+  const placeholders = promptTemplate.match(/\{([^}]+)\}/g) || [];
+
+  placeholders.forEach(placeholder => {
+    const slotName = placeholder.slice(1, -1); // Extract slot name like 'slot_name'
+    const value = slotValues[slotName]?.trim();
+    // Replace with value or a placeholder like [slot_name] if empty/undefined
+    const replacement = value ? value : `[${slotName}]`;
+    // Use a regex with 'g' flag to replace all occurrences, escaping special regex chars in the placeholder
+    preview = preview.replace(new RegExp(placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), replacement);
+  });
+
+  return preview;
+};
+
 const SeedForm = ({ template, onGenerate, isGenerating }) => {
   // Store a list of seeds, each seed is an object with slot values
   const [seedList, setSeedList] = useState([{}]); 
@@ -31,6 +50,17 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
 
   // Get current seed based on index
   const currentSeed = seedList[currentSeedIndex] || {};
+
+  // Generate the prompt preview for the current seed
+  const promptPreview = template && template.user_prompt && currentSeed // Changed template.prompt to template.user_prompt
+    ? generatePromptPreview(template.user_prompt, currentSeed)
+    : '';
+
+  // Add logging here
+  console.log('Rendering SeedForm:');
+  console.log('  Template:', template);
+  console.log('  Current Seed:', currentSeed);
+  console.log('  Prompt Preview:', promptPreview);
 
   // Handle form submission
   const handleSubmit = (e) => {
@@ -194,6 +224,14 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
               />
             </div>
           ))}
+
+          {/* Prompt Preview Section */}
+          {promptPreview && (
+            <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Prompt Preview:</label>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">{promptPreview}</p>
+            </div>
+          )}
           
           {/* Variations per Seed slider */}
           <div>
