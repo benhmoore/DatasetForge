@@ -148,6 +148,28 @@ def reset_password(
         typer.echo(f"Password reset successful for user '{username}'")
 
 
+@app.command()
+def list_users():
+    """List all users in the database"""
+    # Create DB session
+    with Session(engine) as session:
+        # Find all users
+        users = session.exec(select(User)).all()
+        
+        if not users:
+            typer.echo("No users found in the database.")
+            return
+        
+        typer.echo("\nUsers in the system:")
+        typer.echo("=" * 40)
+        for i, user in enumerate(users, 1):
+            typer.echo(f"{i}. Username: {user.username}")
+            typer.echo(f"   Name: {user.name}")
+            typer.echo(f"   Default generation model: {user.default_gen_model}")
+            typer.echo(f"   Default paraphrase model: {user.default_para_model}")
+            typer.echo("-" * 40)
+
+
 if __name__ == "__main__":
     # Create data directory if it doesn't exist
     os.makedirs(os.path.dirname(settings.DB_PATH), exist_ok=True)

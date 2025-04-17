@@ -11,6 +11,12 @@ RUN npm ci
 # Copy the rest of the application
 COPY . .
 
+# Make sure Tailwind config and PostCSS config are set up properly
+COPY postcss.config.js tailwind.config.js ./
+
+# Ensure CSS processing works
+RUN npx tailwindcss init -p --force
+
 # Expose the port
 EXPOSE 3000
 
