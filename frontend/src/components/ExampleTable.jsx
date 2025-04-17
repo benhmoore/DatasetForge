@@ -23,6 +23,11 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   const [selectedExample, setSelectedExample] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   
+  // For search
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  
   // Function to fetch examples that can be called programmatically 
   const fetchExamples = async () => {
     if (!datasetId) return;
@@ -30,16 +35,26 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
     setIsLoading(true);
     
     try {
-      const response = await api.getExamples(datasetId, page, pageSize);
+      const searchParam = debouncedSearchTerm.trim() || null;
+      if (searchParam) {
+        setIsSearching(true);
+      }
+      
+      const response = await api.getExamples(datasetId, page, pageSize, searchParam);
       setExamples(response.items);
       
       // Calculate total pages
       const total = response.total;
       setTotalPages(Math.ceil(total / pageSize));
       console.log(`Fetched ${response.items.length} examples, total: ${total}`);
+      
+      if (searchParam) {
+        setIsSearching(false);
+      }
     } catch (error) {
       console.error('Failed to fetch examples:', error);
       toast.error('Failed to load examples');
+      setIsSearching(false);
     } finally {
       setIsLoading(false);
     }
@@ -50,7 +65,20 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
     fetchExamples();
     // Clear selections when changing pages or refreshing
     setSelectedExamples(new Set());
-  }, [datasetId, page, refreshTrigger]);
+  }, [datasetId, page, refreshTrigger, debouncedSearchTerm]);
+  
+  // Debounce search term to avoid excessive API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      // Reset to page 1 when search changes
+      if (page !== 1) {
+        setPage(1);
+      }
+    }, 500); // 500ms delay
+    
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
   
   // Handle pagination
   const handlePageChange = (newPage) => {
@@ -274,7 +302,7 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   return (
     <div className="space-y-4">
       {/* Header with actions */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-medium">Examples</h3>
           
@@ -282,6 +310,40 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
               {selectedExamples.size} selected
             </span>
+          )}
+        </div>
+        
+        {/* Search */}
+        <div className="relative w-full md:w-auto">
+          <input
+            type="text"
+            className="w-full md:w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+            placeholder="Search examples..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            {isSearching ? (
+              <svg className="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            ) : (
+              <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+              </svg>
+            )}
+          </div>
+          {searchTerm && (
+            <button 
+              className="absolute inset-y-0 right-0 pr-3 flex items-center"
+              onClick={() => setSearchTerm('')}
+              title="Clear search"
+            >
+              <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
           )}
         </div>
         
@@ -328,7 +390,21 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
       
       {examples.length === 0 ? (
         <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
-          <p className="text-gray-500">No examples found in this dataset.</p>
+          {debouncedSearchTerm ? (
+            <p className="text-gray-500">
+              No examples found matching "{debouncedSearchTerm}".
+              {!isLoading && (
+                <button 
+                  className="ml-2 text-primary-600 hover:text-primary-800 underline focus:outline-none"
+                  onClick={() => setSearchTerm('')}
+                >
+                  Clear search
+                </button>
+              )}
+            </p>
+          ) : (
+            <p className="text-gray-500">No examples found in this dataset.</p>
+          )}
         </div>
       ) : (
         <>

@@ -31,16 +31,36 @@ const Generate = () => {
         const data = await api.getTemplates();
         setTemplates(data);
         
-        // Select the first non-archived template if available
-        const activeTemplates = data.filter(t => !t.archived);
-        if (activeTemplates.length > 0) {
-          console.log('Setting initial template:', activeTemplates[0]);
-          setSelectedTemplate(activeTemplates[0]);
-        } else if (data.length > 0) {
-          console.log('No active templates, setting first available:', data[0]);
-          setSelectedTemplate(data[0]);
-        } else {
-          console.warn('No templates available');
+        // Check for previously selected template in session storage
+        const savedTemplateId = sessionStorage.getItem(`selectedTemplate_${selectedDataset.id}`);
+        let templateToSelect = null;
+        
+        if (savedTemplateId) {
+          // Find the saved template by ID
+          const savedTemplate = data.find(t => t.id === parseInt(savedTemplateId));
+          if (savedTemplate && !savedTemplate.archived) {
+            console.log('Restoring saved template from session storage:', savedTemplate);
+            templateToSelect = savedTemplate;
+          }
+        }
+        
+        // If no saved template or it wasn't found, use the first available
+        if (!templateToSelect) {
+          // Select the first non-archived template if available
+          const activeTemplates = data.filter(t => !t.archived);
+          if (activeTemplates.length > 0) {
+            console.log('Setting initial template:', activeTemplates[0]);
+            templateToSelect = activeTemplates[0];
+          } else if (data.length > 0) {
+            console.log('No active templates, setting first available:', data[0]);
+            templateToSelect = data[0];
+          } else {
+            console.warn('No templates available');
+          }
+        }
+        
+        if (templateToSelect) {
+          setSelectedTemplate(templateToSelect);
         }
       } catch (error) {
         console.error('Failed to fetch templates:', error);
@@ -51,7 +71,7 @@ const Generate = () => {
     };
     
     fetchTemplates();
-  }, []);
+  }, [selectedDataset.id]);
   
   // Handle template selection
   const handleTemplateChange = (e) => {
@@ -72,6 +92,9 @@ const Generate = () => {
       
       console.log('Selected template:', template);
       setSelectedTemplate(template);
+      
+      // Save to session storage
+      sessionStorage.setItem(`selectedTemplate_${selectedDataset.id}`, template.id);
       
       // Clear variations when changing template
       setVariations([]);

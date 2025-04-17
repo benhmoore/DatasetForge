@@ -117,8 +117,8 @@ const api = {
     .then(response => response.data),
   
   // Examples
-  getExamples: (datasetId, page = 1, size = 20) => apiClient.get(`/datasets/${datasetId}/examples`, {
-    params: { page, size }
+  getExamples: (datasetId, page = 1, size = 20, search = null) => apiClient.get(`/datasets/${datasetId}/examples`, {
+    params: { page, size, ...(search ? { search } : {}) }
   }).then(response => response.data),
   
   saveExamples: (datasetId, examples) => apiClient.post(`/datasets/${datasetId}/examples`, examples)

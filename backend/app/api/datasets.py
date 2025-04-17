@@ -122,6 +122,7 @@ async def get_examples(
     dataset_id: int,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None, description="Search term for filtering examples"),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -152,8 +153,24 @@ async def get_examples(
     # Query for examples
     query = select(Example).where(Example.dataset_id == dataset_id)
     
-    # Count total
-    total = len(session.exec(select(col(Example.id)).where(Example.dataset_id == dataset_id)).all())
+    # Add search filter if provided
+    if search:
+        search_term = f"%{search}%"
+        query = query.where(
+            (Example.system_prompt.ilike(search_term)) | 
+            (Example.output.ilike(search_term))
+        )
+    
+    # Count total with search applied for pagination
+    count_query = select(col(Example.id)).where(Example.dataset_id == dataset_id)
+    if search:
+        search_term = f"%{search}%"
+        count_query = count_query.where(
+            (Example.system_prompt.ilike(search_term)) | 
+            (Example.output.ilike(search_term))
+        )
+    
+    total = len(session.exec(count_query).all())
     
     # Add pagination
     query = query.offset((page - 1) * size).limit(size)
