@@ -272,6 +272,12 @@ const Generate = () => {
       toast.warning('Please select a dataset first');
       return;
     }
+    
+    // Ensure a template is selected to get the system prompt
+    if (!selectedTemplate) {
+      toast.warning('Cannot save: Template not selected.');
+      return;
+    }
 
     if (starredVariations.size === 0) {
       toast.warning('Please star at least one variation to save');
@@ -288,7 +294,9 @@ const Generate = () => {
         console.warn('Missing slots for variation at index', index, '- attempting to save anyway');
       }
 
+      // Construct the example payload based on ExampleCreate schema
       return {
+        system_prompt: selectedTemplate.system_prompt || "", // Add system_prompt from the selected template
         user_prompt: variation.processed_prompt || "", // Use the processed prompt from the result
         slots: slotData,
         output: variation.output,
