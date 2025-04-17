@@ -20,6 +20,7 @@ var/
 .installed.cfg
 *.egg
 datasetforge-env/
+*env/
 
 # Frontend
 node_modules/
