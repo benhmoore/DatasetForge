@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'; // Added useCallback
 import { toast } from 'react-toastify';
-import { useOutletContext, Navigate } from 'react-router-dom';
+// Removed useOutletContext, Navigate
 import api from '../api/apiClient';
 import SeedForm from './SeedForm';
 import VariationCard from './VariationCard';
@@ -8,8 +8,9 @@ import ExampleTable from './ExampleTable';
 import SettingsModal from './SettingsModal';
 import CustomSelect from './CustomSelect';
 
-const Generate = () => {
-  const { selectedDataset } = useOutletContext();
+const Generate = ({ context }) => { // Accept context as prop
+  // Destructure selectedDataset from context
+  const { selectedDataset } = context;
 
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -328,12 +329,6 @@ const Generate = () => {
     value: template.id,
     label: template.name
   }));
-
-  // Redirect if no dataset is selected (moved logic here for clarity)
-  if (!selectedDataset) {
-    toast.warning('Please select a dataset first');
-    return <Navigate to="/" />;
-  }
 
   return (
     <div className="space-y-8">

@@ -1,18 +1,22 @@
 import { useState } from 'react';
-import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import DatasetSelector from './DatasetSelector';
 import SettingsModal from './SettingsModal';
 import LogoutButton from './LogoutButton';
+import TemplateBuilder from './TemplateBuilder';
+import Generate from './Generate';
 
 const Layout = () => {
   const [selectedDataset, setSelectedDataset] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const navigate = useNavigate();
   const location = useLocation();
   
   // Determine active tab based on current path
   const activeTab = location.pathname === '/generate' ? 'generate' : 'templates';
+
+  // Create context object to pass down
+  const outletContext = { selectedDataset, setSelectedDataset };
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -82,21 +86,28 @@ const Layout = () => {
       {/* Main Content */}
       <main className="flex-grow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Show special message if no dataset exists - but only on the generate page */}
-          {activeTab === 'generate' && !selectedDataset ? (
-            <div className="p-8 bg-gray-50 rounded-lg border border-gray-200 text-center">
-              <h2 className="text-xl font-medium text-gray-700 mb-4">No Dataset Selected</h2>
-              <p className="text-gray-500 mb-4">
-                Please create and select a dataset using the dropdown at the top of the page.
-              </p>
-              <DatasetSelector
-                selectedDataset={selectedDataset}
-                onSelectDataset={setSelectedDataset}
-              />
-            </div>
-          ) : (
-            <Outlet context={{ selectedDataset, setSelectedDataset }} />
-          )}
+          {/* Conditionally render TemplateBuilder */}
+          <div className={activeTab === 'templates' ? '' : 'hidden'}>
+            <TemplateBuilder context={outletContext} />
+          </div>
+
+          {/* Conditionally render Generate or placeholder */}
+          <div className={activeTab === 'generate' ? '' : 'hidden'}>
+            {selectedDataset ? (
+              <Generate context={outletContext} />
+            ) : (
+              <div className="p-8 bg-gray-50 rounded-lg border border-gray-200 text-center">
+                <h2 className="text-xl font-medium text-gray-700 mb-4">No Dataset Selected</h2>
+                <p className="text-gray-500 mb-4">
+                  Please create and select a dataset using the dropdown at the top of the page to use the Generate & Audition feature.
+                </p>
+                <DatasetSelector
+                  selectedDataset={selectedDataset}
+                  onSelectDataset={setSelectedDataset}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </main>
       

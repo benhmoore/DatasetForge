@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { useOutletContext } from 'react-router-dom';
+// Removed useOutletContext
 import api from '../api/apiClient';
 import SystemPromptEditor from './SystemPromptEditor';
 import ModelSelector from './ModelSelector'; // Import ModelSelector
 
-const TemplateBuilder = () => {
-  // We don't need to use selectedDataset here, but we're getting it from context
-  // to ensure consistency with the Generate component
-  const { selectedDataset } = useOutletContext();
+const TemplateBuilder = ({ context }) => { // Accept context as prop
+  // Destructure selectedDataset from context
+  const { selectedDataset } = context;
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
