@@ -142,9 +142,32 @@ const api = {
     data: { example_ids: exampleIds }
   }).then(response => response.data),
   
-  exportDataset: (datasetId) => apiClient.get(`/datasets/${datasetId}/export`, {
-    responseType: 'blob'
-  }).then(response => response.data)
+  // Export templates
+  getExportTemplates: (page = 1, size = 10, formatName = null) => {
+    const params = { page, size };
+    if (formatName) params.format_name = formatName;
+    
+    return apiClient.get('/export_templates/', { params })
+      .then(response => response.data);
+  },
+  
+  createExportTemplate: (template) => apiClient.post('/export_templates/', template)
+    .then(response => response.data),
+    
+  updateExportTemplate: (id, template) => apiClient.put(`/export_templates/${id}`, template)
+    .then(response => response.data),
+    
+  archiveExportTemplate: (id) => apiClient.put(`/export_templates/${id}/archive`)
+    .then(response => response.data),
+  
+  exportDataset: (datasetId, templateId = null) => {
+    const params = templateId ? { template_id: templateId } : {};
+    
+    return apiClient.get(`/datasets/${datasetId}/export`, {
+      responseType: 'blob',
+      params
+    }).then(response => response.data);
+  }
 };
 
 export default api;

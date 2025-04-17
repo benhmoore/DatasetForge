@@ -81,6 +81,39 @@ class ExamplePagination(BaseModel):
     total: int
 
 
+# Export Template schemas
+class ExportTemplateBase(BaseModel):
+    name: str
+    description: str
+    format_name: str
+    template: str
+    is_default: bool = False
+
+
+class ExportTemplateCreate(ExportTemplateBase):
+    pass
+
+
+class ExportTemplateRead(ExportTemplateBase):
+    id: int
+    owner_id: Optional[int] = None
+    created_at: datetime
+    archived: bool
+
+
+class ExportTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    format_name: Optional[str] = None
+    template: Optional[str] = None
+    is_default: Optional[bool] = None
+
+
+class ExportTemplatePagination(BaseModel):
+    items: List[ExportTemplateRead]
+    total: int
+
+
 # Generation schemas
 class GenerationRequest(BaseModel):
     template_id: int
@@ -100,3 +133,8 @@ class GenerationResult(BaseModel):
 class ParaphraseRequest(BaseModel):
     text: str
     count: int = Field(default=3, ge=1, le=10)
+
+
+# Export schemas
+class ExportRequest(BaseModel):
+    template_id: Optional[int] = None

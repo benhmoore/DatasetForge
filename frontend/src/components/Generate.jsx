@@ -417,7 +417,8 @@ const Generate = () => {
       {selectedDataset && (
         <div className="border-t pt-6">
           <ExampleTable 
-            datasetId={selectedDataset.id} 
+            datasetId={selectedDataset.id}
+            datasetName={selectedDataset.name}
             refreshTrigger={refreshExamplesTrigger} 
           />
         </div>

@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import ExampleDetailModal from './ExampleDetailModal';
+import ExportDialog from './ExportDialog';
 
-const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
+const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const [examples, setExamples] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -22,6 +23,9 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   // For detail modal
   const [selectedExample, setSelectedExample] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  
+  // For export dialog
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   
   // For search
   const [searchTerm, setSearchTerm] = useState('');
@@ -231,32 +235,9 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   };
   
   // Handle export to JSONL
-  const handleExport = async () => {
+  const handleExport = () => {
     if (!datasetId) return;
-    
-    try {
-      const data = await api.exportDataset(datasetId);
-      
-      // Create a blob and download link
-      const blob = new Blob([data], { type: 'application/jsonl' });
-      const url = URL.createObjectURL(blob);
-      
-      // Create a temporary download link
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `dataset-${datasetId}.jsonl`;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Clean up
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      toast.success('Dataset exported successfully');
-    } catch (error) {
-      console.error('Failed to export dataset:', error);
-      toast.error('Failed to export dataset');
-    }
+    setIsExportDialogOpen(true);
   };
   
   // Handle row click to open detail modal
@@ -781,6 +762,14 @@ const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
         datasetId={datasetId}
         onClose={() => setIsDetailModalOpen(false)}
         onExampleUpdated={handleExampleUpdated}
+      />
+      
+      {/* Export Dialog */}
+      <ExportDialog
+        isOpen={isExportDialogOpen}
+        onClose={() => setIsExportDialogOpen(false)}
+        datasetId={datasetId}
+        datasetName={datasetName}
       />
     </div>
   );

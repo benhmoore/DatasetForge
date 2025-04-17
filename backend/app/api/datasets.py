@@ -332,12 +332,16 @@ async def delete_examples(
 @router.get("/datasets/{dataset_id}/export")
 async def export_dataset(
     dataset_id: int,
+    template_id: Optional[int] = Query(None, description="The export template ID to use for formatting"),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
-    Export a dataset as JSONL
+    Export a dataset as JSONL with optional template formatting
     """
+    # Import here to avoid circular imports
+    from jinja2 import Template as JinjaTemplate
+    
     # Verify dataset exists and user owns it
     dataset = session.get(Dataset, dataset_id)
     
@@ -364,28 +368,86 @@ async def export_dataset(
         select(Example).where(Example.dataset_id == dataset_id)
     ).all()
     
+    # If a template ID is provided, get the export template
+    export_template = None
+    if template_id is not None:
+        from .models import ExportTemplate
+        export_template = session.get(ExportTemplate, template_id)
+        
+        if not export_template:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Export template not found"
+            )
+        
+        # Check if user has access to this template
+        if export_template.owner_id is not None and export_template.owner_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to use this export template"
+            )
+    
     # Create a JSONL stream
     async def generate_jsonl():
         for example in examples:
             # In a real implementation, decrypt fields using the key
             # For now, just output as is
-            record = {
-                "system_prompt": example.system_prompt,
-                "slots": example.slots,
-                "output": example.output,
-                "timestamp": example.timestamp.isoformat()
-            }
-            
-            # Include tool calls if present
-            if example.tool_calls:
-                record["tool_calls"] = example.tool_calls
-            yield json.dumps(record) + "\n"
+            if export_template:
+                # Use the template for formatting
+                try:
+                    # Create context with all example fields and additional metadata
+                    context = {
+                        "system_prompt": example.system_prompt,
+                        "slots": example.slots,
+                        "output": example.output,
+                        "timestamp": example.timestamp.isoformat(),
+                        "dataset_name": dataset.name,
+                        "dataset_id": dataset.id,
+                        "example_id": example.id
+                    }
+                    
+                    # Include tool calls if present
+                    if example.tool_calls:
+                        context["tool_calls"] = example.tool_calls
+                    
+                    # Apply template and yield the formatted line
+                    template = JinjaTemplate(export_template.template)
+                    rendered = template.render(**context)
+                    yield rendered + "\n"
+                    
+                except Exception as e:
+                    # If template rendering fails, yield error information
+                    error_record = {
+                        "error": f"Template rendering failed: {str(e)}",
+                        "example_id": example.id
+                    }
+                    yield json.dumps(error_record) + "\n"
+            else:
+                # Use default format
+                record = {
+                    "system_prompt": example.system_prompt,
+                    "slots": example.slots,
+                    "output": example.output,
+                    "timestamp": example.timestamp.isoformat()
+                }
+                
+                # Include tool calls if present
+                if example.tool_calls:
+                    record["tool_calls"] = example.tool_calls
+                
+                yield json.dumps(record) + "\n"
+    
+    # Get filename with optional template name
+    filename = f"dataset-{dataset_id}"
+    if export_template:
+        # Add format name to filename
+        filename += f"-{export_template.format_name}"
     
     # Return streaming response
     return StreamingResponse(
         generate_jsonl(),
         media_type="application/jsonl",
         headers={
-            "Content-Disposition": f"attachment; filename=dataset-{dataset_id}.jsonl"
+            "Content-Disposition": f"attachment; filename={filename}.jsonl"
         }
     )
