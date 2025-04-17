@@ -167,7 +167,24 @@ DatasetForge includes several command-line tools to help you manage your install
 -   **Tool Calling**: Design tool interfaces and generate structured tool calls
 -   **Generation**: Use Ollama models to generate variations
 -   **Datasets**: Organize examples into named datasets
+-   **Export Templates**: Configure export formats for different fine-tuning frameworks
+    -   Built-in templates for MLX, OpenAI, Llama/Mistral, and tool-calling formats
+    -   Custom template creation with Jinja2 syntax
+    -   Format-specific export options with visual categorization
 -   **Export**: Export datasets in JSONL format for fine-tuning
+
+## Supported Fine-Tuning Formats
+
+DatasetForge provides built-in export format templates for various models and frameworks:
+
+-   **MLX Chat**: Chat format for Apple's MLX framework
+-   **MLX Instruct**: Instruction format for Apple's MLX framework
+-   **OpenAI ChatML**: Chat format for fine-tuning OpenAI models
+-   **Llama/Mistral**: Format for Meta's Llama and Mistral models
+-   **Tool Calling**: Format with function/tool calling support
+-   **Raw**: Comprehensive format with all fields preserved
+
+You can also create custom export templates for any other fine-tuning format using the template manager with Jinja2 syntax.
 
 ## Architecture
 

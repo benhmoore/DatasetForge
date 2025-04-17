@@ -324,30 +324,54 @@ class Example(SQLModel, table=True):
   - Archive/Unarchive → PUT /datasets/{id}/archive
   - Show Archived toggle
 
-### 6.8 Export
+### 6.8 Export Templates & Export
 
-- **Component**: `<ExportButton>`
-- **Action**: GET /datasets/{id}/export → download dataset-name.jsonl
+- **Components**: 
+  - `<ExportDialog>` - Modal with template selection and export options
+  - `<ExportTemplateManager>` - Interface for creating and editing export templates
 
-**JSONL Schema**:
-```json
-{
-  "system_prompt": "...",
-  "variation_prompt": "...",
-  "slots": { "input": "..." },
-  "output": "...",
-  "tool_calls": [
-    {
-      "name": "tool_name",
-      "parameters": {
-        "param1": "value1",
-        "param2": "value2"
-      }
-    }
-  ],
-  "timestamp": "2025-04-17T12:34:56Z"
-}
-```
+- **Features**:
+  - Configurable export formats with templates 
+  - Built-in templates for common formats: MLX Chat, MLX Instruct, OpenAI ChatML, Llama/Mistral, Tool Calling
+  - Custom template creation with Jinja2 syntax
+  - Template categorization and filtering
+  - Format-specific export filenames
+
+- **Actions**:
+  - GET /datasets/{id}/export?template_id={id} → download formatted JSONL
+  - GET /export_templates/ → List available templates
+  - POST/PUT/DELETE operations for template management
+
+**Default Export Formats**:
+- **MLX Chat**: Chat format for MLX fine-tuning
+  ```json
+  {"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+  ```
+
+- **MLX Instruct**: Instruction format for MLX fine-tuning
+  ```json
+  {"instruction": "...", "input": "...", "output": "..."}
+  ```
+
+- **OpenAI ChatML**: Format for OpenAI chat fine-tuning
+  ```json
+  {"messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]}
+  ```
+
+- **Llama/Mistral**: Format for Llama and Mistral models
+  ```
+  <s>[INST] System prompt\n\nUser input [/INST] Assistant response</s>
+  ```
+
+- **Tool Calling**: Format with function/tool calling
+  ```json
+  {"messages": [...], "tool_calls": [{"function": {"name": "tool_name", "arguments": "{\"param1\":\"value1\",\"param2\":\"value2\"}"}}]}
+  ```
+
+- **Raw**: Default format with all fields
+  ```json
+  {"system_prompt": "...", "slots": {"input": "..."}, "output": "...", "tool_calls": [...], "timestamp": "..."}
+  ```
 
 ### 6.9 System Prompt History
 
