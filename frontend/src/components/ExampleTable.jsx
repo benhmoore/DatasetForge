@@ -2,37 +2,39 @@ import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 
-const ExampleTable = ({ datasetId }) => {
+const ExampleTable = ({ datasetId, refreshTrigger = 0 }) => {
   const [examples, setExamples] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const pageSize = 10;
   
-  // Fetch examples when datasetId or page changes
-  useEffect(() => {
+  // Function to fetch examples that can be called programmatically 
+  const fetchExamples = async () => {
     if (!datasetId) return;
     
-    const fetchExamples = async () => {
-      setIsLoading(true);
-      
-      try {
-        const response = await api.getExamples(datasetId, page, pageSize);
-        setExamples(response.items);
-        
-        // Calculate total pages
-        const total = response.total;
-        setTotalPages(Math.ceil(total / pageSize));
-      } catch (error) {
-        console.error('Failed to fetch examples:', error);
-        toast.error('Failed to load examples');
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    setIsLoading(true);
     
+    try {
+      const response = await api.getExamples(datasetId, page, pageSize);
+      setExamples(response.items);
+      
+      // Calculate total pages
+      const total = response.total;
+      setTotalPages(Math.ceil(total / pageSize));
+      console.log(`Fetched ${response.items.length} examples, total: ${total}`);
+    } catch (error) {
+      console.error('Failed to fetch examples:', error);
+      toast.error('Failed to load examples');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Fetch examples when datasetId, page, or refreshTrigger changes
+  useEffect(() => {
     fetchExamples();
-  }, [datasetId, page]);
+  }, [datasetId, page, refreshTrigger]);
   
   // Handle pagination
   const handlePageChange = (newPage) => {
@@ -173,13 +175,29 @@ const ExampleTable = ({ datasetId }) => {
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate">
-                      <div className="tooltip">
+                      <div className="tooltip" onMouseEnter={(e) => {
+                        const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                        if (tooltip) {
+                          // Position the tooltip near the cursor but not directly under it
+                          tooltip.style.top = `${e.clientY - 20}px`;
+                          tooltip.style.left = `${e.clientX + 20}px`;
+                        }
+                      }}>
                         <span>{example.system_prompt.substring(0, 50)}{example.system_prompt.length > 50 ? '...' : ''}</span>
-                        <span className="tooltip-text hidden group-hover:block">{example.system_prompt}</span>
+                        <span className="tooltip-text">{example.system_prompt}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate">
-                      {example.variation_prompt}
+                      <div className="tooltip" onMouseEnter={(e) => {
+                        const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                        if (tooltip) {
+                          tooltip.style.top = `${e.clientY - 20}px`;
+                          tooltip.style.left = `${e.clientX + 20}px`;
+                        }
+                      }}>
+                        <span>{example.variation_prompt.substring(0, 50)}{example.variation_prompt.length > 50 ? '...' : ''}</span>
+                        <span className="tooltip-text">{example.variation_prompt}</span>
+                      </div>
                     </td>
                     
                     {/* Render slot values */}
@@ -188,14 +206,31 @@ const ExampleTable = ({ datasetId }) => {
                         key={slot} 
                         className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate"
                       >
-                        {example.slots[slot] || ''}
+                        <div className="tooltip" onMouseEnter={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                          if (tooltip) {
+                            tooltip.style.top = `${e.clientY - 20}px`;
+                            tooltip.style.left = `${e.clientX + 20}px`;
+                          }
+                        }}>
+                          <span>{(example.slots[slot] || '').substring(0, 30)}{(example.slots[slot] || '').length > 30 ? '...' : ''}</span>
+                          {example.slots[slot] && example.slots[slot].length > 30 && (
+                            <span className="tooltip-text">{example.slots[slot]}</span>
+                          )}
+                        </div>
                       </td>
                     ))}
                     
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate group">
-                      <div className="tooltip">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate">
+                      <div className="tooltip" onMouseEnter={(e) => {
+                        const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                        if (tooltip) {
+                          tooltip.style.top = `${e.clientY - 20}px`;
+                          tooltip.style.left = `${e.clientX + 20}px`;
+                        }
+                      }}>
                         <span>{example.output.substring(0, 50)}{example.output.length > 50 ? '...' : ''}</span>
-                        <span className="tooltip-text hidden group-hover:block">{example.output}</span>
+                        <span className="tooltip-text">{example.output}</span>
                       </div>
                     </td>
                   </tr>

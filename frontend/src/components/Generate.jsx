@@ -83,6 +83,7 @@ const Generate = () => {
   };
   
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [refreshExamplesTrigger, setRefreshExamplesTrigger] = useState(0);
   
   // Handle generate button click
   const handleGenerate = async (data) => {
@@ -283,6 +284,9 @@ const Generate = () => {
       const remainingVariations = variations.filter((_, index) => !starredVariations.has(index));
       setVariations(remainingVariations);
       setStarredVariations(new Set());
+      
+      // Trigger examples table refresh
+      setRefreshExamplesTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Failed to save examples:', error);
       toast.error('Failed to save examples to dataset');
@@ -372,7 +376,10 @@ const Generate = () => {
       {/* Dataset Examples Section */}
       {selectedDataset && (
         <div className="border-t pt-6">
-          <ExampleTable datasetId={selectedDataset.id} />
+          <ExampleTable 
+            datasetId={selectedDataset.id} 
+            refreshTrigger={refreshExamplesTrigger} 
+          />
         </div>
       )}
       

@@ -111,12 +111,16 @@ const VariationCard = ({
         <div className="flex space-x-1">
           <button
             onClick={handleStar}
-            className={`p-1 transition-colors duration-200 ${
-              isStarred ? 'text-yellow-500 scale-110' : 'text-gray-400 hover:text-yellow-500'
+            className={`p-1 transition-all duration-200 transform ${
+              isStarred 
+                ? 'text-yellow-500 scale-110 bg-yellow-50 rounded-full shadow-inner' 
+                : 'text-gray-400 hover:text-yellow-500 hover:bg-gray-100 hover:rounded-full'
             }`}
-            title={isStarred ? 'Starred' : 'Star'}
+            title={isStarred ? 'Unstar' : 'Star'}
           >
-            <span className={`inline-block ${isStarred ? 'animate-pulse' : ''}`}>⭐</span>
+            <span className={`inline-block ${isStarred ? 'text-xl' : 'text-lg'}`}>
+              {isStarred ? '⭐' : '☆'}
+            </span>
           </button>
           <button
             onClick={handleEditToggle}
