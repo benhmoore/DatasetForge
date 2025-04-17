@@ -37,8 +37,8 @@ const Login = () => {
       if (error.response && error.response.status === 429) {
         toast.error('Too many login attempts. Please wait a minute.');
       } else if (error.response && error.response.headers['x-error-code'] === 'no_users_exist') {
-        toast.error('No users exist in the system. Please run the CLI command to create a user.');
-        console.error('Setup required: Run "python backend/app/cli.py create-user" to create a user');
+        toast.error('No users exist. Run "docker exec -it datasetforge-backend-1 python app/cli.py create-user" in a terminal.');
+        console.error('Setup required: No users exist in the system');
       } else {
         toast.error('Login failed. Please try again.');
       }

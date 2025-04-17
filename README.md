@@ -46,10 +46,11 @@ This project targets modern browsers only (Chrome, Firefox, Safari, Edge) and is
    docker-compose up --build
    ```
 
-5. Create a user:
+5. Create a user by running the CLI command in the backend container:
    ```
-   python backend/app/cli.py create-user
+   docker exec -it datasetforge-backend-1 python app/cli.py create-user
    ```
+   Note: You must run this command in a separate terminal while the containers are running. This creates your first user account, which is required to log in.
 
 6. Access the application at http://localhost:3000
 
@@ -96,6 +97,26 @@ This application is designed to work with current versions of:
 - Firefox
 - Safari
 - Edge
+
+## Troubleshooting
+
+### "No users exist in the system"
+If you see this error when trying to log in, it means you need to create your first user. Run this command in a terminal while the containers are running:
+```
+docker exec -it datasetforge-backend-1 python app/cli.py create-user
+```
+
+### Connection Issues with Ollama
+If you're having trouble connecting to Ollama:
+1. Make sure Ollama is running on your host machine with `ollama serve`
+2. Verify the host.docker.internal address is correctly set in your .env file
+3. For some operating systems, you may need to modify the docker-compose.yml extra_hosts setting
+
+### Frontend can't connect to Backend
+If your frontend shows proxy errors connecting to the backend:
+1. Ensure both containers are running (`docker-compose ps`)
+2. Check logs for any startup errors (`docker-compose logs backend`)
+3. Wait a few seconds after startup for all services to initialize
 
 ## License
 
