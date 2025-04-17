@@ -147,11 +147,11 @@ const api = {
     const params = { page, size };
     if (formatName) params.format_name = formatName;
     
-    return apiClient.get('/export_templates/', { params })
+    return apiClient.get('/export_templates', { params })
       .then(response => response.data);
   },
   
-  createExportTemplate: (template) => apiClient.post('/export_templates/', template)
+  createExportTemplate: (template) => apiClient.post('/export_templates', template)
     .then(response => response.data),
     
   updateExportTemplate: (id, template) => apiClient.put(`/export_templates/${id}`, template)

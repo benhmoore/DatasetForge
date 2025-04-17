@@ -150,6 +150,54 @@ DatasetForge includes several command-line tools to help you manage your install
     ```
     Updates the database schema when upgrading to a new version of DatasetForge. This command adds any new tables or columns required by the latest version, ensuring compatibility with new features.
 
+## Running Tests
+
+To run the test suite locally:
+
+1. Create and activate a Python virtual environment:
+
+    ```
+    # Create a virtual environment
+    python -m venv dataforge_env
+
+    # Activate the virtual environment
+    # On macOS/Linux:
+    source dataforge_env/bin/activate
+    # On Windows:
+    dataforge_env\Scripts\activate
+    ```
+
+2. Install the required packages:
+
+    ```
+    cd backend
+    pip install -r requirements.txt
+    # Install pytest if not included in requirements
+    pip install pytest
+    ```
+
+3. Run the tests:
+
+    ```
+    # Run all tests
+    pytest tests/
+
+    # Run tests with verbose output
+    pytest tests/ -v
+
+    # Run specific test file
+    pytest tests/test_health.py
+
+    # Run tests matching a specific pattern
+    pytest tests/ -k "template or dataset"
+    ```
+
+4. To deactivate the virtual environment when finished:
+
+    ```
+    deactivate
+    ```
+
 ## Development
 
 ### Backend
