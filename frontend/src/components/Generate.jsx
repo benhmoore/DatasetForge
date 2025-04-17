@@ -6,6 +6,7 @@ import SeedForm from './SeedForm';
 import VariationCard from './VariationCard';
 import ExampleTable from './ExampleTable';
 import SettingsModal from './SettingsModal';
+import CustomSelect from './CustomSelect'; // Import the new component
 
 const Generate = () => {
   const { selectedDataset } = useOutletContext();
@@ -81,11 +82,10 @@ const Generate = () => {
   }, [selectedDataset.id]);
 
   // Handle template selection
-  const handleTemplateChange = (e) => {
+  const handleTemplateChange = (templateId) => { // Changed parameter to templateId
     try {
-      const templateId = parseInt(e.target.value);
-      if (isNaN(templateId)) {
-        console.warn('Invalid template ID:', e.target.value);
+      if (templateId === null || templateId === undefined) {
+        console.warn('Invalid template ID:', templateId);
         setSelectedTemplate(null);
         return;
       }
@@ -345,6 +345,12 @@ const Generate = () => {
     }
   };
 
+  // Prepare options for CustomSelect
+  const templateOptions = templates.map(template => ({
+    value: template.id,
+    label: template.name
+  }));
+
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -353,24 +359,15 @@ const Generate = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Select Template
             </label>
-            <select
+            {/* Replace select with CustomSelect */}
+            <CustomSelect
+              options={templateOptions}
               value={selectedTemplate?.id || ''}
               onChange={handleTemplateChange}
-              className="w-full p-2 border border-gray-300 rounded-md"
-              disabled={isLoading || isGenerating}
-            >
-              {isLoading ? (
-                <option value="">Loading templates...</option>
-              ) : templates.length === 0 ? (
-                <option value="">No templates available</option>
-              ) : (
-                templates.map(template => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                  </option>
-                ))
-              )}
-            </select>
+              placeholder="Select a template..."
+              isLoading={isLoading}
+              disabled={isLoading || isGenerating || templates.length === 0}
+            />
           </div>
 
           <SeedForm

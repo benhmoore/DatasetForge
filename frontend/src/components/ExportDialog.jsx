@@ -121,6 +121,15 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
     );
   }
 
+  // Define filter options
+  const filterOptions = [
+    { value: 'all', label: 'All Formats', color: 'gray' },
+    { value: 'mlx', label: 'MLX', color: 'purple' },
+    { value: 'openai', label: 'OpenAI', color: 'green' },
+    { value: 'llama', label: 'Llama/Mistral', color: 'yellow' },
+    { value: 'tool', label: 'Function Calling', color: 'indigo' },
+  ];
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
@@ -146,49 +155,23 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
             </div>
           </div>
           
-          {/* Quick Format Filter */}
+          {/* Quick Format Filter - Updated Styling */}
           <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Format:</label>
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setFormatFilter('all')}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  formatFilter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                All Formats
-              </button>
-              <button
-                onClick={() => setFormatFilter('mlx')}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  formatFilter === 'mlx' ? 'bg-purple-800 text-white' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
-                }`}
-              >
-                MLX
-              </button>
-              <button
-                onClick={() => setFormatFilter('openai')}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  formatFilter === 'openai' ? 'bg-green-800 text-white' : 'bg-green-100 text-green-700 hover:bg-green-200'
-                }`}
-              >
-                OpenAI
-              </button>
-              <button
-                onClick={() => setFormatFilter('llama')}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  formatFilter === 'llama' ? 'bg-yellow-800 text-white' : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-                }`}
-              >
-                Llama/Mistral
-              </button>
-              <button
-                onClick={() => setFormatFilter('tool')}
-                className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                  formatFilter === 'tool' ? 'bg-indigo-800 text-white' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
-                }`}
-              >
-                Function Calling
-              </button>
+              {filterOptions.map(option => (
+                <button
+                  key={option.value}
+                  onClick={() => setFormatFilter(option.value)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150 border ${
+                    formatFilter === option.value 
+                      ? `bg-${option.color}-600 text-white border-${option.color}-600 shadow-sm` 
+                      : `bg-white text-${option.color}-700 border-gray-300 hover:bg-${option.color}-50 hover:border-${option.color}-400`
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
           </div>
           

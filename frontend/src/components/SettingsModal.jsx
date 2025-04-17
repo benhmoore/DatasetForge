@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
+import CustomSelect from './CustomSelect'; // Import the new component
 
 const SettingsModal = ({ isOpen, onClose, onSave }) => {
   const [models, setModels] = useState([]);
@@ -66,6 +67,12 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
   // If modal is not open, don't render anything
   if (!isOpen) return null;
 
+  // Prepare options for CustomSelect
+  const modelOptions = models.map(model => ({
+    value: model,
+    label: model
+  }));
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-xl">
@@ -89,42 +96,26 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Default Generation Model
               </label>
-              <select
-                className="w-full p-2 border border-gray-300 rounded-md"
+              <CustomSelect
+                options={modelOptions}
                 value={defaultGenModel}
-                onChange={(e) => setDefaultGenModel(e.target.value)}
-              >
-                {models.length === 0 ? (
-                  <option value="">No models available</option>
-                ) : (
-                  models.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))
-                )}
-              </select>
+                onChange={setDefaultGenModel}
+                placeholder="Select generation model..."
+                disabled={models.length === 0}
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Default Paraphrase Model
               </label>
-              <select
-                className="w-full p-2 border border-gray-300 rounded-md"
+              <CustomSelect
+                options={modelOptions}
                 value={defaultParaModel}
-                onChange={(e) => setDefaultParaModel(e.target.value)}
-              >
-                {models.length === 0 ? (
-                  <option value="">No models available</option>
-                ) : (
-                  models.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))
-                )}
-              </select>
+                onChange={setDefaultParaModel}
+                placeholder="Select paraphrase model..."
+                disabled={models.length === 0}
+              />
             </div>
 
             <div className="flex justify-end space-x-2 pt-2">
