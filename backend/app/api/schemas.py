@@ -23,6 +23,7 @@ class TemplateBase(BaseModel):
     slots: List[str]
     tool_definitions: Optional[List[Dict[str, Any]]] = None
     is_tool_calling_template: bool = False
+    model_override: Optional[str] = None
 
 
 class TemplateCreate(TemplateBase):
@@ -39,6 +40,9 @@ class TemplateUpdate(BaseModel):
     system_prompt: Optional[str] = None
     user_prompt: Optional[str] = None
     slots: Optional[List[str]] = None
+    tool_definitions: Optional[List[Dict[str, Any]]] = None
+    is_tool_calling_template: Optional[bool] = None
+    model_override: Optional[str] = None
 
 
 # Dataset schemas

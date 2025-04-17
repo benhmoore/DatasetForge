@@ -24,6 +24,7 @@ class Template(SQLModel, table=True):
         default=None, sa_column=Column(JSON)
     )
     is_tool_calling_template: bool = Field(default=False)
+    model_override: Optional[str] = Field(default=None)
 
 
 class Dataset(SQLModel, table=True):

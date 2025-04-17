@@ -272,11 +272,14 @@ async def generate_outputs(
         pattern = "{" + slot + "}"
         user_prompt = user_prompt.replace(pattern, value)
 
-    # Check if user has default generation model set
-    if not user.default_gen_model:
+    # Determine the model to use
+    generation_model = template.model_override or user.default_gen_model
+
+    # Check if a model is available
+    if not generation_model:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Default generation model is not set. Please set it in the settings.",
+            detail="No generation model specified. Set a default model in settings or override it in the template.",
         )
 
     # Define the async generator function for streaming
@@ -305,7 +308,7 @@ async def generate_outputs(
 
                 # Prepare API payload
                 payload = {
-                    "model": user.default_gen_model,
+                    "model": generation_model,  # Use the determined model
                     "prompt": user_prompt,
                     "system": system_prompt,
                     "stream": False,

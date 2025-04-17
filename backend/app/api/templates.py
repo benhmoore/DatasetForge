@@ -87,6 +87,10 @@ async def update_template(
     for key, value in template_data.items():
         setattr(db_template, key, value)
     
+    # Explicitly handle None for model_override if provided
+    if template_update.model_override is None and 'model_override' in template_update.__fields_set__:
+        db_template.model_override = None
+
     session.add(db_template)
     session.commit()
     session.refresh(db_template)

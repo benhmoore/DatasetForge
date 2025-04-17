@@ -1,34 +1,28 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
-import CustomSelect from './CustomSelect'; // Import the new component
+import ModelSelector from './ModelSelector'; // Import the new component
 
 const SettingsModal = ({ isOpen, onClose, onSave }) => {
-  const [models, setModels] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // Still needed for initial pref load
   const [defaultGenModel, setDefaultGenModel] = useState('');
   const [defaultParaModel, setDefaultParaModel] = useState('');
   const [error, setError] = useState(null);
 
-  // Fetch available models and user preferences
+  // Fetch user preferences (models are fetched by ModelSelector)
   useEffect(() => {
     if (isOpen) {
-      const fetchData = async () => {
+      const fetchPreferences = async () => {
         setIsLoading(true);
         setError(null);
         
         try {
-          // Fetch models and user preferences in parallel
-          const [modelsResponse, preferencesResponse] = await Promise.all([
-            api.getModels(),
-            api.getUserPreferences()
-          ]);
-          
-          setModels(modelsResponse);
+          // Fetch only user preferences now
+          const preferencesResponse = await api.getUserPreferences();
           setDefaultGenModel(preferencesResponse.default_gen_model);
           setDefaultParaModel(preferencesResponse.default_para_model);
         } catch (err) {
-          console.error('Failed to fetch data:', err);
+          console.error('Failed to fetch preferences:', err);
           setError('Failed to load settings. Please try again.');
           toast.error('Failed to load settings');
         } finally {
@@ -36,7 +30,7 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
         }
       };
       
-      fetchData();
+      fetchPreferences();
     }
   }, [isOpen]);
 
@@ -67,12 +61,6 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
   // If modal is not open, don't render anything
   if (!isOpen) return null;
 
-  // Prepare options for CustomSelect
-  const modelOptions = models.map(model => ({
-    value: model,
-    label: model
-  }));
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg w-full max-w-md p-6 shadow-xl">
@@ -87,7 +75,7 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
         </div>
 
         {isLoading ? (
-          <div className="py-4 text-center">Loading...</div>
+          <div className="py-4 text-center">Loading Preferences...</div>
         ) : error ? (
           <div className="py-4 text-red-500 text-center">{error}</div>
         ) : (
@@ -96,12 +84,10 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Default Generation Model
               </label>
-              <CustomSelect
-                options={modelOptions}
-                value={defaultGenModel}
-                onChange={setDefaultGenModel}
-                placeholder="Select generation model..."
-                disabled={models.length === 0}
+              <ModelSelector
+                selectedModel={defaultGenModel}
+                onModelChange={setDefaultGenModel}
+                label="Select default generation model..."
               />
             </div>
 
@@ -109,12 +95,10 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Default Paraphrase Model
               </label>
-              <CustomSelect
-                options={modelOptions}
-                value={defaultParaModel}
-                onChange={setDefaultParaModel}
-                placeholder="Select paraphrase model..."
-                disabled={models.length === 0}
+              <ModelSelector
+                selectedModel={defaultParaModel}
+                onModelChange={setDefaultParaModel}
+                label="Select default paraphrase model..."
               />
             </div>
 

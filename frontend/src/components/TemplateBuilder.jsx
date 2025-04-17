@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import { useOutletContext } from 'react-router-dom';
 import api from '../api/apiClient';
 import SystemPromptEditor from './SystemPromptEditor';
+import ModelSelector from './ModelSelector'; // Import ModelSelector
 
 const TemplateBuilder = () => {
   // We don't need to use selectedDataset here, but we're getting it from context
@@ -26,6 +27,7 @@ const TemplateBuilder = () => {
   const [newToolName, setNewToolName] = useState('');
   const [newToolDescription, setNewToolDescription] = useState('');
   const [newToolParameters, setNewToolParameters] = useState('{}');
+  const [modelOverride, setModelOverride] = useState(''); // Add state for model override
 
   // Fetch templates from API
   const fetchTemplates = async () => {
@@ -62,6 +64,7 @@ const TemplateBuilder = () => {
       setSlots(template.slots);
       setIsToolCallingTemplate(template.is_tool_calling_template || false);
       setToolDefinitions(template.tool_definitions || []);
+      setModelOverride(template.model_override || ''); // Populate model override
     } else {
       // Clear form
       setName('');
@@ -70,6 +73,7 @@ const TemplateBuilder = () => {
       setSlots([]);
       setIsToolCallingTemplate(false);
       setToolDefinitions([]);
+      setModelOverride(''); // Clear model override
     }
   };
 
@@ -95,7 +99,8 @@ const TemplateBuilder = () => {
         user_prompt: userPrompt,
         slots,
         is_tool_calling_template: isToolCallingTemplate,
-        tool_definitions: isToolCallingTemplate ? toolDefinitions : null
+        tool_definitions: isToolCallingTemplate ? toolDefinitions : null,
+        model_override: modelOverride || null // Include model override (send null if empty)
       };
       
       if (selectedTemplate) {
@@ -209,6 +214,7 @@ const TemplateBuilder = () => {
     setSystemPrompt('');
     setUserPrompt('');
     setSlots([]);
+    setModelOverride(''); // Clear model override for new template
     
     // Close the modal
     setIsModalOpen(false);
@@ -350,6 +356,19 @@ const TemplateBuilder = () => {
               className="w-full p-2 border border-gray-300 rounded-md"
               placeholder="Enter template name"
             />
+          </div>
+
+          {/* Model Override Selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Model Override (Optional)
+            </label>
+            <ModelSelector
+              selectedModel={modelOverride}
+              onModelChange={setModelOverride}
+              allowNone={true} // Allow clearing the override
+            />
+            <p className="text-xs text-gray-500 mt-1">If set, this model will be used instead of your default generation model.</p>
           </div>
           
           <div>
