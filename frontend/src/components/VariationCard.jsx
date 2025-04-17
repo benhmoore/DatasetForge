@@ -11,7 +11,7 @@ const VariationCard = ({
   isGenerating = false,
   error = null,
   tool_calls = null,
-  processed_prompt = null  // Add processed_prompt parameter
+  processed_prompt = null
 }) => {
   const [editedOutput, setEditedOutput] = useState(output);
   const [isEditing, setIsEditing] = useState(false);
@@ -235,15 +235,20 @@ const VariationCard = ({
 
       {/* Collapsible Processed Prompt Section */}
       {processed_prompt && (
-        <div className="mt-4">
+        <div className="mt-3 pt-3 border-t border-gray-100">
           <button
             onClick={() => setShowPrompt(!showPrompt)}
-            className="text-primary-600 hover:text-primary-800 text-sm font-medium"
+            className="text-xs text-gray-500 hover:text-gray-700 font-medium flex items-center"
           >
+            {showPrompt ? (
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+            ) : (
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+            )}
             {showPrompt ? 'Hide Processed Prompt' : 'Show Processed Prompt'}
           </button>
           {showPrompt && (
-            <div className="mt-2 p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap">
+            <div className="mt-2 p-2 bg-gray-100 rounded border border-gray-200 text-xs whitespace-pre-wrap font-mono">
               {processed_prompt}
             </div>
           )}

@@ -3,7 +3,8 @@ import axios from 'axios';
 // Create a configured axios instance
 const apiClient = axios.create({
   baseURL: '/api',
-  timeout: 30000, // 30 seconds
+  // Use environment variable for timeout, default to 120s (120000ms)
+  timeout: parseInt(import.meta.env.VITE_API_TIMEOUT_MS || '120000'), 
   headers: {
     'Content-Type': 'application/json'
   }
@@ -91,26 +92,77 @@ const api = {
     .then(response => response.data),
   
   // Generation
-  generate: (data) => {
+  generate: async (data, onData) => { // Modify to be async and accept onData callback
     // Debug log to verify data format
     console.log('Sending generation request:', JSON.stringify(data));
     
-    return apiClient.post('/generate', data)
-      .then(response => {
-        console.log('Generation response received:', response.status);
-        console.log('Generation response data:', JSON.stringify(response.data));
-        
-        // Check if there are tool calls in the response
-        if (response.data && Array.isArray(response.data)) {
-          response.data.forEach((item, index) => {
-            if (item.tool_calls && Array.isArray(item.tool_calls)) {
-              console.log(`Variation ${index} has ${item.tool_calls.length} tool calls:`, item.tool_calls);
+    // Use fetch API for streaming
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      // Handle non-2xx responses
+      const errorText = await response.text();
+      console.error('Generation request failed:', response.status, errorText);
+      throw new Error(`Generation failed: ${response.status} ${errorText || response.statusText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is null');
+    }
+
+    // Process the stream
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep the last partial line in the buffer
+
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const jsonData = JSON.parse(line);
+            if (onData) {
+              onData(jsonData); // Call the callback with the parsed JSON object
             }
-          });
+          } catch (e) {
+            console.error('Failed to parse JSON line:', line, e);
+            // Optionally, call onData with an error object
+            if (onData) {
+              onData({ error: `Failed to parse stream data: ${line}` });
+            }
+          }
         }
-        
-        return response.data;
-      });
+      }
+    }
+    // Process any remaining data in the buffer (though NDJSON usually ends with \n)
+    if (buffer.trim()) {
+      try {
+        const jsonData = JSON.parse(buffer);
+        if (onData) {
+          onData(jsonData);
+        }
+      } catch (e) {
+        console.error('Failed to parse final JSON buffer:', buffer, e);
+        if (onData) {
+          onData({ error: `Failed to parse final stream data: ${buffer}` });
+        }
+      }
+    }
   },
   
   paraphrase: (data) => apiClient.post('/paraphrase', data)

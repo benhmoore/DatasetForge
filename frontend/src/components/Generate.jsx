@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import { useOutletContext, Navigate } from 'react-router-dom';
 import api from '../api/apiClient';
@@ -9,32 +9,39 @@ import SettingsModal from './SettingsModal';
 
 const Generate = () => {
   const { selectedDataset } = useOutletContext();
-  
+
   // Redirect if no dataset is selected
   if (!selectedDataset) {
     toast.warning('Please select a dataset first');
     return <Navigate to="/" />;
   }
+
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [variations, setVariations] = useState([]);
   const [starredVariations, setStarredVariations] = useState(new Set());
-  
+  const variationsRef = useRef(variations); // Ref to access latest variations in callback
+
+  // Update ref whenever variations change
+  useEffect(() => {
+    variationsRef.current = variations;
+  }, [variations]);
+
   // Fetch templates on component mount
   useEffect(() => {
     const fetchTemplates = async () => {
       setIsLoading(true);
-      
+
       try {
         const data = await api.getTemplates();
         setTemplates(data);
-        
+
         // Check for previously selected template in session storage
         const savedTemplateId = sessionStorage.getItem(`selectedTemplate_${selectedDataset.id}`);
         let templateToSelect = null;
-        
+
         if (savedTemplateId) {
           // Find the saved template by ID
           const savedTemplate = data.find(t => t.id === parseInt(savedTemplateId));
@@ -43,7 +50,7 @@ const Generate = () => {
             templateToSelect = savedTemplate;
           }
         }
-        
+
         // If no saved template or it wasn't found, use the first available
         if (!templateToSelect) {
           // Select the first non-archived template if available
@@ -58,7 +65,7 @@ const Generate = () => {
             console.warn('No templates available');
           }
         }
-        
+
         if (templateToSelect) {
           setSelectedTemplate(templateToSelect);
         }
@@ -69,10 +76,10 @@ const Generate = () => {
         setIsLoading(false);
       }
     };
-    
+
     fetchTemplates();
   }, [selectedDataset.id]);
-  
+
   // Handle template selection
   const handleTemplateChange = (e) => {
     try {
@@ -82,20 +89,20 @@ const Generate = () => {
         setSelectedTemplate(null);
         return;
       }
-      
+
       const template = templates.find(t => t.id === templateId);
       if (!template) {
         console.warn('Template not found for ID:', templateId);
         toast.error('Selected template was not found. Please try another template.');
         return;
       }
-      
+
       console.log('Selected template:', template);
       setSelectedTemplate(template);
-      
+
       // Save to session storage
       sessionStorage.setItem(`selectedTemplate_${selectedDataset.id}`, template.id);
-      
+
       // Clear variations when changing template
       setVariations([]);
       setStarredVariations(new Set());
@@ -104,240 +111,243 @@ const Generate = () => {
       toast.error('Error selecting template. Please try again.');
     }
   };
-  
+
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [refreshExamplesTrigger, setRefreshExamplesTrigger] = useState(0);
-  
+
   // Handle generate button click
   const handleGenerate = async (data) => {
-    if (!selectedDataset) {
-      toast.warning('Please select a dataset first');
+    if (!selectedDataset || !selectedTemplate) {
+      toast.warning('Please select a dataset and template first');
       return;
     }
-    
+
     if (!data.template_id) {
       console.error('Missing template_id in generate request:', data);
       toast.error('Missing template ID. Please refresh and try again.');
       return;
     }
-    
-    // Log the request for debugging
+
     console.log('Generation request data:', data);
-    
+
     setIsGenerating(true);
-    
+    // Initialize variations with placeholders
+    const initialVariations = Array.from({ length: data.count }, (_, i) => ({
+      variation: `Variation ${i + 1}`,
+      output: '', // Empty initially
+      tool_calls: null,
+      processed_prompt: '', // Empty initially
+      slots: data.slots, // Keep slots for potential regeneration
+      isGenerating: true, // Mark as generating
+      error: null,
+      id: `temp-${i}-${Date.now()}` // Unique temporary ID for key prop
+    }));
+    setVariations(initialVariations);
+    setStarredVariations(new Set()); // Clear stars
+
     try {
-      const results = await api.generate(data);
-      setVariations(results);
-    } catch (error) {
-      console.error('Generation failed:', error);
-      
-      if (error.response && error.response.status === 504) {
-        toast.error('Generation timed out. Please try again or use a different model.');
-      } else if (error.response && error.response.status === 422) {
-        // Check if it's the specific error about missing model
-        const errorMessage = error.response.data?.detail || 'Failed to process request';
-        
-        if (errorMessage.includes('Default generation model is not set')) {
-          toast.error('Default generation model is not set. Please configure it in Settings.');
-          // Open settings modal automatically
-          setSettingsOpen(true);
-        } else {
-          toast.error(errorMessage);
+      // Use the streaming API call
+      await api.generate(data, (result) => {
+        // This callback runs for each received variation
+        console.log('Received variation data:', result);
+
+        // Find the index for this variation (e.g., "Variation 1" -> index 0)
+        const variationNumberMatch = result.variation?.match(/Variation (\d+)/);
+        if (!variationNumberMatch) {
+          console.error('Could not determine variation index from:', result.variation);
+          return;
         }
-      } else {
-        toast.error('Failed to generate variations');
-      }
-      
-      // Keep old variations if generation fails
+        const index = parseInt(variationNumberMatch[1], 10) - 1;
+
+        // Update the specific variation in the state using the ref
+        setVariations(prevVariations => {
+          const updated = [...prevVariations];
+          if (index >= 0 && index < updated.length) {
+            updated[index] = {
+              ...updated[index], // Keep existing placeholder data like slots
+              ...result, // Overwrite with received data
+              isGenerating: false, // Mark as finished
+              error: result.error || null, // Store error if present
+              id: updated[index].id // Keep the temporary ID
+            };
+          } else {
+            console.error(`Invalid index ${index} for received variation.`);
+          }
+          return updated;
+        });
+      });
+
+      toast.info('Generation stream finished.');
+
+    } catch (error) {
+      console.error('Generation stream failed:', error);
+      toast.error(`Generation failed: ${error.message}`);
+      setVariations(prev => prev.map(v => ({ ...v, isGenerating: false, error: 'Stream failed' })));
     } finally {
       setIsGenerating(false);
     }
   };
-  
+
   // Handle star button click
   const handleStar = (index, output) => {
     const newStarred = new Set(starredVariations);
-    
+
     if (newStarred.has(index)) {
       newStarred.delete(index);
     } else {
       newStarred.add(index);
     }
-    
-    // Update the variation output if it was edited
+
     if (output !== variations[index].output) {
       const updatedVariations = [...variations];
       updatedVariations[index] = { ...updatedVariations[index], output };
       setVariations(updatedVariations);
     }
-    
+
     setStarredVariations(newStarred);
   };
-  
+
   // Handle edit button save
   const handleEdit = (index, newOutput) => {
     const updatedVariations = [...variations];
     updatedVariations[index] = { ...updatedVariations[index], output: newOutput };
     setVariations(updatedVariations);
   };
-  
+
   // Handle regenerate button click
   const handleRegenerate = async (index, instruction = '') => {
     if (!selectedTemplate || isGenerating) return;
-    
-    // Create a temporary loading state for this card
-    const updatedVariations = [...variations];
-    updatedVariations[index] = { 
-      ...updatedVariations[index], 
-      isGenerating: true,
-      error: null
-    };
-    setVariations(updatedVariations);
-    
+
+    const currentVariation = variationsRef.current[index];
+    if (!currentVariation) {
+      console.error('Cannot regenerate: variation not found at index', index);
+      return;
+    }
+
+    setVariations(prevVariations => {
+      const updated = [...prevVariations];
+      updated[index] = { 
+        ...updated[index], 
+        isGenerating: true,
+        error: null,
+        output: '', // Clear previous output
+        tool_calls: null // Clear previous tool calls
+      };
+      return updated;
+    });
+
     try {
-      // Get the last generation parameters
-      // Make sure we have the slots data
-      const slotData = variations[index].slots || {};
-      
-      // Debug log to see what's happening
-      console.log('Existing variation slots:', slotData);
+      const slotData = currentVariation.slots || {};
+      console.log('Regeneration slots:', slotData);
       console.log('Regeneration instruction:', instruction);
-      
+
       if (Object.keys(slotData).length === 0) {
-        toast.error('Cannot regenerate: missing slot data');
-        
-        // Update variation to show error
-        const errorVariations = [...variations];
-        errorVariations[index] = {
-          ...errorVariations[index],
-          isGenerating: false,
-          error: 'Missing slot data'
-        };
-        setVariations(errorVariations);
-        return;
+        throw new Error('Cannot regenerate: missing slot data');
       }
-      
-      // IMPORTANT: Use template_id (with underscore) to match backend API schema
-      const lastGenParams = {
+
+      const regenParams = {
         template_id: selectedTemplate.id,
         slots: slotData,
-        count: 1
+        count: 1,
+        ...(instruction && instruction.trim() !== '' && { instruction: instruction.trim() })
       };
-      
-      // Add instruction if provided
-      if (instruction && instruction.trim() !== '') {
-        lastGenParams.instruction = instruction.trim();
-        console.log('Adding instruction to request:', lastGenParams.instruction);
-      }
-      
-      console.log('Final request payload:', lastGenParams);
-      const results = await api.generate(lastGenParams);
-      
-      // Update just this variation
-      if (results && results.length > 0) {
-        const newVariations = [...variations];
-        newVariations[index] = {
-          ...results[0],
-          isGenerating: false,
-          error: null
-        };
-        setVariations(newVariations);
-        
-        // If it was starred, remove the star
+
+      console.log('Final regenerate payload:', regenParams);
+
+      await api.generate(regenParams, (result) => {
+        console.log('Received regenerated variation data:', result);
+        setVariations(prevVariations => {
+          const updated = [...prevVariations];
+          updated[index] = {
+            ...updated[index],
+            ...result,
+            isGenerating: false,
+            error: result.error || null,
+            id: updated[index].id
+          };
+          return updated;
+        });
+
         if (starredVariations.has(index)) {
-          const newStarred = new Set(starredVariations);
-          newStarred.delete(index);
-          setStarredVariations(newStarred);
+          setStarredVariations(prevStarred => {
+            const newStarred = new Set(prevStarred);
+            newStarred.delete(index);
+            return newStarred;
+          });
         }
-      }
+      });
+
     } catch (error) {
       console.error('Regeneration failed:', error);
-      
-      // Update with error
-      const errorMsg = error.response && error.response.status === 504
-        ? 'Generation timed out. Please try again.'
-        : 'Failed to regenerate. Please try again.';
-      
-      const newVariations = [...variations];
-      newVariations[index] = {
-        ...newVariations[index],
-        isGenerating: false,
-        error: errorMsg
-      };
-      setVariations(newVariations);
-      
+      const errorMsg = error.message || 'Failed to regenerate. Please try again.';
+      setVariations(prevVariations => {
+        const updated = [...prevVariations];
+        updated[index] = {
+          ...updated[index],
+          isGenerating: false,
+          error: errorMsg
+        };
+        return updated;
+      });
     }
   };
-  
+
   // Handle save to dataset
   const handleSaveToDataset = async () => {
     if (!selectedDataset) {
       toast.warning('Please select a dataset first');
       return;
     }
-    
+
     if (starredVariations.size === 0) {
       toast.warning('Please star at least one variation to save');
       return;
     }
-    
-    // Prepare examples to save
+
     const examples = Array.from(starredVariations).map(index => {
       const variation = variations[index];
-      
-      // Make sure slots exist and are properly formatted
       let slotData = variation.slots || {};
-      
-      // Log for debugging
+
       console.log('Saving variation with slots:', slotData);
-      
-      // If slots is missing or empty, use an empty object
+
       if (!slotData || Object.keys(slotData).length === 0) {
         console.warn('Missing slots for variation', index);
-        // Create a default slot value to prevent API errors
         slotData = { "_default": "No slot data available" };
       }
-      
-      // Include tool_calls if they exist in the variation
+
       const example = {
         system_prompt: selectedTemplate.system_prompt,
-        user_prompt: variation.processed_prompt, // Including the user prompt with slot values replaced
+        user_prompt: variation.processed_prompt,
         slots: slotData,
         output: variation.output
       };
-      
-      // Add tool_calls if they exist in the variation
+
       if (variation.tool_calls && Array.isArray(variation.tool_calls) && variation.tool_calls.length > 0) {
         example.tool_calls = variation.tool_calls;
         console.log('Including tool calls in saved example:', variation.tool_calls);
       }
-      
+
       return example;
     });
-    
+
     try {
       await api.saveExamples(selectedDataset.id, examples);
       toast.success(`Saved ${examples.length} examples to dataset`);
-      
-      // Clear starred variations and continue with remaining ones
+
       const remainingVariations = variations.filter((_, index) => !starredVariations.has(index));
       setVariations(remainingVariations);
       setStarredVariations(new Set());
-      
-      // Trigger examples table refresh
+
       setRefreshExamplesTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Failed to save examples:', error);
       toast.error('Failed to save examples to dataset');
     }
   };
-  
+
   return (
     <div className="space-y-8">
-      {/* Generate Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left Column - SeedForm */}
         <div className="md:col-span-1">
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -362,14 +372,13 @@ const Generate = () => {
               )}
             </select>
           </div>
-          
+
           <SeedForm
             template={selectedTemplate}
             onGenerate={handleGenerate}
             isGenerating={isGenerating}
           />
-          
-          {/* Save to Dataset Button */}
+
           {variations.length > 0 && starredVariations.size > 0 && (
             <div className="mt-4">
               <button
@@ -382,12 +391,11 @@ const Generate = () => {
             </div>
           )}
         </div>
-        
-        {/* Right Column - Variation Cards */}
+
         <div className="md:col-span-2">
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
-          
-          {variations.length === 0 ? (
+
+          {variations.length === 0 && !isGenerating ? (
             <div className="p-6 bg-gray-50 rounded-lg border border-gray-200 text-center">
               <p className="text-gray-500">
                 Fill in the form and click "Generate" to create variations.
@@ -397,7 +405,7 @@ const Generate = () => {
             <div className="space-y-4">
               {variations.map((variation, index) => (
                 <VariationCard
-                  key={index}
+                  key={variation.id}
                   variation={variation.variation}
                   output={variation.output}
                   tool_calls={variation.tool_calls}
@@ -414,8 +422,7 @@ const Generate = () => {
           )}
         </div>
       </div>
-      
-      {/* Dataset Examples Section */}
+
       {selectedDataset && (
         <div className="border-t pt-6">
           <ExampleTable 
@@ -425,8 +432,7 @@ const Generate = () => {
           />
         </div>
       )}
-      
-      {/* Settings Modal */}
+
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
