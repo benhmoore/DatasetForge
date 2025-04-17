@@ -93,7 +93,8 @@ async def generate_outputs(
     # Replace slots in the template
     user_prompt = template.user_prompt
     for slot, value in request.slots.items():
-        user_prompt = user_prompt.replace(f"{{{slot}}}", value)
+        pattern = "{" + slot + "}"
+        user_prompt = user_prompt.replace(pattern, value)
     
     # Check if user has default generation model set
     if not user.default_gen_model:
