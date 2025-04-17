@@ -79,7 +79,13 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900">{template.name}</h3>
-          
+          {/* Add note for model override */}
+          {template.model_override && (
+            <p className="text-xs text-gray-500 -mt-3 mb-2">
+              (Using model: {template.model_override})
+            </p>
+          )}
+
           {/* Render slot inputs */}
           {template.slots.map(slot => (
             <div key={slot}>
