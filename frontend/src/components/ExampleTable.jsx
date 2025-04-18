@@ -69,8 +69,8 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const headerComponentRef = useRef(null);
   
   // For sorting
-  const [sortField, setSortField] = useState(null);
-  const [sortDirection, setSortDirection] = useState('asc');
+  const [sortField, setSortField] = useState('id'); // Default sort by ID
+  const [sortDirection, setSortDirection] = useState('desc'); // Default sort descending
   
   // For pagination loading state
   const [isPaginationLoading, setIsPaginationLoading] = useState(false);

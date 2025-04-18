@@ -7,6 +7,7 @@ import VariationCard from './VariationCard';
 import ExampleTable from './ExampleTable';
 import SettingsModal from './SettingsModal';
 import CustomSelect from './CustomSelect';
+import Icon from './Icons'; // Import Icon component
 
 const Generate = ({ context }) => {
   const { selectedDataset } = context;
@@ -22,7 +23,7 @@ const Generate = ({ context }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isParaphrasing, setIsParaphrasing] = useState(false); // Add state for paraphrasing
   const [variations, setVariations] = useState([]);
-  const [starredVariations, setStarredVariations] = useState(new Set());
+  const [selectedVariations, setSelectedVariations] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [refreshExamplesTrigger, setRefreshExamplesTrigger] = useState(0);
   const [examples, setExamples] = useState([]);
@@ -30,8 +31,9 @@ const Generate = ({ context }) => {
   const abortControllerRef = useRef(null);
 
   // Calculate counts for the dynamic save button
-  const starredCount = starredVariations.size;
+  const selectedCount = selectedVariations.size;
   const validVariationsCount = variations.filter(v => !v.isGenerating && !v.error).length;
+  const totalVariationsCount = variations.length;
 
   useEffect(() => {
     variationsRef.current = variations;
@@ -73,7 +75,7 @@ const Generate = ({ context }) => {
             setSelectedTemplateId(null);
             setSelectedTemplate(null);
             setVariations([]);
-            setStarredVariations(new Set());
+            setSelectedVariations(new Set());
           }
         }
       } catch (error) {
@@ -114,7 +116,7 @@ const Generate = ({ context }) => {
     const template = templates.find(t => t.id === templateId);
     setSelectedTemplate(template);
     setVariations([]);
-    setStarredVariations(new Set());
+    setSelectedVariations(new Set());
   };
 
   const handleCancelGeneration = () => {
@@ -166,8 +168,7 @@ const Generate = ({ context }) => {
     });
     // Append new variations instead of replacing
     setVariations(prevVariations => [...prevVariations, ...initialVariations]);
-    // Do not clear starred variations from previous generations
-    // setStarredVariations(new Set()); 
+    // Do not clear selected variations from previous generations
 
     try {
       await api.generate(data, (result) => {
@@ -217,39 +218,29 @@ const Generate = ({ context }) => {
     }
   }, [selectedDataset, selectedTemplate]);
 
-  const handleStar = (id, output) => {
+  const handleSelect = (id) => {
     const variationIndex = variationsRef.current.findIndex(v => v.id === id);
     if (variationIndex === -1) {
-      console.error('Cannot star: variation not found with id', id);
+      console.error('Cannot select: variation not found with id', id);
       return;
     }
     const variation = variationsRef.current[variationIndex];
 
-    const newStarred = new Set(starredVariations);
+    // Cannot select items with errors or while generating
+    if (variation.error || variation.isGenerating) {
+      toast.warning("Cannot select an item with an error or while it's generating.");
+      return;
+    }
 
-    if (newStarred.has(id)) {
-      newStarred.delete(id);
-    } else {
-      if (!variation?.error) {
-        newStarred.add(id);
+    setSelectedVariations(prevSelected => {
+      const newSelected = new Set(prevSelected);
+      if (newSelected.has(id)) {
+        newSelected.delete(id);
       } else {
-        toast.warning("Cannot star an item with an error.");
-        return;
+        newSelected.add(id);
       }
-    }
-
-    if (output !== variation?.output) {
-      setVariations(prevVariations => {
-        const updatedVariations = [...prevVariations];
-        const idx = updatedVariations.findIndex(v => v.id === id);
-        if (idx !== -1) {
-          updatedVariations[idx] = { ...updatedVariations[idx], output };
-        }
-        return updatedVariations;
-      });
-    }
-
-    setStarredVariations(newStarred);
+      return newSelected;
+    });
   };
 
   const handleEdit = (id, newOutput) => {
@@ -258,11 +249,14 @@ const Generate = ({ context }) => {
       const index = updatedVariations.findIndex(v => v.id === id);
       if (index !== -1) {
         updatedVariations[index] = { ...updatedVariations[index], output: newOutput };
-        if (starredVariations.has(id)) {
-          const newStarred = new Set(starredVariations);
-          newStarred.delete(id);
-          setStarredVariations(newStarred);
-          toast.info("Unstarred item due to edit.");
+        // Deselect item if it was selected, as it has been modified
+        if (selectedVariations.has(id)) {
+          setSelectedVariations(prevSelected => {
+            const newSelected = new Set(prevSelected);
+            newSelected.delete(id);
+            return newSelected;
+          });
+          toast.info("Deselected item due to edit.");
         }
       } else {
         console.error('Cannot edit: variation not found with id', id);
@@ -272,7 +266,7 @@ const Generate = ({ context }) => {
   };
 
   const handleRegenerate = useCallback(async (id, instruction = '') => {
-    if (!selectedTemplate || isGenerating) return;
+    if (!selectedTemplate || isGenerating || isParaphrasing) return;
 
     const variationIndex = variationsRef.current.findIndex(v => v.id === id);
     if (variationIndex === -1) {
@@ -328,12 +322,14 @@ const Generate = ({ context }) => {
               error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
             };
 
-            if (starredVariations.has(id)) {
-              setStarredVariations(prevStarred => {
-                const newStarred = new Set(prevStarred);
-                newStarred.delete(id);
-                return newStarred;
+            // Deselect item if it was selected, as it has been regenerated
+            if (selectedVariations.has(id)) {
+              setSelectedVariations(prevSelected => {
+                const newSelected = new Set(prevSelected);
+                newSelected.delete(id);
+                return newSelected;
               });
+              toast.info("Deselected item due to regeneration.");
             }
 
           } else {
@@ -359,9 +355,9 @@ const Generate = ({ context }) => {
         return updated;
       });
     }
-  }, [selectedTemplate, isGenerating, starredVariations]);
+  }, [selectedTemplate, isGenerating, isParaphrasing, selectedVariations]);
 
-  const handleSaveToDataset = async () => {
+  const handleSaveSelectedToDataset = async () => {
     if (!selectedDataset) {
       toast.warning('Please select a dataset first');
       return;
@@ -372,14 +368,14 @@ const Generate = ({ context }) => {
       return;
     }
 
-    if (starredVariations.size === 0) {
-      toast.warning('Please star at least one variation to save');
+    if (selectedVariations.size === 0) {
+      toast.warning('Please select at least one variation to save');
       return;
     }
 
-    const variationsToSave = Array.from(starredVariations)
+    const variationsToSave = Array.from(selectedVariations)
       .map(id => variationsRef.current.find(v => v.id === id))
-      .filter(v => v);
+      .filter(v => v); // Filter out any potential undefined if ID mismatch
 
     const examplesToSave = variationsToSave.map(variation => {
       let slotData = variation.slots || {};
@@ -399,11 +395,11 @@ const Generate = ({ context }) => {
       await api.saveExamples(selectedDataset.id, examplesToSave);
       toast.success(`${examplesToSave.length} example(s) saved to ${selectedDataset.name}`);
 
-      const savedIds = new Set(starredVariations);
+      const savedIds = new Set(selectedVariations);
       setVariations(prevVariations =>
         prevVariations.filter(v => !savedIds.has(v.id))
       );
-      setStarredVariations(new Set());
+      setSelectedVariations(new Set()); // Clear selection after saving
       setRefreshExamplesTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Failed to save examples:', error);
@@ -451,8 +447,8 @@ const Generate = ({ context }) => {
       setVariations(prevVariations =>
         prevVariations.filter(v => !savedIds.has(v.id))
       );
-      // Clear starred variations as well, since the items are removed
-      setStarredVariations(new Set()); 
+      // Clear selected variations as well, since the items are removed
+      setSelectedVariations(new Set()); 
       setRefreshExamplesTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Failed to save all valid examples:', error);
@@ -462,10 +458,11 @@ const Generate = ({ context }) => {
 
   const handleDismiss = (id) => {
     setVariations(prevVariations => prevVariations.filter(v => v.id !== id));
-    setStarredVariations(prevStarred => {
-      const newStarred = new Set(prevStarred);
-      newStarred.delete(id);
-      return newStarred;
+    // Also remove from selection if it was selected
+    setSelectedVariations(prevSelected => {
+      const newSelected = new Set(prevSelected);
+      newSelected.delete(id);
+      return newSelected;
     });
   };
 
@@ -479,14 +476,14 @@ const Generate = ({ context }) => {
           ...updatedVariations[index], 
           tool_calls: newToolCalls 
         };
-        // If the item was starred, unstar it because it has been modified
-        if (starredVariations.has(variationId)) {
-          setStarredVariations(prevStarred => {
-            const newStarred = new Set(prevStarred);
-            newStarred.delete(variationId);
-            toast.info("Unstarred item due to tool call edit.");
-            return newStarred;
+        // If the item was selected, deselect it because it has been modified
+        if (selectedVariations.has(variationId)) {
+          setSelectedVariations(prevSelected => {
+            const newSelected = new Set(prevSelected);
+            newSelected.delete(variationId);
+            return newSelected;
           });
+          toast.info("Deselected item due to tool call edit.");
         }
       } else {
         console.error('Cannot update tool calls: variation not found with id', variationId);
@@ -495,15 +492,35 @@ const Generate = ({ context }) => {
     });
   };
 
-  // Determine button text and action based on starred variations
-  const saveButtonText = starredCount > 0
-    ? `Save ${starredCount} Starred to Dataset`
-    : `Save All ${validVariationsCount} Valid to Dataset`;
+  // Handler for the Clear button
+  const handleClear = () => {
+    if (selectedCount > 0) {
+      // Clear selection
+      setSelectedVariations(new Set());
+      toast.info('Selection cleared.');
+    } else if (totalVariationsCount > 0) {
+      // Clear all variations
+      setVariations([]);
+      setSelectedVariations(new Set()); // Ensure selection is also cleared
+      toast.info('All variations cleared.');
+    }
+  };
 
-  const handleSaveClick = starredCount > 0 ? handleSaveToDataset : handleSaveAllValidToDataset;
+  // Determine button text and action based on selected variations
+  const saveButtonText = selectedCount > 0
+    ? `Save Selected (${selectedCount})`
+    : `Save All (${validVariationsCount})`;
+
+  const handleSaveClick = selectedCount > 0 ? handleSaveSelectedToDataset : handleSaveAllValidToDataset;
 
   // Determine if the save button should be enabled
-  const isSaveButtonDisabled = (starredCount === 0 && validVariationsCount === 0) || selectedDataset?.archived || isGenerating;
+  const isSaveButtonDisabled = (selectedCount === 0 && validVariationsCount === 0) || selectedDataset?.archived || isGenerating || isParaphrasing;
+
+  // Determine Clear button text and disabled state
+  const clearButtonText = selectedCount > 0
+    ? `Clear Selected (${selectedCount})`
+    : `Clear All (${totalVariationsCount})`;
+  const isClearButtonDisabled = totalVariationsCount === 0 || isGenerating || isParaphrasing;
 
   const templateOptions = templates.map(template => ({
     value: template.id,
@@ -540,12 +557,12 @@ const Generate = ({ context }) => {
           />
 
           {/* Unified Save Button */}
-          {(starredCount > 0 || validVariationsCount > 0) && (
+          {(selectedCount > 0 || validVariationsCount > 0) && (
              <div className="mt-4">
                <button
                  onClick={handleSaveClick}
                  className={`w-full py-2 px-4 text-white rounded-md transition-colors duration-200 ${ 
-                   starredCount > 0 
+                   selectedCount > 0 
                      ? 'bg-green-600 hover:bg-green-700' 
                      : 'bg-blue-600 hover:bg-blue-700'
                  } disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -555,6 +572,23 @@ const Generate = ({ context }) => {
                </button>
              </div>
            )}
+
+          {/* Clear Button - Changed to text button */}
+          <div className="mt-2 text-center"> {/* Center the text button */}
+            <button
+              onClick={handleClear}
+              className={`py-1 px-2 rounded-md transition-colors duration-200 text-sm ${ 
+                selectedCount > 0 
+                  ? 'text-yellow-600 hover:text-yellow-800 hover:bg-yellow-100' 
+                  : 'text-red-600 hover:text-red-800 hover:bg-red-100'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              disabled={isClearButtonDisabled}
+              title={selectedCount > 0 ? 'Deselect all currently selected variations' : 'Remove all variations from the list'}
+            >
+              {clearButtonText}
+            </button>
+          </div>
+
            </div>
          </div>
 
@@ -579,10 +613,10 @@ const Generate = ({ context }) => {
                   output={variation.output}
                   tool_calls={variation.tool_calls}
                   processed_prompt={variation.processed_prompt}
-                  isStarred={starredVariations.has(variation.id)}
+                  isSelected={selectedVariations.has(variation.id)} // Use selected state
                   isGenerating={variation.isGenerating || false}
                   error={variation.error || null}
-                  onStar={(output) => handleStar(variation.id, output)}
+                  onSelect={() => handleSelect(variation.id)} // Use select handler
                   onEdit={(output) => handleEdit(variation.id, output)}
                   onRegenerate={(instruction) => handleRegenerate(variation.id, instruction)}
                   onDismiss={() => handleDismiss(variation.id)}

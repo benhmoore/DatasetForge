@@ -4,13 +4,14 @@ import ToolCallEditor from './ToolCallEditor';
 import Icon from './Icons';
 
 const VariationCard = ({ 
+  id, // Added id prop
   variation, 
   output, 
-  onStar, 
+  onSelect, // Changed from onStar
   onEdit, 
   onRegenerate, 
   onDismiss, 
-  isStarred = false,
+  isSelected = false, // Changed from isStarred
   isGenerating = false,
   error = null,
   tool_calls = null,
@@ -261,11 +262,11 @@ const VariationCard = ({
     );
   }, []);
 
-  // Handler for star button
-  const handleStar = useCallback(() => {
-    if (isGenerating) return;
-    onStar(isEditing ? editedOutput : output);
-  }, [isGenerating, isEditing, editedOutput, output, onStar]);
+  // Handler for selection button/area
+  const handleSelect = useCallback(() => {
+    if (isGenerating || isEditing) return; // Prevent selection change during generation or editing
+    onSelect(id, isEditing ? editedOutput : output); // Pass id and current output
+  }, [isGenerating, isEditing, id, editedOutput, output, onSelect]);
 
   // Handler for regenerate button
   const handleRegenerate = useCallback(() => {
@@ -340,36 +341,49 @@ const VariationCard = ({
   return (
     <div 
       className={`p-4 bg-white rounded-lg border ${
-        isStarred 
-          ? 'border-primary-200 ring-1 ring-primary-500' 
+        isSelected 
+          ? 'border-primary-300 ring-2 ring-primary-200' // Style for selected
           : 'border-gray-200'
       } shadow-sm transition-all duration-200 hover:shadow-md ${
-        isStarred ? 'scale-[1.01]' : 'hover:scale-[1.01]'
-      } relative`}
+        isSelected ? 'scale-[1.01]' : 'hover:scale-[1.01]'
+      } relative cursor-pointer`} // Add cursor-pointer to indicate clickability
+      onClick={handleSelect} // Make the whole card clickable for selection
+      role="checkbox" // Role for accessibility
+      aria-checked={isSelected} // State for accessibility
+      tabIndex={0} // Make it focusable
+      onKeyDown={(e) => { // Allow selection with Space key
+        if (e.key === ' ') {
+          e.preventDefault();
+          handleSelect();
+        }
+      }}
     >
       <div className="flex justify-between items-center mb-2">
-        <h4 className="font-medium text-gray-900 truncate max-w-[75%]" title={variation}>{variation}</h4>
-        <div className="flex space-x-1">
-          <button
-            onClick={handleStar}
-            className={`p-1 transition-all duration-200 transform ${
-              isStarred 
-                ? 'text-yellow-500 scale-110' 
-                : 'text-gray-400 hover:text-yellow-500'
-            }`}
-            title={isStarred ? 'Unstar' : 'Star'}
-            aria-label={isStarred ? 'Unstar variation' : 'Star variation'}
-            aria-pressed={isStarred}
+        <h4 
+          className="font-medium text-gray-900 truncate max-w-[75%]" 
+          title={variation}
+          onClick={(e) => e.stopPropagation()} // Prevent title click from toggling selection
+        >
+          {variation}
+        </h4>
+        <div className="flex space-x-1 items-center" onClick={(e) => e.stopPropagation()} /* Prevent button clicks from toggling selection */>
+          {/* Selection Indicator - Made clickable */}
+          <button 
+            onClick={(e) => { 
+              e.stopPropagation(); // Prevent card click
+              handleSelect(); // Call the selection handler directly
+            }}
+            className={`flex items-center justify-center h-4 w-4 rounded border ${
+              isSelected ? 'bg-primary-500 border-primary-600' : 'border-gray-300 bg-white'
+            } transition-colors duration-200 mr-1 p-0 focus:outline-none focus:ring-1 focus:ring-primary-400`} // Added focus style
+            aria-label={isSelected ? 'Deselect variation' : 'Select variation'} // ARIA label
+            title={isSelected ? 'Deselect' : 'Select'} // Tooltip
           >
-            <Icon
-              name="star"
-              variant={isStarred ? 'solid' : 'outline'}
-              className="inline-block h-5 w-5"
-              aria-hidden="true"
-            />
+            {isSelected && <Icon name="check" className="h-3 w-3 text-white" />}
           </button>
+          {/* Regenerate Button */}
           <button
-            onClick={handleRegenerate}
+            onClick={(e) => { e.stopPropagation(); handleRegenerate(); }} // Stop propagation
             className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
             title="Regenerate"
             aria-label="Regenerate output"
@@ -381,8 +395,9 @@ const VariationCard = ({
               aria-hidden="true" 
             />
           </button>
+          {/* Dismiss Button */}
           <button
-            onClick={onDismiss}
+            onClick={(e) => { e.stopPropagation(); onDismiss(); }} // Stop propagation
             className="text-red-500 hover:text-red-700 p-1 transition-colors"
             title="Dismiss"
             aria-label="Dismiss variation"
@@ -397,32 +412,32 @@ const VariationCard = ({
       </div>
       
       {isEditing ? (
-        <div className="relative">
+        <div className="relative" onClick={(e) => e.stopPropagation()} /* Prevent clicks inside editor from toggling selection */>
           <textarea
             ref={textareaRef}
             value={editedOutput}
             onChange={handleOutputChange}
-            onBlur={saveEdit}
+            // Removed onBlur={saveEdit} - Save is now explicit via button
             className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200 scrollbar-thin scrollbar-thumb-gray-300"
             placeholder="Output"
             autoFocus
             style={{ height: textareaHeight, minHeight: '8rem' }}
           />
-          <div className="absolute bottom-4 right-4 flex space-x-1">
+          <div className="absolute bottom-2 right-2 flex space-x-1">
             <button
               onClick={() => {
-                setEditedOutput(output);
+                setEditedOutput(output); // Revert
                 setIsEditing(false);
               }}
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded"
-              title="Cancel"
+              title="Cancel Edit (Esc)"
             >
               Cancel
             </button>
             <button
               onClick={saveEdit}
               className="bg-primary-100 hover:bg-primary-200 text-primary-700 text-xs px-2 py-1 rounded"
-              title="Save"
+              title="Save Edit"
             >
               Save
             </button>
@@ -431,13 +446,13 @@ const VariationCard = ({
       ) : (
         <div
           ref={outputDisplayRef}
-          onClick={startEditing}
-          className="p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap transition-all duration-200 hover:border-gray-200 hover:bg-gray-75 cursor-pointer min-h-[5rem] max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300"
-          role="button"
+          onClick={(e) => { e.stopPropagation(); startEditing(e); }} // Stop propagation, allow editing on click
+          className="p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap transition-all duration-200 hover:border-gray-200 hover:bg-gray-75 cursor-text min-h-[5rem] max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300" // Changed cursor to text
+          role="button" // Keep role for semantics, though interaction changes
           aria-label="Edit output"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
+          tabIndex={0} // Keep focusable
+          onKeyDown={(e) => { // Allow editing with Enter/Space
+            if (!isEditing && (e.key === 'Enter' || e.key === ' ')) {
               e.preventDefault();
               startEditing(e);
             }
@@ -449,12 +464,12 @@ const VariationCard = ({
       )}
 
       {processed_prompt && (
-        <div className="mt-3 pt-3 border-t border-gray-100">
+        <div className="mt-3 pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()} /* Prevent clicks from toggling selection */>
           <button
             onClick={() => setShowPrompt(!showPrompt)}
             className="text-xs text-gray-500 hover:text-gray-700 font-medium flex items-center group"
             aria-expanded={showPrompt}
-            aria-controls="processed-prompt"
+            aria-controls={`processed-prompt-${id}`} // Unique ID for ARIA
           >
             <Icon
               name={showPrompt ? 'chevronUp' : 'chevronDown'}
@@ -465,7 +480,7 @@ const VariationCard = ({
           </button>
           {showPrompt && (
             <div 
-              id="processed-prompt"
+              id={`processed-prompt-${id}`} // Unique ID for ARIA
               className="mt-2 p-2 bg-gray-100 rounded border border-gray-200 text-xs whitespace-pre-wrap font-mono max-h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300"
             >
               {processed_prompt}
@@ -485,10 +500,10 @@ const VariationCard = ({
           }}
           role="dialog"
           aria-modal="true"
-          aria-labelledby="regenerate-modal-title"
+          aria-labelledby={`regenerate-modal-title-${id}`} // Unique ID
         >
           <div className="bg-white rounded-lg p-6 max-w-lg w-full shadow-xl animate-fadeIn" onClick={e => e.stopPropagation()}>
-            <h3 id="regenerate-modal-title" className="text-lg font-medium mb-4">Regenerate with Instructions</h3>
+            <h3 id={`regenerate-modal-title-${id}`} className="text-lg font-medium mb-4">Regenerate with Instructions</h3>
             <div className="mb-4">
               <input
                 ref={regenerateInputRef}
@@ -529,7 +544,10 @@ const VariationCard = ({
       <ToolCallEditor
         isOpen={isToolEditorOpen}
         toolCalls={tool_calls}
-        onChange={onToolCallsChange}
+        onChange={(newToolCalls) => {
+          onToolCallsChange(id, newToolCalls); // Pass id
+          setIsToolEditorOpen(false); // Close editor on change
+        }}
         onClose={() => setIsToolEditorOpen(false)}
       />
     </div>
