@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom'; // Import ReactDOM
 import { toast } from 'react-toastify';
 import PropTypes from 'prop-types';
 
@@ -29,7 +30,8 @@ const ToolCallEditor = ({ isOpen, toolCalls, onChange = () => {}, onClose }) => 
     return null;
   }
 
-  return (
+  // Wrap the modal JSX in ReactDOM.createPortal
+  return ReactDOM.createPortal(
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
       <div className="bg-white rounded-lg p-6 max-w-2xl w-full shadow-lg">
         <h3 className="text-lg font-medium mb-4">Edit Tool Calls</h3>
@@ -53,7 +55,8 @@ const ToolCallEditor = ({ isOpen, toolCalls, onChange = () => {}, onClose }) => 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body // Target the document body for the portal
   );
 };
 
