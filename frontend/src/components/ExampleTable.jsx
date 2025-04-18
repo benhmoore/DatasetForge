@@ -4,6 +4,7 @@ import api from '../api/apiClient';
 import ExampleDetailModal from './ExampleDetailModal';
 import ExportDialog from './ExportDialog';
 import ConfirmationModal from './ConfirmationModal'; // Import ConfirmationModal
+import Icon from './Icons';
 
 const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const [examples, setExamples] = useState([]);
@@ -472,22 +473,13 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
             onChange={(e) => {
               setSearchTerm(e.target.value);
             }}
-            onFocus={() => {
-              // Track focus for debugging
-              console.log("Search input focused");
-            }}
             ref={searchInputRef}
           />
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             {isSearching ? (
-              <svg className="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
+              <Icon name="spinner" className="animate-spin h-5 w-5 text-gray-400" />
             ) : (
-              <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-              </svg>
+              <Icon name="search" className="h-5 w-5 text-gray-400" />
             )}
           </div>
           {searchTerm && (
@@ -496,9 +488,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
               onClick={() => setSearchTerm('')}
               title="Clear search"
             >
-              <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-              </svg>
+              <Icon name="close" className="h-5 w-5 text-gray-400 hover:text-gray-600" />
             </button>
           )}
         </div>
@@ -512,17 +502,12 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
             >
               {isProcessing ? (
                 <>
-                  <svg className="animate-spin h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
+                  <Icon name="spinner" className="animate-spin h-4 w-4 mr-1" />
                   Processing...
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                  <Icon name="trash" className="w-4 h-4 mr-1" />
                   Delete Selected
                 </>
               )}
@@ -535,9 +520,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
             disabled={examples.length === 0}
           >
             <span className="flex items-center">
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
+              <Icon name="download" className="w-4 h-4 mr-1" />
               Export JSONL
             </span>
           </button>
@@ -548,9 +531,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
         <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
           {debouncedSearchTerm ? (
             <div className="py-8">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+              <Icon name="search" className="mx-auto h-12 w-12 text-gray-400" />
               <p className="mt-4 text-gray-500 text-lg">
                 No examples found matching "<span className="font-medium text-primary-600">{debouncedSearchTerm}</span>"
               </p>
@@ -563,9 +544,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
             </div>
           ) : (
             <div className="py-8">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
+              <Icon name="document" className="mx-auto h-12 w-12 text-gray-400" />
               <p className="mt-4 text-gray-500 text-lg">No examples found in this dataset</p>
               <p className="mt-2 text-gray-400">Create examples by using the generation feature</p>
             </div>
@@ -875,9 +854,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   className="px-3 py-1 rounded-l-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
                 >
                   <span className="flex items-center">
-                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                    </svg>
+                    <Icon name="chevronLeft" className="w-4 h-4 mr-1" />
                     Previous
                   </span>
                 </button>
@@ -893,9 +870,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                 >
                   <span className="flex items-center">
                     Next
-                    <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                    </svg>
+                    <Icon name="chevronRight" className="w-4 h-4 ml-1" />
                   </span>
                 </button>
               </nav>

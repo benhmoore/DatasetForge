@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import ExportTemplateManager from './ExportTemplateManager';
+import Icon from './Icons';
 
 const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
   const [templates, setTemplates] = useState([]);
@@ -132,8 +133,9 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
+      <div className="bg-white rounded-lg shadow-xl max-w-xl w-full flex flex-col max-h-[90vh]">
+        {/* Fixed Header */}
+        <div className="p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Export Dataset</h2>
           
           <div className="mb-4">
@@ -146,17 +148,14 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
                 className="text-primary-600 hover:text-primary-800 text-sm flex items-center"
                 title="Manage export templates"
               >
-                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+                <Icon name="cog" className="w-4 h-4 mr-1" />
                 Manage Templates
               </button>
             </div>
           </div>
           
-          {/* Quick Format Filter - Updated Styling */}
-          <div className="mb-6">
+          {/* Quick Format Filter */}
+          <div className="mb-2">
             <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Format:</label>
             <div className="flex flex-wrap gap-2">
               {filterOptions.map(option => (
@@ -174,7 +173,10 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
               ))}
             </div>
           </div>
-          
+        </div>
+        
+        {/* Scrollable Content Area */}
+        <div className="flex-1 overflow-y-auto p-6">
           {isLoading ? (
             <div className="flex justify-center items-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
@@ -263,41 +265,37 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
                   </div>
                 ))}
               </div>
-              
-              <div className="pt-4 border-t border-gray-200 mt-6 flex justify-end space-x-3">
-                <button
-                  type="button"
-                  className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-                  onClick={onClose}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="px-4 py-2 bg-primary-600 border border-transparent rounded-md text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                  onClick={handleExport}
-                  disabled={isExporting || !selectedTemplateId}
-                >
-                  {isExporting ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Exporting...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      Export
-                    </>
-                  )}
-                </button>
-              </div>
             </div>
           )}
+        </div>
+        
+        {/* Fixed Footer */}
+        <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+          <button
+            type="button"
+            className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="px-4 py-2 bg-primary-600 border border-transparent rounded-md text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            onClick={handleExport}
+            disabled={isExporting || !selectedTemplateId}
+          >
+            {isExporting ? (
+              <>
+                <Icon name="spinner" className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Icon name="download" className="w-4 h-4 mr-1" />
+                Export
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>

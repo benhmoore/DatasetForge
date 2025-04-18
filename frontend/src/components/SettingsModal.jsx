@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import ModelSelector from './ModelSelector'; // Import the new component
+import Icon from './Icons';
 
 const SettingsModal = ({ isOpen, onClose, onSave }) => {
   const [isLoading, setIsLoading] = useState(true); // Still needed for initial pref load
@@ -70,7 +71,7 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
             className="text-gray-500 hover:text-gray-700"
             onClick={onClose}
           >
-            ✕
+            <Icon name="close" className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 

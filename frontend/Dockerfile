@@ -8,6 +8,12 @@ COPY package.json package-lock.json ./
 # Install dependencies
 RUN npm ci
 
+# avoid host mounts clobbering dependencies
+VOLUME ["/app/node_modules"]
+
+# enable polling for file-watch inside Docker
+ENV CHOKIDAR_USEPOLLING=true
+
 # Copy the rest of the application
 COPY . .
 
