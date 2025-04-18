@@ -89,6 +89,65 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
       minute: '2-digit'
     }).format(date);
   }, []);
+  
+  // Save edited tool calls
+  const saveToolCalls = useCallback(async () => {
+    if (toolCallValidationError) {
+      toast.error(`Cannot save: ${toolCallValidationError}`);
+      return;
+    }
+    
+    try {
+      const parsed = JSON.parse(editedToolCalls);
+      
+      // Update the example with new tool calls
+      const updatedExample = {
+        ...editedExample,
+        tool_calls: parsed
+      };
+      
+      setIsSaving(true);
+      
+      try {
+        await api.updateExample(datasetId, example.id, updatedExample);
+        toast.success("Tool calls updated successfully");
+        
+        // Update local state
+        setEditedExample(updatedExample);
+        if (onExampleUpdated) {
+          onExampleUpdated(updatedExample);
+        }
+        
+        // Exit editing mode
+        setEditingToolCalls(false);
+      } catch (error) {
+        console.error("Failed to update tool calls:", error);
+        toast.error(error.message || "Failed to update tool calls");
+      } finally {
+        setIsSaving(false);
+      }
+    } catch (e) {
+      toast.error(`Failed to parse JSON: ${e.message}`);
+    }
+  }, [toolCallValidationError, editedToolCalls, editedExample, datasetId, example?.id, onExampleUpdated]);
+  
+  // Cancel tool call editing
+  const cancelToolCallsEdit = useCallback(() => {
+    setEditingToolCalls(false);
+    setEditedToolCalls('');
+    setToolCallValidationError(null);
+  }, []);
+  
+  // Format tool calls JSON
+  const formatToolCalls = useCallback(() => {
+    try {
+      const parsed = JSON.parse(editedToolCalls);
+      setEditedToolCalls(JSON.stringify(parsed, null, 2));
+      toast.success("JSON formatted successfully");
+    } catch (e) {
+      toast.error(`Cannot format invalid JSON: ${e.message}`);
+    }
+  }, [editedToolCalls]);
 
   // Initialize edited example when the modal opens or when example changes
   useEffect(() => {
