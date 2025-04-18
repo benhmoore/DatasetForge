@@ -248,8 +248,16 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             
             <div className="flex items-center space-x-1">
               {seedList.length > 1 && (
-                <div className="flex items-center justify-center mx-2">
-                  <div className="flex items-center space-x-1">
+                <div className="flex items-center justify-center mx-2 relative">
+                  {/* Left edge indicator when there are more seeds to the left */}
+                  {seedList.length > 5 && currentSeedIndex > 0 && (
+                    <div className="absolute left-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center z-20">
+                      <div className="w-0.5 h-full bg-gray-400"></div>
+                      <div className="absolute left-0.5 top-0 bottom-0 w-4 bg-gradient-to-r from-gray-100 to-transparent"></div>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center space-x-1 relative z-0 px-2">
                     {/* Always show exactly 5 indicators regardless of seed count */}
                     {Array.from({ length: 5 }, (_, i) => {
                       if (seedList.length <= 5) {
@@ -293,6 +301,14 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                       }
                     })}
                   </div>
+                  
+                  {/* Right edge indicator when there are more seeds to the right */}
+                  {seedList.length > 5 && currentSeedIndex < seedList.length - 1 && (
+                    <div className="absolute right-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center justify-end z-20">
+                      <div className="w-0.5 h-full bg-gray-400"></div>
+                      <div className="absolute right-0.5 top-0 bottom-0 w-4 bg-gradient-to-l from-gray-100 to-transparent"></div>
+                    </div>
+                  )}
                 </div>
               )}
               
