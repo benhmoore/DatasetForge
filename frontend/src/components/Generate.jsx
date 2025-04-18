@@ -143,11 +143,13 @@ const Generate = ({ context }) => {
     const signal = abortControllerRef.current.signal;
 
     const totalVariations = data.seeds.length * data.count;
+    const existingVariationsCount = variationsRef.current.length; // Get count before adding new ones
 
     const initialVariations = Array.from({ length: totalVariations }, (_, globalIndex) => {
       const seedIndex = Math.floor(globalIndex / data.count);
       const variationIndex = globalIndex % data.count;
       const seedData = data.seeds[seedIndex];
+      const uniqueId = `temp-${existingVariationsCount + globalIndex}-${Date.now()}`; // Ensure unique ID across generations
 
       return {
         variation: `Seed ${seedIndex + 1} / Variation ${variationIndex + 1}`,
@@ -159,11 +161,13 @@ const Generate = ({ context }) => {
         variation_index: variationIndex,
         isGenerating: true,
         error: null,
-        id: `temp-${seedIndex}-${variationIndex}-${Date.now()}`
+        id: uniqueId // Use the new unique ID
       };
     });
-    setVariations(initialVariations);
-    setStarredVariations(new Set());
+    // Append new variations instead of replacing
+    setVariations(prevVariations => [...prevVariations, ...initialVariations]);
+    // Do not clear starred variations from previous generations
+    // setStarredVariations(new Set()); 
 
     try {
       await api.generate(data, (result) => {
@@ -176,7 +180,7 @@ const Generate = ({ context }) => {
           const targetIndex = updated.findIndex(v =>
             v.seed_index === result.seed_index &&
             v.variation_index === result.variation_index &&
-            v.isGenerating
+            v.isGenerating && v.id.startsWith('temp-') // Ensure we update the correct placeholder
           );
 
           if (targetIndex !== -1) {
