@@ -4,7 +4,7 @@
 
 @layer components {
   .tooltip {
-    @apply relative cursor-pointer;
+    @apply relative cursor-pointer w-full;
   }
   
   .tooltip-text {

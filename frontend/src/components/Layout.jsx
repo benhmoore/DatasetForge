@@ -125,8 +125,8 @@ const Layout = () => {
       </header>
 
       {/* Main Content */}
-        <main className="flex-grow flex flex-col">
-          <div className="flex-grow mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
+        <main className="flex-grow flex flex-col w-full">
+          <div className="flex-grow w-full">
             <div className={`${activeTab === 'templates' ? 'h-full' : 'hidden'}`}>
           <TemplateBuilder context={outletContext} />
             </div>

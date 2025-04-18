@@ -201,6 +201,7 @@ async def call_ollama_generate(
     system_prompt: Optional[str],
     user_prompt: str,
     template_params: Optional[ModelParameters],  # Accept template params
+    template: Optional[Template],  # Accept template
     user_prefs: Dict[str, Any],  # Accept user prefs (containing default model params)
     is_tool_calling: bool = False,
     tools: Optional[List[Dict[str, Any]]] = None,
@@ -238,7 +239,36 @@ async def call_ollama_generate(
         payload["system"] = system_prompt
 
     if is_tool_calling and tools:
-        payload["tools"] = tools
+
+        # Normalize the tool definition format to ensure compatibility
+        normalized_tools = []
+        for tool in template.tool_definitions:
+            if "type" not in tool and "function" in tool:
+                normalized_tool = {"type": "function", "function": tool["function"]}
+            else:
+                normalized_tool = tool.copy()
+            if "function" in normalized_tool and "parameters" not in normalized_tool["function"]:
+                normalized_tool["function"]["parameters"] = {"type": "object", "properties": {}}
+            normalized_tools.append(normalized_tool)
+        
+        payload["tools"] = normalized_tools
+
+        # Convert normalized tools to a JSON string for the system prompt
+        tools_json_string = json.dumps(normalized_tools, indent=2)
+
+        # Ensure system prompt includes tool definitions and instructions
+        tool_instruction_header = "\n\nAVAILABLE TOOLS:"
+        tool_instruction_footer = "\n\nIMPORTANT: You must use the tools provided when appropriate. When using tools, format your response using a JSON object with 'function_call' containing 'name' and 'arguments'. For example: {\"function_call\": {\"name\": \"ls\", \"arguments\": \"{}\"}}. Do not explain how you would use the tool, actually call the tool."
+
+        # Construct the full tool instruction block
+        full_tool_instructions = f"{tool_instruction_header}\n{tools_json_string}{tool_instruction_footer}"
+
+        # Add the full instructions to the system prompt if not already present
+        # (Check specifically for the header to avoid duplicate additions)
+        if tool_instruction_header not in system_prompt:
+                system_prompt += full_tool_instructions
+        payload["system"] = system_prompt # Assign the final system prompt to the payload
+        
 
     api_url = f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate"
     logger.debug(f"Ollama Request Payload: {json.dumps(payload, indent=2)}")
@@ -411,6 +441,7 @@ async def generate_outputs(
                         model=generation_model,
                         system_prompt=system_prompt,
                         user_prompt=user_prompt,
+                        template=template,
                         template_params=template_model_params,
                         user_prefs={},  # Placeholder for user preferences
                         is_tool_calling=template.is_tool_calling_template,
@@ -419,8 +450,27 @@ async def generate_outputs(
 
                     output = ollama_response.get("response", "").strip()
                     tool_calls = None
-                    if template.is_tool_calling_template and ollama_response.get("tool_calls"):
-                        tool_calls = ollama_response["tool_calls"]
+                    
+                    # --- Tool Call Handling Logic ---
+                    if template.is_tool_calling_template:
+                        # 1. Check for structured tool calls from Ollama response first
+                        structured_tool_calls = ollama_response.get("tool_calls")
+                        if structured_tool_calls and isinstance(structured_tool_calls, list) and len(structured_tool_calls) > 0:
+                            logger.info(f"Using structured tool_calls directly from Ollama response for {variation_label}")
+                            # Ensure the structure matches frontend expectations if necessary
+                            # (Assuming Ollama returns the correct [{ "type": "function", "function": {...} }] structure)
+                            tool_calls = structured_tool_calls
+                        else:
+                            # 2. If no structured calls, try extracting from the text response
+                            logger.info(f"No structured tool_calls found in Ollama response for {variation_label}. Attempting to extract from text.")
+                            extracted_calls = extract_tool_calls_from_text(output)
+                            if extracted_calls:
+                                logger.info(f"Successfully extracted tool calls from text response for {variation_label}")
+                                tool_calls = extracted_calls
+                            else:
+                                logger.warning(f"Could not extract tool calls from text response for {variation_label}")
+                    # --- End Tool Call Handling Logic ---
+
 
                     result = GenerationResult(
                         seed_index=seed_index,

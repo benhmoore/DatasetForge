@@ -519,7 +519,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   };
 
   return (
-    <div className="grid grid-cols-4 gap-4 h-full">
+    <div className="grid grid-cols-4 gap-4 h-full m-4">
       {/* Template Sidebar */}
       <div className="col-span-1 bg-gray-50 p-4 rounded-lg border border-gray-200">
         <div className="flex justify-between items-center mb-4">

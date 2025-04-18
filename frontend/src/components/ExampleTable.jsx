@@ -5,6 +5,7 @@ import ExampleDetailModal from './ExampleDetailModal';
 import ExportDialog from './ExportDialog';
 import ConfirmationModal from './ConfirmationModal'; // Import ConfirmationModal
 import Icon from './Icons';
+import ExampleTableHeader from './ExampleTableHeader';
 
 const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const [examples, setExamples] = useState([]);
@@ -29,11 +30,43 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   // For export dialog
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
   
-  // For search
-  const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
+  // For search - useRef to maintain stable references
+  const searchStateRef = useRef({
+    searchTerm: '',
+    debouncedSearchTerm: '',
+    isSearching: false,
+    timer: null
+  });
   const searchInputRef = useRef(null);
+  
+  // Create memoized accessor functions that don't change on re-renders
+  const getSearchTerm = useCallback(() => searchStateRef.current.searchTerm, []);
+  const getDebouncedSearchTerm = useCallback(() => searchStateRef.current.debouncedSearchTerm, []);
+  const getIsSearching = useCallback(() => searchStateRef.current.isSearching, []);
+  
+  // Create memoized setter functions that don't change on re-renders
+  const setSearchTerm = useCallback((value) => {
+    searchStateRef.current.searchTerm = value;
+    // Force re-render of only the header component
+    if (headerComponentRef.current?.forceUpdate) {
+      headerComponentRef.current.forceUpdate();
+    }
+  }, []);
+  
+  const setDebouncedSearchTerm = useCallback((value) => {
+    searchStateRef.current.debouncedSearchTerm = value;
+  }, []);
+  
+  const setIsSearching = useCallback((value) => {
+    searchStateRef.current.isSearching = value;
+    // Force re-render of only the header component
+    if (headerComponentRef.current?.forceUpdate) {
+      headerComponentRef.current.forceUpdate();
+    }
+  }, []);
+  
+  // Ref to access header component
+  const headerComponentRef = useRef(null);
   
   // For sorting
   const [sortField, setSortField] = useState(null);
@@ -61,7 +94,8 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     }
     
     try {
-      const searchParam = debouncedSearchTerm.trim() || null;
+      const debouncedTerm = getDebouncedSearchTerm();
+      const searchParam = debouncedTerm.trim() || null;
       if (searchParam) {
         setIsSearching(true);
       }
@@ -100,31 +134,72 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     fetchExamples();
     // Clear selections when changing pages or refreshing
     setSelectedExamples(new Set());
-  }, [datasetId, page, refreshTrigger, debouncedSearchTerm, sortField, sortDirection]);
+  }, [datasetId, page, refreshTrigger, sortField, sortDirection]);
   
-  // Debounce search term to avoid excessive API calls
+  // Separate effect for debounced search term changes to prevent table re-renders
   useEffect(() => {
-    // Record current focus state before the debounce timeout
-    const isInputFocused = document.activeElement === searchInputRef.current;
+    const debouncedTerm = getDebouncedSearchTerm();
+    if (debouncedTerm !== '') {
+      fetchExamples();
+    }
+  }, [getDebouncedSearchTerm]);
+  
+  // Custom debounce implementation that doesn't rely on re-renders
+  useEffect(() => {
+    // Setup debounce timer to update search
+    const handleSearchDebounce = () => {
+      const currentSearchTerm = getSearchTerm();
+      const currentDebouncedTerm = getDebouncedSearchTerm();
+      
+      // Record current focus state before the debounce timeout
+      const isInputFocused = document.activeElement === searchInputRef.current;
+      
+      // Create a debounce timer
+      const timer = setTimeout(() => {
+        // Only update if the search term actually changed
+        if (currentSearchTerm !== currentDebouncedTerm) {
+          setDebouncedSearchTerm(currentSearchTerm);
+          // Reset to page 1 when search changes
+          setPage(1);
+        }
+        
+        // If input was focused before the timeout, restore focus after state updates
+        if (isInputFocused && searchInputRef.current) {
+          requestAnimationFrame(() => {
+            searchInputRef.current?.focus();
+          });
+        }
+      }, 500); // 500ms delay
+      
+      return timer;
+    };
     
-    const timer = setTimeout(() => {
-      // Only update and reset page if the search term actually changed
-      if (searchTerm !== debouncedSearchTerm) {
-        setDebouncedSearchTerm(searchTerm);
-        // Reset to page 1 when search changes
-        setPage(1); 
+    // Start a listener for search input changes
+    const searchListener = () => {
+      // Clear previous timer if exists
+      if (searchStateRef.current.timer) {
+        clearTimeout(searchStateRef.current.timer);
       }
       
-      // If input was focused before the timeout, restore focus after state updates
-      if (isInputFocused && searchInputRef.current) {
-        requestAnimationFrame(() => {
-          searchInputRef.current?.focus();
-        });
-      }
-    }, 500); // 500ms delay
+      // Set new timer
+      searchStateRef.current.timer = handleSearchDebounce();
+    };
     
-    return () => clearTimeout(timer);
-  }, [searchTerm, debouncedSearchTerm]); // Update dependencies: only run when searchTerm changes, compare against debouncedSearchTerm
+    // Add event listener to the search input
+    if (searchInputRef.current) {
+      searchInputRef.current.addEventListener('input', searchListener);
+    }
+    
+    // Cleanup function
+    return () => {
+      if (searchInputRef.current) {
+        searchInputRef.current.removeEventListener('input', searchListener);
+      }
+      if (searchStateRef.current.timer) {
+        clearTimeout(searchStateRef.current.timer);
+      }
+    };
+  }, []); // Only run once on component mount
   
   // Handle pagination
   const handlePageChange = (newPage) => {
@@ -391,12 +466,12 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     }
   }, [examples, slotKeys, handleSaveEdit, handleCancelEdit, handleStartEdit]);
   
-  // Enhanced search with improved debounce and accessibility
+  // Enhanced search function that's memoized and doesn't trigger re-renders
   const optimizedSearchDebounce = useCallback((searchValue) => {
     setSearchTerm(searchValue);
     // Visual feedback that search is happening
     setIsSearching(true);
-  }, []);
+  }, [setSearchTerm, setIsSearching]);
   
   // Keyboard shortcut for search focus
   useEffect(() => {
@@ -410,12 +485,12 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     
     window.addEventListener('keydown', handleSearchShortcut);
     return () => window.removeEventListener('keydown', handleSearchShortcut);
-  }, [searchInputRef]);
+  }, []);
 
   // If no dataset is selected
   if (!datasetId) {
     return (
-      <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
+      <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full mx-4 sm:mx-6 lg:mx-8">
         <p className="text-gray-500">Please select a dataset to view examples.</p>
       </div>
     );
@@ -424,8 +499,8 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   // Loading state
   if (isLoading && page === 1) {
     return (
-      <div className="p-4">
-        <div className="animate-pulse">
+      <div className="p-4 w-full mx-4 sm:mx-6 lg:mx-8">
+        <div className="animate-pulse w-full">
           <div className="flex justify-between items-center mb-4">
             <div className="h-6 bg-gray-200 rounded w-1/4"></div>
             <div className="h-8 bg-gray-200 rounded w-24"></div>
@@ -452,90 +527,28 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   }
   
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full">
       {/* Header with actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-        <div className="flex items-center gap-2">
-          <h3 className="text-lg font-medium">Examples</h3>
-          
-          {selectedExamples.size > 0 && (
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
-              {selectedExamples.size} selected
-            </span>
-          )}
-        </div>
-        
-        {/* Search */}
-        <div className="relative w-full md:w-auto">
-          <input
-            type="text"
-            className="w-full md:w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            placeholder="Search examples..."
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-            }}
-            ref={searchInputRef}
-          />
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            {isSearching ? (
-              <Icon name="spinner" className="animate-spin h-5 w-5 text-gray-400" />
-            ) : (
-              <Icon name="search" className="h-5 w-5 text-gray-400" />
-            )}
-          </div>
-          {searchTerm && (
-            <button 
-              className="absolute inset-y-0 right-0 pr-3 flex items-center"
-              onClick={() => setSearchTerm('')}
-              title="Clear search"
-            >
-              <Icon name="close" className="h-5 w-5 text-gray-400 hover:text-gray-600" />
-            </button>
-          )}
-        </div>
-        
-        <div className="flex space-x-2">
-          {selectedExamples.size > 0 && (
-            <button
-              onClick={handleDeleteSelected} // Changed to open modal
-              className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm transition-all duration-200 transform hover:shadow active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <Icon name="spinner" className="animate-spin h-4 w-4 mr-1" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Icon name="trash" className="w-4 h-4 mr-1" />
-                  Delete Selected
-                </>
-              )}
-            </button>
-          )}
-          
-          <button
-            onClick={handleExport}
-            className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm transition-all duration-200 transform hover:shadow active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            disabled={examples.length === 0}
-          >
-            <span className="flex items-center">
-              <Icon name="download" className="w-4 h-4 mr-1" />
-              Export JSONL
-            </span>
-          </button>
-        </div>
-      </div>
+      <ExampleTableHeader 
+        ref={headerComponentRef}
+        selectedExamples={selectedExamples}
+        handleDeleteSelected={handleDeleteSelected}
+        handleExport={handleExport}
+        getSearchTerm={getSearchTerm}
+        setSearchTerm={setSearchTerm}
+        getIsSearching={getIsSearching}
+        isProcessing={isProcessing}
+        hasExamples={examples.length > 0}
+        searchInputRef={searchInputRef}
+      />
       
       {examples.length === 0 ? (
-        <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
-          {debouncedSearchTerm ? (
+        <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full mx-4 sm:mx-6 lg:mx-8">
+          {getDebouncedSearchTerm() ? (
             <div className="py-8">
               <Icon name="search" className="mx-auto h-12 w-12 text-gray-400" />
               <p className="mt-4 text-gray-500 text-lg">
-                No examples found matching "<span className="font-medium text-primary-600">{debouncedSearchTerm}</span>"
+                No examples found matching "<span className="font-medium text-primary-600">{getDebouncedSearchTerm()}</span>"
               </p>
               <button 
                 className="mt-3 px-4 py-2 text-sm font-medium text-primary-600 hover:text-primary-800 hover:underline focus:outline-none focus:ring-2 focus:ring-primary-500"
@@ -555,12 +568,12 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       ) : (
         <>
           {/* Table */}
-          <div className="overflow-x-auto border border-gray-200 rounded-lg shadow-sm hover:shadow transition-shadow duration-300">
-            <table className="min-w-full divide-y divide-gray-200">
+          <div className="overflow-x-auto border border-gray-200 shadow-sm hover:shadow transition-shadow duration-300 w-full max-w-full">
+            <table className="w-full table-fixed divide-y divide-gray-200 border-collapse">
               <thead className="bg-gray-50">
                 <tr>
                   {/* Selection checkbox */}
-                  <th className="px-2 py-2 text-center"> {/* Reduced padding */}
+                  <th className="px-2 py-2 text-center w-10"> {/* Fixed width */}
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
@@ -570,7 +583,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   </th>
                   {/* Add Example ID Header */}
                   <th 
-                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
+                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer w-20" /* Fixed width */
                     onClick={() => handleSort('id')}
                   >
                     ID
@@ -581,7 +594,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     )}
                   </th>
                   <th 
-                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
+                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer w-1/6" /* Proportional width */
                     onClick={() => handleSort('system_prompt')}
                   >
                     System Prompt
@@ -596,7 +609,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   {slotKeys.map(slot => (
                     <th 
                       key={slot} 
-                      className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
+                      className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer w-1/12" /* Fixed proportion */
                       onClick={() => handleSort(`slot:${slot}`)}
                     >
                       {slot}
@@ -609,7 +622,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   ))}
                   
                   <th 
-                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
+                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer w-1/4" /* Proportional width */
                     onClick={() => handleSort('user_prompt')}
                   >
                     User Prompt
@@ -621,7 +634,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   </th>
 
                   <th 
-                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
+                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer w-1/4" /* Proportional width */
                     onClick={() => handleSort('output')}
                   >
                     Output
@@ -634,7 +647,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   
                   {/* Add Tool Calls column if any examples have tool calls */}
                   {examples.some(ex => ex.tool_calls && ex.tool_calls.length > 0) && (
-                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"> {/* Reduced padding */}
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6"> {/* Fixed proportion */}
                       Tool Calls
                     </th>
                   )}
@@ -666,7 +679,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     </td>
                     
                     {/* System Prompt (showing masked version if available) */}
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs"> {/* Reduced padding */}
+                    <td className="px-3 py-2 text-sm text-gray-900 truncate"> {/* Allow text to wrap */}
                       {editingCell && editingCell.exampleId === example.id && editingCell.field === 'system_prompt' ? (
                         <div className="flex items-center">
                           <textarea
@@ -748,7 +761,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     {slotKeys.map(slot => (
                       <td 
                         key={slot} 
-                        className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs" /* Reduced padding */
+                        className="px-3 py-2 text-sm text-gray-900 truncate" /* Allow text to wrap */
                       >
                         {editingCell && editingCell.exampleId === example.id && editingCell.field === `slot:${slot}` ? (
                           <div className="flex items-center">
@@ -811,7 +824,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     ))}
                     
                     {/* User Prompt (showing masked version if available) */}
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs"> {/* Reduced padding */}
+                    <td className="px-3 py-2 text-sm text-gray-900 truncate"> {/* Allow text to wrap */}
                       {editingCell && editingCell.exampleId === example.id && editingCell.field === 'user_prompt' ? (
                         <div className="flex items-center">
                           <textarea
@@ -890,7 +903,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     </td>
                     
                     {/* Output */}
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs"> {/* Reduced padding */}
+                    <td className="px-3 py-2 text-sm text-gray-900 truncate"> {/* Allow text to wrap */}
                       {editingCell && editingCell.exampleId === example.id && editingCell.field === 'output' ? (
                         <div className="flex items-center">
                           <textarea
@@ -952,7 +965,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     
                     {/* Tool Calls column */}
                     {examples.some(ex => ex.tool_calls && ex.tool_calls.length > 0) && (
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900"> {/* Reduced padding */}
+                      <td className="px-3 py-2 text-sm text-gray-900"> {/* Allow text to wrap */}
                         {renderToolCalls(example.tool_calls)}
                       </td>
                     )}
@@ -964,7 +977,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
           
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex justify-center mt-4">
+            <div className="flex justify-center mt-4 px-4">
               <nav className="inline-flex rounded-md shadow">
                 <button
                   onClick={() => handlePageChange(page - 1)}

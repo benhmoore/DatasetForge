@@ -672,7 +672,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
           <div className="flex items-center justify-between p-2 bg-gray-100 rounded-md">
             <div className="flex items-center">
               <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                Seed {currentSeedIndex + 1} of {seedList.length}
+                {currentSeedIndex + 1} of {seedList.length}
               </span>
               <button
                 type="button"

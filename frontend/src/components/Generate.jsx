@@ -444,10 +444,10 @@ const Generate = ({ context }) => {
   }));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 w-full">
       <div className="grid grid-cols-1 md:grid-cols-[500px_1fr] gap-6">
         <div className="space-y-4">
-          <div>
+          <div className="pl-4 pt-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Select Template
             </label>
@@ -461,6 +461,7 @@ const Generate = ({ context }) => {
             />
           </div>
 
+          <div className="pl-4">
           <SeedForm
             template={selectedTemplate}
             selectedDataset={selectedDataset} // Pass selectedDataset
@@ -482,9 +483,10 @@ const Generate = ({ context }) => {
               </button>
             </div>
           )}
+          </div>
         </div>
 
-        <div className="px-4">
+        <div className="px-4 pt-4">
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
 
           {variations.length === 0 && !isGenerating ? (
@@ -521,12 +523,14 @@ const Generate = ({ context }) => {
       </div>
 
       {selectedDataset && (
-        <div className="border-t pt-6">
-          <ExampleTable 
-            datasetId={selectedDataset.id}
-            datasetName={selectedDataset.name}
-            refreshTrigger={refreshExamplesTrigger} 
-          />
+        <div className="border-t pt-6 w-full">
+          <div className="w-full"> {/* Negative margin to expand full width */}
+            <ExampleTable 
+              datasetId={selectedDataset.id}
+              datasetName={selectedDataset.name}
+              refreshTrigger={refreshExamplesTrigger} 
+            />
+          </div>
         </div>
       )}
 

@@ -327,7 +327,7 @@ const VariationCard = ({
             autoFocus
             style={{ height: textareaHeight, minHeight: '8rem' }}
           />
-          <div className="absolute bottom-2 right-2 flex space-x-1">
+          <div className="absolute bottom-4 right-4 flex space-x-1">
             <button
               onClick={() => {
                 setEditedOutput(output);
