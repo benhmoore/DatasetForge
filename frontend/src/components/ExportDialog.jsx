@@ -158,19 +158,30 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
           <div className="mb-2">
             <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Format:</label>
             <div className="flex flex-wrap gap-2">
-              {filterOptions.map(option => (
-                <button
-                  key={option.value}
-                  onClick={() => setFormatFilter(option.value)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150 border ${
-                    formatFilter === option.value 
-                      ? `bg-${option.color}-600 text-white border-${option.color}-600 shadow-sm` 
-                      : `bg-white text-${option.color}-700 border-gray-300 hover:bg-${option.color}-50 hover:border-${option.color}-400`
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
+              {filterOptions.map(option => {
+                // Explicitly define background and text colors for each state
+                const selectedClasses = {
+                  all: 'bg-gray-600 text-white border-gray-600',
+                  mlx: 'bg-purple-600 text-white border-purple-600',
+                  openai: 'bg-green-600 text-white border-green-600',
+                  llama: 'bg-yellow-600 text-white border-yellow-600',
+                  tool: 'bg-indigo-600 text-white border-indigo-600'
+                };
+                
+                return (
+                  <button
+                    key={option.value}
+                    onClick={() => setFormatFilter(option.value)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150 border ${
+                      formatFilter === option.value 
+                        ? selectedClasses[option.value] + ' shadow-sm'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
