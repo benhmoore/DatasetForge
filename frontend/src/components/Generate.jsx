@@ -29,6 +29,10 @@ const Generate = ({ context }) => {
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
 
+  // Calculate counts for the dynamic save button
+  const starredCount = starredVariations.size;
+  const validVariationsCount = variations.filter(v => !v.isGenerating && !v.error).length;
+
   useEffect(() => {
     variationsRef.current = variations;
   }, [variations]);
@@ -403,6 +407,55 @@ const Generate = ({ context }) => {
     }
   };
 
+  // New function to save all valid variations
+  const handleSaveAllValidToDataset = async () => {
+    if (!selectedDataset) {
+      toast.warning('Please select a dataset first');
+      return;
+    }
+
+    if (!selectedTemplate) {
+      toast.warning('Cannot save: Template not selected.');
+      return;
+    }
+
+    const validVariations = variationsRef.current.filter(v => !v.isGenerating && !v.error);
+
+    if (validVariations.length === 0) {
+      toast.warning('No valid variations to save.');
+      return;
+    }
+
+    const examplesToSave = validVariations.map(variation => {
+      let slotData = variation.slots || {};
+      return {
+        system_prompt: selectedTemplate.system_prompt || "",
+        user_prompt: variation.processed_prompt || "",
+        system_prompt_mask: selectedTemplate.system_prompt_mask || null,
+        user_prompt_mask: selectedTemplate.user_prompt_mask || null,
+        slots: slotData,
+        output: variation.output,
+        tool_calls: variation.tool_calls || null
+      };
+    });
+
+    try {
+      await api.saveExamples(selectedDataset.id, examplesToSave);
+      toast.success(`${examplesToSave.length} valid example(s) saved to ${selectedDataset.name}`);
+
+      const savedIds = new Set(validVariations.map(v => v.id));
+      setVariations(prevVariations =>
+        prevVariations.filter(v => !savedIds.has(v.id))
+      );
+      // Clear starred variations as well, since the items are removed
+      setStarredVariations(new Set()); 
+      setRefreshExamplesTrigger(prev => prev + 1);
+    } catch (error) {
+      console.error('Failed to save all valid examples:', error);
+      toast.error(`Failed to save examples: ${error.response?.data?.detail || error.message}`);
+    }
+  };
+
   const handleDismiss = (id) => {
     setVariations(prevVariations => prevVariations.filter(v => v.id !== id));
     setStarredVariations(prevStarred => {
@@ -438,6 +491,16 @@ const Generate = ({ context }) => {
     });
   };
 
+  // Determine button text and action based on starred variations
+  const saveButtonText = starredCount > 0
+    ? `Save ${starredCount} Starred to Dataset`
+    : `Save All ${validVariationsCount} Valid to Dataset`;
+
+  const handleSaveClick = starredCount > 0 ? handleSaveToDataset : handleSaveAllValidToDataset;
+
+  // Determine if the save button should be enabled
+  const isSaveButtonDisabled = (starredCount === 0 && validVariationsCount === 0) || selectedDataset?.archived || isGenerating;
+
   const templateOptions = templates.map(template => ({
     value: template.id,
     label: template.name
@@ -472,19 +535,24 @@ const Generate = ({ context }) => {
             setIsParaphrasing={setIsParaphrasing} // Pass paraphrasing state setter
           />
 
-          {variations.length > 0 && starredVariations.size > 0 && (
-            <div className="mt-4">
-              <button
-                onClick={handleSaveToDataset}
-                className="w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
-                disabled={starredVariations.size === 0 || selectedDataset?.archived} // Disable if archived
-              >
-                Save {starredVariations.size} to Dataset
-              </button>
-            </div>
-          )}
-          </div>
-        </div>
+          {/* Unified Save Button */}
+          {(starredCount > 0 || validVariationsCount > 0) && (
+             <div className="mt-4">
+               <button
+                 onClick={handleSaveClick}
+                 className={`w-full py-2 px-4 text-white rounded-md transition-colors duration-200 ${ 
+                   starredCount > 0 
+                     ? 'bg-green-600 hover:bg-green-700' 
+                     : 'bg-blue-600 hover:bg-blue-700'
+                 } disabled:opacity-50 disabled:cursor-not-allowed`}
+                 disabled={isSaveButtonDisabled}
+               >
+                 {saveButtonText}
+               </button>
+             </div>
+           )}
+           </div>
+         </div>
 
         <div className="px-4 pt-4">
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
