@@ -352,6 +352,10 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
     setNameError(false); // Reset validation
     setNewToolNameError(false);
     setNewToolDescriptionError(false);
+    // Reset the "Add New Tool" form fields
+    setNewToolName('');
+    setNewToolDescription('');
+    setNewToolSchema({ type: 'object', properties: {}, required: [] });
 
     // Close the modal
     setIsModalOpen(false);
@@ -634,106 +638,113 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               />
             </div>
 
-            {/* Tool Definitions Section */}
-            <div className={`space-y-4 transition-opacity duration-300 ${!isToolCallingTemplate || isLoading || isSaving ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-              <h3 className="text-md font-semibold text-gray-700 pt-2 border-t border-gray-200">Tool Definitions</h3>
+            {/* Collapsible Tool Definitions Section */}
+            <div
+              className={`overflow-hidden transition-all duration-500 ease-in-out ${
+                isToolCallingTemplate ? 'max-h-[1000px] opacity-100 pt-4' : 'max-h-0 opacity-0 pt-0' // Adjust max-h as needed
+              }`}
+              style={{ borderTop: isToolCallingTemplate ? '1px solid #e5e7eb' : 'none' }} // Conditional top border
+            >
+              <div className={`space-y-4 ${isLoading || isSaving ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                <h3 className="text-md font-semibold text-gray-700">Tool Definitions</h3>
 
-              {toolDefinitions.length === 0 && isToolCallingTemplate && (
-                <p className="text-sm text-gray-500 italic">No tools defined yet. Add one below.</p>
-              )}
-              <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-                {toolDefinitions.map((tool, index) => (
-                  <div key={tool.id || index} className="p-3 bg-gray-50 rounded border border-gray-200 flex justify-between items-start shadow-sm">
-                    <div className="flex-1 mr-2">
-                      <div className="font-medium text-gray-800">{tool.name}</div>
-                      <div className="text-sm text-gray-600 mt-1">{tool.description}</div>
-                      <details className="mt-2 text-xs">
-                        <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Parameters Schema</summary>
-                        <pre className="mt-1 p-2 bg-gray-100 rounded text-gray-700 overflow-x-auto">
-                          {JSON.stringify(tool.parameters || {}, null, 2)}
-                        </pre>
-                      </details>
+                {toolDefinitions.length === 0 && isToolCallingTemplate && (
+                  <p className="text-sm text-gray-500 italic">No tools defined yet. Add one below.</p>
+                )}
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                  {toolDefinitions.map((tool, index) => (
+                    <div key={tool.id || index} className="p-3 bg-gray-50 rounded border border-gray-200 flex justify-between items-start shadow-sm">
+                      <div className="flex-1 mr-2">
+                        <div className="font-medium text-gray-800">{tool.name}</div>
+                        <div className="text-sm text-gray-600 mt-1">{tool.description}</div>
+                        <details className="mt-2 text-xs">
+                          <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Parameters Schema</summary>
+                          <pre className="mt-1 p-2 bg-gray-100 rounded text-gray-700 overflow-x-auto">
+                            {JSON.stringify(tool.parameters || {}, null, 2)}
+                          </pre>
+                        </details>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveToolDefinition(index)}
+                        className="text-red-500 hover:text-red-700 text-xl font-light p-1 disabled:opacity-50"
+                        title="Remove tool"
+                        disabled={!isToolCallingTemplate || isLoading || isSaving}
+                      >
+                        &times;
+                      </button>
                     </div>
+                  ))}
+                </div>
+
+                {/* Add New Tool Section - Wrapped in a bordered container */}
+                <div className="pt-4 border-t border-gray-200"> {/* Existing top border */}
+                  <div className="p-4 border border-gray-200 rounded-md bg-white shadow-sm"> {/* New container */}
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Add New Tool</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Tool Name <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g., getWeather"
+                          value={newToolName}
+                          onChange={(e) => {
+                            setNewToolName(e.target.value);
+                            if (e.target.value.trim()) setNewToolNameError(false); // Clear error on change
+                          }}
+                          className={`w-full p-2 border rounded-md text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
+                            newToolNameError ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                          }`}
+                          disabled={!isToolCallingTemplate || isLoading || isSaving}
+                          required
+                          aria-invalid={newToolNameError}
+                          aria-describedby={newToolNameError ? 'new-tool-name-error' : undefined}
+                        />
+                        {newToolNameError && (
+                          <p id="new-tool-name-error" className="text-xs text-red-500 mt-1 font-medium">
+                            Tool name is required.
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Tool Description <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g., Gets the current weather for a location"
+                          value={newToolDescription}
+                          onChange={(e) => {
+                            setNewToolDescription(e.target.value);
+                            if (e.target.value.trim()) setNewToolDescriptionError(false); // Clear error on change
+                          }}
+                          className={`w-full p-2 border rounded-md text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
+                            newToolDescriptionError ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                          }`}
+                          disabled={!isToolCallingTemplate || isLoading || isSaving}
+                          required
+                          aria-invalid={newToolDescriptionError}
+                          aria-describedby={newToolDescriptionError ? 'new-tool-desc-error' : undefined}
+                        />
+                        {newToolDescriptionError && (
+                          <p id="new-tool-desc-error" className="text-xs text-red-500 mt-1 font-medium">
+                            Tool description is required.
+                          </p>
+                        )}
+                      </div>
+                      <ToolParameterSchemaEditor
+                        value={newToolSchema}
+                        onChange={setNewToolSchema}
+                        disabled={!isToolCallingTemplate || isLoading || isSaving}
+                      />
+                    </div>
+                    {/* Horizontal border to separate from the button */}
+                    <div className="border-t border-gray-200 mt-4 pt-3"></div>
                     <button
-                      onClick={() => handleRemoveToolDefinition(index)}
-                      className="text-red-500 hover:text-red-700 text-xl font-light p-1 disabled:opacity-50"
-                      title="Remove tool"
+                      onClick={handleAddToolDefinition}
+                      className="px-4 mt-1 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm disabled:opacity-50"
                       disabled={!isToolCallingTemplate || isLoading || isSaving}
                     >
-                      &times;
+                      Save Tool Definition
                     </button>
                   </div>
-                ))}
-              </div>
-
-              {/* Add New Tool Section - Wrapped in a bordered container */}
-              <div className="pt-4 border-t border-gray-200"> {/* Existing top border */}
-                <div className="p-4 border border-gray-200 rounded-md bg-white shadow-sm"> {/* New container */}
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Add New Tool</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Tool Name <span className="text-red-500">*</span></label>
-                      <input
-                        type="text"
-                        placeholder="e.g., getWeather"
-                        value={newToolName}
-                        onChange={(e) => {
-                          setNewToolName(e.target.value);
-                          if (e.target.value.trim()) setNewToolNameError(false); // Clear error on change
-                        }}
-                        className={`w-full p-2 border rounded-md text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
-                          newToolNameError ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                        }`}
-                        disabled={!isToolCallingTemplate || isLoading || isSaving}
-                        required
-                        aria-invalid={newToolNameError}
-                        aria-describedby={newToolNameError ? 'new-tool-name-error' : undefined}
-                      />
-                      {newToolNameError && (
-                        <p id="new-tool-name-error" className="text-xs text-red-500 mt-1 font-medium">
-                          Tool name is required.
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Tool Description <span className="text-red-500">*</span></label>
-                      <input
-                        type="text"
-                        placeholder="e.g., Gets the current weather for a location"
-                        value={newToolDescription}
-                        onChange={(e) => {
-                          setNewToolDescription(e.target.value);
-                          if (e.target.value.trim()) setNewToolDescriptionError(false); // Clear error on change
-                        }}
-                        className={`w-full p-2 border rounded-md text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
-                          newToolDescriptionError ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                        }`}
-                        disabled={!isToolCallingTemplate || isLoading || isSaving}
-                        required
-                        aria-invalid={newToolDescriptionError}
-                        aria-describedby={newToolDescriptionError ? 'new-tool-desc-error' : undefined}
-                      />
-                      {newToolDescriptionError && (
-                        <p id="new-tool-desc-error" className="text-xs text-red-500 mt-1 font-medium">
-                          Tool description is required.
-                        </p>
-                      )}
-                    </div>
-                    <ToolParameterSchemaEditor
-                      value={newToolSchema}
-                      onChange={setNewToolSchema}
-                      disabled={!isToolCallingTemplate || isLoading || isSaving}
-                    />
-                  </div>
-                  {/* Horizontal border to separate from the button */}
-                  <div className="border-t border-gray-200 mt-4 pt-3"></div>
-                  <button
-                    onClick={handleAddToolDefinition}
-                    className="px-4 mt-1 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm disabled:opacity-50"
-                    disabled={!isToolCallingTemplate || isLoading || isSaving}
-                  >
-                    Save Tool Definition
-                  </button>
                 </div>
               </div>
             </div>

@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import api from '../api/apiClient'; // Correct: Import the default export 'api'
 import AiSeedModal from './AiSeedModal'; // Import the new modal component
 import Icon from './Icons'; // Import the Icon component
+import CustomSlider from './CustomSlider'; // Import the new CustomSlider component
 
 // Define the helper function to generate the prompt preview
 const generatePromptPreview = (promptTemplate, slotValues) => {
@@ -48,6 +49,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
   const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
   const [variationsPerSeed, setVariationsPerSeed] = useState(3);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({}); // { seedIndex: { slotName: true } }
 
   // Create a memoized initial seed object when template changes
   const createInitialSeed = useCallback((templateSlots) => {
@@ -67,10 +69,12 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       const initialSlots = createInitialSeed(template.slots);
       setSeedList([initialSlots]);
       setCurrentSeedIndex(0);
+      setValidationErrors({}); // Clear errors on template change
     } else {
       console.warn('Invalid template or slots:', template);
       setSeedList([{}]);
       setCurrentSeedIndex(0);
+      setValidationErrors({}); // Clear errors
     }
   }, [template, createInitialSeed]);
 
@@ -88,36 +92,50 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     [template, currentSeed]
   );
 
-  // Memoized validation function
+  // Memoized validation function - returns detailed errors
   const validateSeeds = useCallback((seeds) => {
-    if (!template?.slots) return { valid: false, validated: [] };
-    
+    if (!template?.slots) return { valid: false, validated: [], errors: {} };
+
     let allValid = true;
+    const errors = {};
     const validatedSeeds = seeds.map((seed, index) => {
       const missingSlots = template.slots.filter(slot => !seed[slot]?.trim());
-      
+
       if (missingSlots.length > 0) {
-        toast.error(`Seed ${index + 1} is missing values for: ${missingSlots.join(', ')}`);
         allValid = false;
+        errors[index] = missingSlots.reduce((acc, slot) => {
+          acc[slot] = true; // Mark missing slot as an error
+          return acc;
+        }, {});
       }
-      
-      return { 
+
+      return {
         slots: template.slots.reduce((acc, slot) => {
           acc[slot] = seed[slot] || '';
           return acc;
         }, {})
       };
     });
-    
-    return { valid: allValid, validated: validatedSeeds };
+
+    return { valid: allValid, validated: validatedSeeds, errors };
   }, [template]);
 
   const handleSubmit = useCallback((e) => {
     e.preventDefault();
-    
-    const { valid, validated } = validateSeeds(seedList);
-    if (!valid) return;
-    
+    setValidationErrors({}); // Clear previous errors
+
+    const { valid, validated, errors } = validateSeeds(seedList);
+    if (!valid) {
+      setValidationErrors(errors);
+      // Find the first seed with an error and navigate to it
+      const firstErrorIndex = Object.keys(errors)[0];
+      if (firstErrorIndex !== undefined) {
+        setCurrentSeedIndex(parseInt(firstErrorIndex, 10));
+      }
+      toast.error('Please fix the errors in the highlighted fields.');
+      return;
+    }
+
     if (!template?.id) {
       toast.error('No template selected. Please select a template first.');
       return;
@@ -129,7 +147,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       count: variationsPerSeed
     });
   }, [seedList, template, variationsPerSeed, onGenerate, validateSeeds]);
-  
+
   const handleSlotChange = useCallback((slot, value) => {
     setSeedList(prevList => {
       const newList = [...prevList];
@@ -139,6 +157,22 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       };
       return newList;
     });
+    // Clear validation error for this specific slot if it exists
+    setValidationErrors(prevErrors => {
+      const currentSeedErrors = prevErrors[currentSeedIndex];
+      if (currentSeedErrors && currentSeedErrors[slot]) {
+        const newSeedErrors = { ...currentSeedErrors };
+        delete newSeedErrors[slot];
+        const newErrors = { ...prevErrors };
+        if (Object.keys(newSeedErrors).length === 0) {
+          delete newErrors[currentSeedIndex]; // Remove seed index if no errors left
+        } else {
+          newErrors[currentSeedIndex] = newSeedErrors;
+        }
+        return newErrors;
+      }
+      return prevErrors;
+    });
   }, [currentSeedIndex]);
 
   // Add a new seed (blank)
@@ -147,6 +181,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       const blankSeed = createInitialSeed(template?.slots);
       const newList = [...prevList, blankSeed];
       setCurrentSeedIndex(newList.length - 1);
+      setValidationErrors({}); // Clear errors when adding/navigating
       return newList;
     });
   }, [template, createInitialSeed]);
@@ -159,7 +194,21 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     
     setSeedList(prevList => {
       const newList = prevList.filter((_, index) => index !== currentSeedIndex);
-      setCurrentSeedIndex(prevIndex => Math.min(prevIndex, newList.length - 1));
+      const newIndex = Math.min(currentSeedIndex, newList.length - 1);
+      setCurrentSeedIndex(newIndex);
+      // Clear errors for the removed seed and potentially shift others
+      setValidationErrors(prevErrors => {
+        const newErrors = {};
+        Object.entries(prevErrors).forEach(([idxStr, seedErrors]) => {
+          const idx = parseInt(idxStr, 10);
+          if (idx < currentSeedIndex) {
+            newErrors[idx] = seedErrors;
+          } else if (idx > currentSeedIndex) {
+            newErrors[idx - 1] = seedErrors; // Shift index down
+          }
+        });
+        return newErrors;
+      });
       return newList;
     });
   }, [seedList.length, currentSeedIndex]);
@@ -197,6 +246,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
 
     setIsAiModalOpen(false);
     setIsParaphrasing(true);
+    setValidationErrors({}); // Clear validation errors before generating new seeds
     
     try {
       const payload = {
@@ -222,6 +272,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
           const updatedList = [...prevList, ...newSeeds];
           const cleanedList = cleanupSeedList(updatedList, templateSlots);
           setCurrentSeedIndex(prevIndex => Math.min(prevIndex, cleanedList.length - 1));
+          setValidationErrors({}); // Clear errors after successful paraphrase
           return cleanedList;
         });
         
@@ -245,7 +296,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     
     return (
       <div className="flex items-center justify-center mx-2 relative">
-        {/* Left edge indicator when there are more seeds to the left */}
         {seedList.length > 5 && currentSeedIndex > 0 && (
           <div 
             className="absolute left-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center z-20 cursor-pointer"
@@ -262,11 +312,8 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
         )}
         
         <div className="flex items-center space-x-1 relative z-0 px-2">
-            {/* Always show exactly 5 indicators regardless of seed count */}
             {Array.from({ length: 5 }, (_, i) => {
               if (seedList.length <= 5) {
-                // For 5 or fewer seeds, each dot represents one seed
-                // Hide dots that don't correspond to actual seeds
                 return i < seedList.length ? (
                   <button
                     key={i}
@@ -283,12 +330,10 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                   />
                 ) : null;
               } else {
-                // For more than 5 seeds, divide into segments
                 const segmentSize = seedList.length / 5;
                 const segmentStart = Math.floor(i * segmentSize);
                 const segmentEnd = Math.floor((i + 1) * segmentSize) - 1;
                 
-                // Check if current seed index falls within this segment
                 const isActive = currentSeedIndex >= segmentStart && currentSeedIndex <= segmentEnd;
                 
                 return (
@@ -308,7 +353,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             })}
           </div>
         
-        {/* Right edge indicator when there are more seeds to the right */}
         {seedList.length > 5 && currentSeedIndex < seedList.length - 1 && (
           <div 
             className="absolute right-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center justify-end z-20 cursor-pointer"
@@ -327,27 +371,49 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     );
   }, [seedList.length, currentSeedIndex, navigateToFirstSeed, navigateToLastSeed, isGenerating, isParaphrasing]);
 
-  // Memoize the seed form fields
+  // Memoize the seed form fields with validation styling
   const renderSeedFields = useMemo(() => {
     if (!template?.slots) return null;
-    
-    return template.slots.map(slot => (
-      <div key={slot} className="mb-3">
-        <label htmlFor={`seed-${currentSeedIndex}-${slot}`} className="block text-sm font-medium text-gray-700 mb-1">
-          {slot.charAt(0).toUpperCase() + slot.slice(1)}
-        </label>
-        <input
-          id={`seed-${currentSeedIndex}-${slot}`}
-          type="text"
-          value={currentSeed[slot] || ''}
-          onChange={(e) => handleSlotChange(slot, e.target.value)}
-          className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
-          placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
-          disabled={isGenerating || isParaphrasing}
-        />
-      </div>
-    ));
-  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isGenerating, isParaphrasing]);
+
+    const currentErrors = validationErrors[currentSeedIndex] || {};
+
+    return template.slots.map(slot => {
+      const hasError = !!currentErrors[slot];
+      const inputId = `seed-${currentSeedIndex}-${slot}`;
+      const errorId = `${inputId}-error`;
+
+      return (
+        <div key={slot} className="mb-3">
+          <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 mb-1">
+            {slot.charAt(0).toUpperCase() + slot.slice(1)}
+            {hasError && <span className="text-red-500 ml-1">*</span>}
+          </label>
+          <input
+            id={inputId}
+            type="text"
+            value={currentSeed[slot] || ''}
+            onChange={(e) => handleSlotChange(slot, e.target.value)}
+            className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200
+                        ${hasError ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}`}
+            placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
+            disabled={isGenerating || isParaphrasing}
+            aria-invalid={hasError}
+            aria-describedby={hasError ? errorId : undefined}
+          />
+          {hasError && (
+            <p id={errorId} className="mt-1 text-xs text-red-600 font-medium">
+              This field is required for Seed {currentSeedIndex + 1}.
+            </p>
+          )}
+        </div>
+      );
+    });
+  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isGenerating, isParaphrasing, validationErrors]);
+
+  // Calculate total error count across all seeds
+  const totalErrorCount = useMemo(() => {
+    return Object.values(validationErrors).reduce((count, seedErrors) => count + Object.keys(seedErrors).length, 0);
+  }, [validationErrors]);
 
   // Render the form if template exists, otherwise show a message
   if (!template) {
@@ -360,7 +426,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
   
   return (
     <div className="p-6 bg-white rounded-lg border border-gray-200">
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} noValidate>
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900">{template.name}</h3>
           {template.model_override && (
@@ -439,7 +505,14 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
 
           {renderSeedFields}
 
-          {promptPreview && (
+          {totalErrorCount > 0 && (
+             <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">
+               <Icon name="exclamationTriangle" className="h-4 w-4 inline-block mr-2 align-text-bottom" />
+               Please fill in all required fields for {totalErrorCount} missing value{totalErrorCount !== 1 ? 's' : ''} across all seeds. Use the navigation controls above to check each seed.
+             </div>
+          )}
+
+          {promptPreview && !totalErrorCount && (
             <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
               <label className="block text-xs font-medium text-gray-500 mb-1">Prompt Preview:</label>
               <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">{promptPreview}</p>
@@ -447,18 +520,15 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
           )}
           
           <div>
-            <label htmlFor="variations-slider" className="block text-sm font-medium text-gray-700 mb-1">
-              Variations per Seed: {variationsPerSeed}
-            </label>
-            <input
-              id="variations-slider"
-              type="range"
-              min="1"
-              max="10"
+            <CustomSlider
+              label="Variations per Seed"
+              min={1}
+              max={10}
+              step={1}
               value={variationsPerSeed}
-              onChange={(e) => setVariationsPerSeed(parseInt(e.target.value))}
-              className="w-full"
+              onChange={setVariationsPerSeed}
               disabled={isGenerating || isParaphrasing}
+              showValue={true}
             />
           </div>
           

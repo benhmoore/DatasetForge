@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import PropTypes from 'prop-types';
 import Icon from './Icons'; 
 import CustomSelect from './CustomSelect'; // Import CustomSelect
+import _ from 'lodash'; // Import lodash for deep comparison
 
 // Initial empty schema structure with memo to prevent recreation
 const initialSchema = Object.freeze({
@@ -159,6 +160,7 @@ ParameterPropertyEditor.displayName = 'ParameterPropertyEditor';
 const ToolParameterSchemaEditor = ({ value = initialSchema, onChange, disabled = false }) => {
   const [properties, setProperties] = useState([]);
   const [hasFocus, setHasFocus] = useState(false);
+  // Initialize ref to null. It will be populated on first sync or emission.
   const lastEmittedSchemaRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -224,40 +226,40 @@ const ToolParameterSchemaEditor = ({ value = initialSchema, onChange, disabled =
     }));
   }, [normalizeSchemaValue]);
 
-  // Effect 1: Sync internal 'properties' state from external 'value' prop
-  // This effect runs only when external value changes, not when properties change
+  // Effect 1: Sync internal 'properties' state ONLY from external 'value' prop changes
   useEffect(() => {
     const normalizedIncomingValue = normalizeSchemaValue(value);
-    const storedValueString = JSON.stringify(lastEmittedSchemaRef.current);
-    const incomingValueString = JSON.stringify(normalizedIncomingValue);
-    
-    // Only update if the incoming value is different from what we have stored
-    // This prevents infinite loops by not comparing against current properties
-    if (incomingValueString !== storedValueString) {
+
+    // Only update internal state if the incoming value prop is different from the last value
+    // this component knew about (either initially or what it last emitted/received).
+    // _.isEqual handles comparison with null correctly.
+    if (!_.isEqual(normalizedIncomingValue, lastEmittedSchemaRef.current)) {
       const newProperties = schemaToProperties(normalizedIncomingValue);
       setProperties(newProperties);
+      // Update the ref to acknowledge this new external value has been processed.
       lastEmittedSchemaRef.current = normalizedIncomingValue;
     }
-  }, [value, normalizeSchemaValue, schemaToProperties]); // Removed properties from dependencies
+  }, [value, normalizeSchemaValue, schemaToProperties]);
 
-  // Effect 2: Call 'onChange' prop when 'properties' state changes
+  // Effect 2: Call 'onChange' prop when 'properties' state changes internally
   useEffect(() => {
-    // Skip validation if we're still initializing
-    if (properties.length === 0 && Object.keys(value?.properties || {}).length === 0) {
-      return;
-    }
-    
+    // Don't emit if disabled
+    if (disabled) return;
+
     const newSchema = deriveAndNormalizeSchema(properties);
-    const isValid = properties.every(prop => !!prop.name);
-    const lastEmitted = lastEmittedSchemaRef.current || initialSchema;
-    const lastEmittedString = JSON.stringify(lastEmitted);
-    const newSchemaString = JSON.stringify(newSchema);
-    
-    if (isValid && !disabled && newSchemaString !== lastEmittedString) {
+    const isValid = properties.every(prop => !!prop.name); // Basic validation
+
+    // Only emit if:
+    // 1. The new schema derived from internal state is valid.
+    // 2. It's different from the last schema this component processed (lastEmittedSchemaRef).
+    // This prevents emitting the same value received from the parent immediately back,
+    // and also prevents emitting invalid schemas.
+    // _.isEqual handles comparison with null correctly.
+    if (isValid && !_.isEqual(newSchema, lastEmittedSchemaRef.current)) {
       onChange(newSchema);
-      lastEmittedSchemaRef.current = newSchema;
+      lastEmittedSchemaRef.current = newSchema; // Update ref after emitting internal change
     }
-  }, [properties, onChange, disabled, deriveAndNormalizeSchema]); // Removed value from dependencies
+  }, [properties, onChange, disabled, deriveAndNormalizeSchema]);
 
   // Add new property handler
   const handleAddProperty = useCallback(() => {

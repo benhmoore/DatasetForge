@@ -85,6 +85,9 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Default Generation Model
               </label>
+              <p className="text-sm text-gray-500 mb-2">
+                Used for generating the actual fine-tuning examples. Can be overridden by templates.
+              </p>
               <ModelSelector
                 selectedModel={defaultGenModel}
                 onModelChange={setDefaultGenModel}
@@ -96,6 +99,9 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Default Paraphrase Model
               </label>
+              <p className="text-sm text-gray-500 mb-2">
+                Used for augmenting and generating seeds.
+              </p>
               <ModelSelector
                 selectedModel={defaultParaModel}
                 onModelChange={setDefaultParaModel}
