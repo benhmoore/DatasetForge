@@ -54,7 +54,14 @@ const SeedBankModal = ({
   // Initialize local copy of seedList when modal opens or seedList changes
   useEffect(() => {
     if (isOpen) {
-      setLocalSeedList(JSON.parse(JSON.stringify(seedList))); // Deep copy
+      // Add a unique identifier to each seed if it doesn't have one
+      const seedsWithIds = seedList.map((seed, index) => {
+        // Create a deep copy and add a unique _id if it doesn't exist
+        const seedCopy = JSON.parse(JSON.stringify(seed));
+        seedCopy._id = seed._id || `seed-${index}-${Date.now()}`;
+        return seedCopy;
+      });
+      setLocalSeedList(seedsWithIds);
     }
   }, [isOpen, seedList]);
 
@@ -143,27 +150,49 @@ const SeedBankModal = ({
   const deleteSelectedSeeds = useCallback(() => {
     if (isDisabled || selectedSeeds.size === 0) return;
     
-    if (seedList.length - selectedSeeds.size < 1) {
+    if (localSeedList.length - selectedSeeds.size < 1) {
       toast.error("Cannot delete all seeds. At least one seed must remain.");
       return;
     }
     
+    // Filter both local state and parent state
+    const newLocalList = localSeedList.filter(seed => !selectedSeeds.has(seed._id));
+    setLocalSeedList(newLocalList);
+    
+    // Update parent seedList by removing seeds with matching IDs
     setSeedList(prevList => {
-      return prevList.filter((_, index) => !selectedSeeds.has(index));
+      const selectedIds = Array.from(selectedSeeds);
+      // Create a new array without the selected seeds
+      const updatedList = [];
+      
+      for (const seed of prevList) {
+        // Keep seeds that don't have a matching ID in the selected set
+        const matchingSeed = newLocalList.find(localSeed => {
+          return JSON.stringify(localSeed) === JSON.stringify(seed) || 
+                 (localSeed._id && seed._id && localSeed._id === seed._id);
+        });
+        if (matchingSeed) {
+          updatedList.push(matchingSeed);
+        }
+      }
+      
+      return updatedList.length > 0 ? updatedList : [prevList[0]];
     });
     
     setSelectedSeeds(new Set());
     toast.success(`${selectedSeeds.size} seed${selectedSeeds.size > 1 ? 's' : ''} deleted`);
-  }, [selectedSeeds, seedList.length, setSeedList, isDisabled]);
+  }, [selectedSeeds, localSeedList, setSeedList, isDisabled]);
 
   // Toggle seed selection
-  const toggleSelectSeed = useCallback((index) => {
+  const toggleSelectSeed = useCallback((seedId) => {
+    if (!seedId) return;
+    
     setSelectedSeeds(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(index)) {
-        newSet.delete(index);
+      if (newSet.has(seedId)) {
+        newSet.delete(seedId);
       } else {
-        newSet.add(index);
+        newSet.add(seedId);
       }
       return newSet;
     });
@@ -173,16 +202,14 @@ const SeedBankModal = ({
   const selectAllDisplayed = useCallback(() => {
     const newSet = new Set();
     
-    filteredSeeds.forEach((_, index) => {
-      // Find the original index in the seedList
-      const originalIndex = seedList.findIndex(seed => seed === filteredSeeds[index]);
-      if (originalIndex !== -1) {
-        newSet.add(originalIndex);
+    filteredSeeds.forEach((seed) => {
+      if (seed._id) {
+        newSet.add(seed._id);
       }
     });
     
     setSelectedSeeds(newSet);
-  }, [filteredSeeds, seedList]);
+  }, [filteredSeeds]);
 
   // Clear all selections
   const clearSelection = useCallback(() => {
@@ -194,14 +221,17 @@ const SeedBankModal = ({
     if (isDisabled || selectedSeeds.size === 0) return;
     
     try {
-      const exportData = Array.from(selectedSeeds).map(index => {
-        const seed = seedList[index];
-        const cleanSeed = {};
-        template.slots.forEach(slot => {
-          cleanSeed[slot] = seed[slot] || '';
+      const selectedSeedIds = Array.from(selectedSeeds);
+      const exportData = localSeedList
+        .filter(seed => selectedSeedIds.includes(seed._id))
+        .map(seed => {
+          // Create a clean version without the _id field
+          const cleanSeed = {};
+          template.slots.forEach(slot => {
+            cleanSeed[slot] = seed[slot] || '';
+          });
+          return cleanSeed;
         });
-        return cleanSeed;
-      });
 
       const jsonString = JSON.stringify(exportData, null, 2);
       const blob = new Blob([jsonString], { type: 'application/json' });
@@ -219,7 +249,7 @@ const SeedBankModal = ({
       console.error("Error exporting seeds:", error);
       toast.error("Failed to export seeds.");
     }
-  }, [selectedSeeds, seedList, template, isDisabled]);
+  }, [selectedSeeds, localSeedList, template, isDisabled]);
 
   // Import seeds
   const handleImportSeeds = useCallback(() => {
@@ -451,10 +481,9 @@ const SeedBankModal = ({
                         <input 
                           type="checkbox" 
                           className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                          checked={filteredSeeds.length > 0 && filteredSeeds.every((_, i) => {
-                            const originalIndex = seedList.findIndex(seed => seed === filteredSeeds[i]);
-                            return selectedSeeds.has(originalIndex);
-                          })}
+                          checked={filteredSeeds.length > 0 && filteredSeeds.every(seed => 
+                            seed._id && selectedSeeds.has(seed._id)
+                          )}
                           onChange={(e) => {
                             if (e.target.checked) {
                               selectAllDisplayed();
@@ -481,17 +510,20 @@ const SeedBankModal = ({
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredSeeds.map((seed, displayIndex) => {
-                      // Find the seed's original index in the full seedList
-                      const originalIndex = seedList.findIndex(s => s === seed);
+                      const seedId = seed._id;
                       
                       return (
                         <tr 
-                          key={originalIndex} 
-                          className={`${selectedSeeds.has(originalIndex) ? 'bg-blue-50' : 'hover:bg-gray-50'} transition-colors ${originalIndex === currentSeedIndex ? 'ring-2 ring-primary-500 ring-inset' : ''} cursor-pointer`}
+                          key={seedId || `seed-${displayIndex}`} 
+                          className={`${selectedSeeds.has(seedId) ? 'bg-blue-50' : 'hover:bg-gray-50'} transition-colors ${seedId === localSeedList[currentSeedIndex]?._id ? 'ring-2 ring-primary-500 ring-inset' : ''} cursor-pointer`}
                           onClick={(e) => {
                             // Don't trigger on checkbox clicks (those are handled separately)
                             if (e.target.type !== 'checkbox' && !e.target.closest('input')) {
-                              setCurrentSeedIndex(originalIndex);
+                              // Find index in the seedList by ID
+                              const indexToSelect = localSeedList.findIndex(s => s._id === seedId);
+                              if (indexToSelect !== -1) {
+                                setCurrentSeedIndex(indexToSelect);
+                              }
                             }
                           }}
                         >
@@ -500,8 +532,8 @@ const SeedBankModal = ({
                             <input 
                               type="checkbox" 
                               className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                              checked={selectedSeeds.has(originalIndex)}
-                              onChange={() => toggleSelectSeed(originalIndex)}
+                              checked={selectedSeeds.has(seedId)}
+                              onChange={() => toggleSelectSeed(seedId)}
                               disabled={isDisabled}
                             />
                           </td>
