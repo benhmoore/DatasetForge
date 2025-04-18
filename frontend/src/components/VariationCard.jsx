@@ -115,7 +115,7 @@ const VariationCard = ({
     setEditedOutput(e.target.value);
   }, []);
 
-  // Render tool calls section
+  // Render tool calls section with improved UI and error handling
   const renderToolCalls = useCallback((toolCalls) => {
     if (!toolCalls || !Array.isArray(toolCalls) || toolCalls.length === 0) {
       return null;
@@ -124,54 +124,135 @@ const VariationCard = ({
     return (
       <div 
         data-testid="tool-calls-section" 
-        className="mt-2 pt-2 border-t border-gray-200 cursor-pointer transition-colors duration-200 hover:bg-blue-50" 
-        onClick={(e) => { 
-          e.stopPropagation(); 
-          setIsToolEditorOpen(true); 
-        }}
-        role="button"
-        aria-label="Edit tool calls"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setIsToolEditorOpen(true);
-          }
-        }}
+        className="mt-3 pt-3 border-t border-gray-200 transition-colors duration-200" 
       >
-        <div className="flex items-center mb-1">
-          <h5 className="text-xs font-medium text-gray-700">Tool Calls:</h5>
+        <div 
+          className="flex items-center mb-2 hover:bg-blue-50 p-1 rounded cursor-pointer"
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            setIsToolEditorOpen(true); 
+          }}
+          role="button"
+          aria-label="Edit tool calls"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setIsToolEditorOpen(true);
+            }
+          }}
+        >
+          <h5 className="text-sm font-medium text-gray-700 flex items-center">
+            <Icon name="tool" className="h-4 w-4 mr-1 text-blue-600" aria-hidden="true" />
+            Tool Calls 
+            <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full">
+              {toolCalls.length}
+            </span>
+          </h5>
           <span className="ml-auto text-xs text-blue-600 flex items-center">
             <Icon name="edit" className="h-3 w-3 mr-1" aria-hidden="true" />
             Edit
           </span>
         </div>
-        <div className="space-y-1">
+        
+        <div className="space-y-2">
           {toolCalls.map((call, index) => {
+            // Extract function name and arguments based on structure
             let name = "Unknown Tool";
             let parameters = {};
+            let error = null;
             
-            if (call.function && typeof call.function === 'object') {
-              name = call.function.name || "Unknown Tool";
-              try {
-                parameters = typeof call.function.arguments === 'string' 
-                  ? JSON.parse(call.function.arguments) 
-                  : call.function.arguments || {};
-              } catch (e) {
-                console.error("Error parsing tool call arguments:", e);
-                parameters = { error: "Failed to parse arguments", raw: call.function.arguments };
+            try {
+              if (call.function && typeof call.function === 'object') {
+                // Standard OpenAI format
+                name = call.function.name || "Unknown Tool";
+                
+                if (typeof call.function.arguments === 'string') {
+                  try {
+                    parameters = JSON.parse(call.function.arguments);
+                  } catch (e) {
+                    // Handle unparseable arguments
+                    error = `Invalid JSON in arguments: ${e.message}`;
+                    parameters = { _raw: call.function.arguments };
+                  }
+                } else {
+                  parameters = call.function.arguments || {};
+                }
+              } else if (call.name) {
+                // Simplified format
+                name = call.name;
+                parameters = call.parameters || call.arguments || {};
+              } else if (call.function_call) {
+                // Alternative OpenAI format
+                name = call.function_call.name || "Unknown Tool";
+                if (typeof call.function_call.arguments === 'string') {
+                  try {
+                    parameters = JSON.parse(call.function_call.arguments);
+                  } catch (e) {
+                    error = `Invalid JSON in arguments: ${e.message}`;
+                    parameters = { _raw: call.function_call.arguments };
+                  }
+                } else {
+                  parameters = call.function_call.arguments || {};
+                }
+              } else if (call.tool_use) {
+                // Claude format
+                name = call.tool_use.name || "Unknown Tool";
+                parameters = call.tool_use.parameters || {};
+              } else {
+                error = "Unrecognized tool call format";
               }
-            } else if (call.name) {
-              name = call.name;
-              parameters = call.parameters || {};
+            } catch (e) {
+              console.error("Error processing tool call:", e);
+              error = `Failed to process tool call: ${e.message}`;
             }
             
+            // Count parameters for badge
+            const paramCount = Object.keys(parameters).length;
+            
             return (
-              <div key={index} className="p-1.5 bg-blue-50 border border-blue-100 rounded text-xs">
-                <div className="font-medium text-blue-700">{name}</div>
-                <pre className="text-xs mt-1 whitespace-pre-wrap text-gray-700 overflow-x-auto max-h-32 scrollbar-thin scrollbar-thumb-gray-300">
-                  {JSON.stringify(parameters, null, 2)}
-                </pre>
+              <div 
+                key={index} 
+                className={`p-2 ${error ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-100'} rounded-md text-xs hover:shadow-sm transition-shadow`}
+              >
+                <div className="flex justify-between items-center">
+                  <div className="font-medium text-blue-700 flex items-center">
+                    <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-blue-200 text-blue-800 text-xs font-medium mr-2">
+                      {index + 1}
+                    </span>
+                    {name}
+                    {paramCount > 0 && (
+                      <span className="ml-2 bg-blue-200 text-blue-800 text-xs px-1.5 py-0.5 rounded">
+                        {paramCount} param{paramCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <button 
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      setIsToolEditorOpen(true); 
+                    }}
+                    className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-100"
+                    aria-label="Edit tool calls"
+                  >
+                    <Icon name="edit" className="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </div>
+                
+                {error && (
+                  <div className="mt-1 text-red-600 bg-red-50 p-1 rounded border border-red-200 flex items-start">
+                    <Icon name="alert" className="h-3 w-3 text-red-600 mt-0.5 mr-1 flex-shrink-0" />
+                    <span className="text-xs">{error}</span>
+                  </div>
+                )}
+                
+                <div 
+                  className="mt-1 overflow-hidden transition-all duration-300 bg-white bg-opacity-50 rounded border border-blue-100 p-1"
+                >
+                  <pre className="text-xs whitespace-pre-wrap text-gray-700 overflow-x-auto max-h-32 scrollbar-thin scrollbar-thumb-gray-300">
+                    {JSON.stringify(parameters, null, 2)}
+                  </pre>
+                </div>
               </div>
             );
           })}

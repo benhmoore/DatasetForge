@@ -25,110 +25,105 @@ def extract_tool_calls_from_text(text):
     """
     Extract tool calls from a text response.
 
-    This handles different formats that LLMs might use when returning tool calls:
+    This handles multiple formats that LLMs might use when returning tool calls:
     1. OpenAI-style format with function_call
     2. Simplified format with name and parameters directly
+    3. Anthropic-style format with tool_use
+    4. Raw JSON objects with partial matches
+    5. Multiple tool calls in a single response
 
     Returns a list of standardized tool call objects or None if no valid calls found.
     """
     if not text or not text.strip():
         return None
 
+    # Clean up any markdown code blocks that may wrap the JSON
+    text = re.sub(r'```(?:json)?\s*([\s\S]*?)\s*```', r'\1', text.strip())
+    
+    # Remove surrounding backticks if they exist
+    text = text.strip('`').strip()
+    
+    # Normalize newlines
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    
     try:
-        # First, try treating the entire text as JSON
+        # First, check for multiple tool calls array
+        tool_calls = []
+        
+        # Try to parse the entire text as a JSON array of tool calls
+        if text.strip().startswith('[') and text.strip().endswith(']'):
+            try:
+                json_array = json.loads(text)
+                if isinstance(json_array, list) and len(json_array) > 0:
+                    for item in json_array:
+                        # Convert each item to standardized format
+                        processed_calls = _process_single_tool_call_obj(item)
+                        if processed_calls:
+                            tool_calls.extend(processed_calls)
+                    
+                    if tool_calls:
+                        logger.info(f"Extracted {len(tool_calls)} tool calls from JSON array")
+                        return tool_calls
+            except json.JSONDecodeError:
+                logger.debug("Failed to parse as JSON array, continuing with other methods")
+        
+        # Next, try treating the entire text as a single JSON object
         try:
-            # Check if this is a valid JSON to begin with
+            # Check if this is a valid JSON object
             parsed_text = json.loads(text.strip())
-
-            # Special handling for OpenAI format which has nested JSON strings
-            if (
-                "function_call" in parsed_text
-                and "arguments" in parsed_text["function_call"]
-            ):
-                # Make sure arguments is a valid JSON string
-                arguments = parsed_text["function_call"]["arguments"]
-
-                # If arguments is a string that looks like JSON but has escaped quotes
-                if isinstance(arguments, str) and (
-                    arguments.startswith("{") or arguments.startswith("[")
-                ):
-                    try:
-                        # Try to parse it as JSON
-                        json.loads(arguments)
-                    except json.JSONDecodeError:
-                        # If it fails, it might have escaped quotes, so clean it up
-                        # This is a common pattern in Ollama's outputs
-                        fixed_args = arguments.replace('\\"', '"').replace("\\\\", "\\")
-                        parsed_text["function_call"]["arguments"] = fixed_args
-
-            # Format it properly for our standard structure
-            if "function_call" in parsed_text:
-                # Handle OpenAI-style format
-                tool_call = {
-                    "type": "function",
-                    "function": {
-                        "name": parsed_text["function_call"].get("name", "unknown"),
-                        "arguments": parsed_text["function_call"].get(
-                            "arguments", "{}"
-                        ),
-                    },
-                    "_original_json": text,  # Temporary field to help with text cleaning
-                }
-                logger.info(
-                    f"Extracted OpenAI-style tool call from complete JSON: {tool_call['function']['name']}"
-                )
-                return [tool_call]
-            elif "name" in parsed_text and "parameters" in parsed_text:
-                # Handle simplified format
-                tool_call = {
-                    "type": "function",
-                    "function": {
-                        "name": parsed_text.get("name", "unknown"),
-                        "arguments": json.dumps(parsed_text.get("parameters", {})),
-                    },
-                    "_original_json": text,  # Temporary field to help with text cleaning
-                }
-                logger.info(
-                    f"Extracted simplified-style tool call from complete JSON: {tool_call['function']['name']}"
-                )
-                return [tool_call]
-
+            
+            # Process the single object
+            processed_calls = _process_single_tool_call_obj(parsed_text)
+            if processed_calls:
+                return processed_calls
+                
         except json.JSONDecodeError:
             # Not a valid JSON document, try extracting embedded JSON
-            logger.debug("Input is not valid JSON, looking for embedded JSON objects")
-
+            logger.debug("Input is not valid JSON object, looking for embedded JSON")
+        
         # Try fixing common JSON issues like unescaped quotes
         fixed_text = text
         if '"arguments": "{' in text:
-            logger.debug(
-                "Detected possible escaping issue in arguments field, trying to fix..."
-            )
+            logger.debug("Detected possible escaping issue in arguments field, trying to fix...")
             # This is a common pattern - unescaped nested JSON
-            fixed_text = text.replace('"arguments": "{', '"arguments": "{').replace(
-                '}"', '}"'
-            )
-
+            fixed_text = text.replace('"arguments": "{', '"arguments": "{').replace('}"', '}"')
+            
             try:
                 json_obj = json.loads(fixed_text)
-                if "function_call" in json_obj:
-                    tool_call = {
-                        "type": "function",
-                        "function": {
-                            "name": json_obj["function_call"].get("name", "unknown"),
-                            "arguments": json_obj["function_call"].get(
-                                "arguments", "{}"
-                            ),
-                        },
-                        "_original_json": text,
-                    }
-                    logger.info(
-                        f"Extracted OpenAI-style tool call after fixing escaping: {tool_call['function']['name']}"
-                    )
-                    return [tool_call]
+                processed_calls = _process_single_tool_call_obj(json_obj)
+                if processed_calls:
+                    return processed_calls
             except:
                 logger.debug("Failed to parse fixed text")
-
-        # Try to find JSON objects in the text if whole text parsing failed
+        
+        # Try extracting multiple tool calls from text using code block patterns
+        multi_tool_pattern = r"(?:```json)?\s*\[\s*(\{.*?\})\s*(?:,\s*\{.*?\})*\s*\]\s*(?:```)?|(\{.*?\})\s*(?:,\s*\{.*?\})*\s*"
+        multi_matches = re.search(multi_tool_pattern, text, re.DOTALL)
+        if multi_matches:
+            # Try to extract a valid JSON array by reconstructing it
+            try:
+                # Extract all JSON objects
+                obj_pattern = r'\{(?:[^{}]|"[^"]*"|\{(?:[^{}]|"[^"]*")*\})*\}'
+                found_objects = re.findall(obj_pattern, text)
+                
+                if found_objects:
+                    all_calls = []
+                    for obj_str in found_objects:
+                        try:
+                            obj = json.loads(obj_str)
+                            processed = _process_single_tool_call_obj(obj)
+                            if processed:
+                                all_calls.extend(processed)
+                        except:
+                            continue
+                    
+                    if all_calls:
+                        logger.info(f"Extracted {len(all_calls)} tool calls from multiple JSON objects")
+                        return all_calls
+            except Exception as e:
+                logger.debug(f"Failed to extract multiple tool calls: {str(e)}")
+        
+        # Try to find individual JSON objects in the text if other methods failed
         # Different patterns to try for finding JSON
         patterns = [
             r'\{(?:[^{}]|"[^"]*"|\{(?:[^{}]|"[^"]*")*\})*\}',  # More robust pattern for nested objects
@@ -137,56 +132,28 @@ def extract_tool_calls_from_text(text):
 
         for pattern in patterns:
             json_matches = re.findall(pattern, text)
-            logger.debug(
-                f"Found {len(json_matches)} potential JSON matches with pattern"
-            )
+            logger.debug(f"Found {len(json_matches)} potential JSON matches with pattern")
 
+            all_found_calls = []
             for json_str in json_matches:
                 try:
                     # Try to parse this JSON string
                     clean_str = json_str.strip()
                     json_obj = json.loads(clean_str)
-
-                    if "function_call" in json_obj:
-                        # Handle OpenAI-style format
-                        tool_call = {
-                            "type": "function",
-                            "function": {
-                                "name": json_obj["function_call"].get(
-                                    "name", "unknown"
-                                ),
-                                "arguments": json_obj["function_call"].get(
-                                    "arguments", "{}"
-                                ),
-                            },
-                            "_original_json": json_str,  # Temporary field to help with text cleaning
-                        }
-                        logger.info(
-                            f"Extracted OpenAI-style tool call from embedded JSON: {tool_call['function']['name']}"
-                        )
-                        return [tool_call]
-                    elif "name" in json_obj and "parameters" in json_obj:
-                        # Handle simplified format
-                        tool_call = {
-                            "type": "function",
-                            "function": {
-                                "name": json_obj.get("name", "unknown"),
-                                "arguments": json.dumps(json_obj.get("parameters", {})),
-                            },
-                            "_original_json": json_str,  # Temporary field to help with text cleaning
-                        }
-                        logger.info(
-                            f"Extracted simplified-style tool call from embedded JSON: {tool_call['function']['name']}"
-                        )
-                        return [tool_call]
+                    
+                    processed_calls = _process_single_tool_call_obj(json_obj)
+                    if processed_calls:
+                        all_found_calls.extend(processed_calls)
                 except json.JSONDecodeError:
                     # Not valid JSON, try next match
                     continue
                 except Exception as e:
-                    logger.warning(
-                        f"Unexpected error processing potential tool call: {str(e)}"
-                    )
+                    logger.warning(f"Unexpected error processing potential tool call: {str(e)}")
                     continue
+            
+            if all_found_calls:
+                logger.info(f"Extracted {len(all_found_calls)} tool calls using regex pattern")
+                return all_found_calls
 
         # If we reached here, no valid tool calls were found
         logger.debug("No valid tool calls found in output")
@@ -194,6 +161,80 @@ def extract_tool_calls_from_text(text):
     except Exception as e:
         logger.warning(f"Error extracting tool calls from text: {str(e)}")
         return None
+
+
+def _process_single_tool_call_obj(json_obj):
+    """Helper function to process a single JSON object into standardized tool call format.
+    Returns a list of standardized tool calls or None if not valid.
+    """
+    if not isinstance(json_obj, dict):
+        return None
+    
+    tool_calls = []
+    
+    # Handle OpenAI-style format with function_call
+    if "function_call" in json_obj:
+        # Handle arguments field properly - could be string or object
+        arguments = json_obj["function_call"].get("arguments", "{}")
+        if isinstance(arguments, str) and (arguments.startswith("{") or arguments.startswith("[")):
+            try:
+                # Try to parse it as JSON if it's a string
+                json.loads(arguments)
+            except json.JSONDecodeError:
+                # Fix escaped quotes if needed
+                arguments = arguments.replace('\\"', '"').replace("\\\\", "\\")
+        
+        tool_call = {
+            "type": "function",
+            "function": {
+                "name": json_obj["function_call"].get("name", "unknown"),
+                "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments)
+            }
+        }
+        logger.info(f"Extracted OpenAI-style tool call: {tool_call['function']['name']}")
+        tool_calls.append(tool_call)
+    
+    # Handle Anthropic-style format with tool_use
+    elif "tool_use" in json_obj:
+        tool_use = json_obj["tool_use"]
+        
+        # Extract the tool details
+        tool_name = tool_use.get("name", "unknown")
+        parameters = tool_use.get("parameters", {})
+        
+        tool_call = {
+            "type": "function",
+            "function": {
+                "name": tool_name,
+                "arguments": json.dumps(parameters)
+            }
+        }
+        logger.info(f"Extracted Anthropic-style tool call: {tool_call['function']['name']}")
+        tool_calls.append(tool_call)
+    
+    # Handle simplified format with name and parameters
+    elif "name" in json_obj and ("parameters" in json_obj or "arguments" in json_obj):
+        parameters = json_obj.get("parameters", json_obj.get("arguments", {}))
+        tool_call = {
+            "type": "function",
+            "function": {
+                "name": json_obj.get("name", "unknown"),
+                "arguments": json.dumps(parameters) if isinstance(parameters, dict) else parameters
+            }
+        }
+        logger.info(f"Extracted simplified-style tool call: {tool_call['function']['name']}")
+        tool_calls.append(tool_call)
+    
+    # Handle case with multiple tool_calls array
+    elif "tool_calls" in json_obj and isinstance(json_obj["tool_calls"], list):
+        for call in json_obj["tool_calls"]:
+            if isinstance(call, dict):
+                # Process each tool call
+                result = _process_single_tool_call_obj(call)
+                if result:
+                    tool_calls.extend(result)
+    
+    return tool_calls if tool_calls else None
 
 
 async def call_ollama_generate(
@@ -258,7 +299,44 @@ async def call_ollama_generate(
 
         # Ensure system prompt includes tool definitions and instructions
         tool_instruction_header = "\n\nAVAILABLE TOOLS:"
-        tool_instruction_footer = "\n\nIMPORTANT: You must use the tools provided when appropriate. When using tools, format your response using a JSON object with 'function_call' containing 'name' and 'arguments'. For example: {\"function_call\": {\"name\": \"ls\", \"arguments\": \"{}\"}}. Do not explain how you would use the tool, actually call the tool."
+        tool_instruction_footer = """
+
+IMPORTANT INSTRUCTIONS FOR USING TOOLS:
+
+1. You MUST use the provided tools when appropriate for the task.
+2. Format your tool calls using proper JSON structure as follows:
+   {
+     "function_call": {
+       "name": "tool_name",
+       "arguments": {
+         "param1": "value1",
+         "param2": "value2"
+       }
+     }
+   }
+
+3. When outputting arguments:
+   - For simple tools with no parameters, use empty JSON: {"function_call": {"name": "simple_tool", "arguments": {}}}
+   - For tools with parameters, include all required parameters
+   - Ensure parameter types match the schema (strings, numbers, booleans, etc.)
+
+4. DO NOT EXPLAIN how you would use the tool - actually call the tool directly.
+5. If you need to make multiple tool calls, format each one as a separate complete JSON object.
+6. Return a complete, valid JSON object with your tool call - do not include any text before or after the JSON.
+
+Example correct tool call:
+```json
+{
+  "function_call": {
+    "name": "search_database",
+    "arguments": {
+      "query": "python tutorial",
+      "limit": 5
+    }
+  }
+}
+```
+"""
 
         # Construct the full tool instruction block
         full_tool_instructions = f"{tool_instruction_header}\n{tools_json_string}{tool_instruction_footer}"
@@ -266,7 +344,7 @@ async def call_ollama_generate(
         # Add the full instructions to the system prompt if not already present
         # (Check specifically for the header to avoid duplicate additions)
         if tool_instruction_header not in system_prompt:
-                system_prompt += full_tool_instructions
+            system_prompt += full_tool_instructions
         payload["system"] = system_prompt # Assign the final system prompt to the payload
         
 

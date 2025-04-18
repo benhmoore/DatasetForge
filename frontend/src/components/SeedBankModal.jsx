@@ -37,7 +37,8 @@ const SeedBankModal = ({
   setCurrentSeedIndex
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filteredSeeds, setFilteredSeeds] = useState(seedList);
+  const [localSeedList, setLocalSeedList] = useState([]);
+  const [filteredSeeds, setFilteredSeeds] = useState([]);
   const [selectedSeeds, setSelectedSeeds] = useState(new Set());
   const [savedSeedBanks, setSavedSeedBanks] = useState([]);
   const [isLoadingSeedBanks, setIsLoadingSeedBanks] = useState(false);
@@ -49,23 +50,30 @@ const SeedBankModal = ({
   const modalRef = useRef(null);
   const searchInputRef = useRef(null);
   const nameInputRef = useRef(null);
+  
+  // Initialize local copy of seedList when modal opens or seedList changes
+  useEffect(() => {
+    if (isOpen) {
+      setLocalSeedList(JSON.parse(JSON.stringify(seedList))); // Deep copy
+    }
+  }, [isOpen, seedList]);
 
-  // Filter seeds based on search term
+  // Update filtered seeds when localSeedList or searchTerm changes
   useEffect(() => {
     if (!searchTerm.trim()) {
-      setFilteredSeeds(seedList);
+      setFilteredSeeds(localSeedList);
       return;
     }
 
     const lowerSearchTerm = searchTerm.toLowerCase();
-    const filtered = seedList.filter(seed => {
+    const filtered = localSeedList.filter(seed => {
       return Object.entries(seed).some(([key, value]) => {
         return value && value.toString().toLowerCase().includes(lowerSearchTerm);
       });
     });
     
     setFilteredSeeds(filtered);
-  }, [searchTerm, seedList]);
+  }, [searchTerm, localSeedList]);
 
   // Focus search input when modal opens
   useEffect(() => {
@@ -80,13 +88,15 @@ const SeedBankModal = ({
   useEffect(() => {
     const handleEscapeKey = (e) => {
       if (e.key === 'Escape' && isOpen) {
+        // Save changes before closing
+        setSeedList(localSeedList);
         onClose();
       }
     };
 
     window.addEventListener('keydown', handleEscapeKey);
     return () => window.removeEventListener('keydown', handleEscapeKey);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, localSeedList, setSeedList]);
 
   // Handle click outside to close modal
   useEffect(() => {
@@ -96,13 +106,15 @@ const SeedBankModal = ({
         !modalRef.current.contains(e.target) && 
         isOpen
       ) {
+        // Save changes before closing
+        setSeedList(localSeedList);
         onClose();
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, localSeedList, setSeedList]);
 
   // Add a new seed
   const addSeed = useCallback(() => {
@@ -323,9 +335,13 @@ const SeedBankModal = ({
           </h2>
           <button
             className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
-            onClick={onClose}
+            onClick={() => {
+              // Save changes before closing
+              setSeedList(localSeedList);
+              onClose();
+            }}
             aria-label="Close modal"
-            title="Close"
+            title="Save & Close"
           >
             <Icon name="close" className="h-5 w-5" />
           </button>
@@ -503,12 +519,18 @@ const SeedBankModal = ({
                                 value={seed[slot] || ''} 
                                 onChange={(e) => {
                                   if (isDisabled) return;
-                                  const newList = [...seedList];
-                                  newList[originalIndex] = {
-                                    ...newList[originalIndex],
+                                  
+                                  // Find the correct index in the local seed list
+                                  const localIndex = localSeedList.findIndex(s => s === seed);
+                                  if (localIndex === -1) return;
+                                  
+                                  // Update the local list without modifying the parent state
+                                  const newLocalList = [...localSeedList];
+                                  newLocalList[localIndex] = {
+                                    ...newLocalList[localIndex],
                                     [slot]: e.target.value
                                   };
-                                  setSeedList(newList);
+                                  setLocalSeedList(newLocalList);
                                 }}
                                 onKeyDown={(e) => {
                                   // Tab navigation with keyboard
@@ -548,7 +570,16 @@ const SeedBankModal = ({
                                 }}
                                 onDoubleClick={() => {
                                   // On double click, select the current seed and close the modal
-                                  setCurrentSeedIndex(originalIndex);
+                                  // First, sync the local changes to the parent state
+                                  setSeedList(localSeedList);
+                                  
+                                  // Find the original index in the parent seedList
+                                  const syncedIndex = seedList.findIndex(s => 
+                                    JSON.stringify(s) === JSON.stringify(seed)
+                                  );
+                                  const indexToUse = syncedIndex !== -1 ? syncedIndex : originalIndex;
+                                  
+                                  setCurrentSeedIndex(indexToUse);
                                   onClose();
                                 }}
                                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
@@ -571,9 +602,13 @@ const SeedBankModal = ({
         <div className="flex justify-end space-x-2 p-4 border-t border-gray-200 bg-gray-50">
           <button
             className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
-            onClick={onClose}
+            onClick={() => {
+              // Save changes before closing
+              setSeedList(localSeedList);
+              onClose();
+            }}
           >
-            Close
+            Save & Close
           </button>
         </div>
       </div>

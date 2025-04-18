@@ -380,7 +380,101 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
     );
   };
 
-  // Render the tool calls tab
+  // State for tool call editing - moved to the top level to follow React hooks rules
+  const [editingToolCalls, setEditingToolCalls] = useState(false);
+  const [editedToolCalls, setEditedToolCalls] = useState('');
+  const [toolCallValidationError, setToolCallValidationError] = useState(null);
+  
+  // Initialize editing state when needed
+  useEffect(() => {
+    if (editingToolCalls && example?.tool_calls) {
+      try {
+        setEditedToolCalls(JSON.stringify(example.tool_calls || [], null, 2));
+        setToolCallValidationError(null);
+      } catch (e) {
+        console.error("Error stringifying tool calls:", e);
+        setEditedToolCalls('[]');
+        setToolCallValidationError("Error formatting existing tool calls");
+      }
+    }
+  }, [editingToolCalls, example?.tool_calls]);
+  
+  // Validate JSON as user types
+  useEffect(() => {
+    if (!editingToolCalls) return;
+    
+    try {
+      const parsed = JSON.parse(editedToolCalls);
+      if (!Array.isArray(parsed)) {
+        setToolCallValidationError("Tool calls must be an array");
+      } else {
+        setToolCallValidationError(null);
+      }
+    } catch (e) {
+      setToolCallValidationError(`Invalid JSON: ${e.message}`);
+    }
+  }, [editedToolCalls, editingToolCalls]);
+  
+  // Save edited tool calls
+  const saveToolCalls = useCallback(async () => {
+    if (toolCallValidationError) {
+      toast.error(`Cannot save: ${toolCallValidationError}`);
+      return;
+    }
+    
+    try {
+      const parsed = JSON.parse(editedToolCalls);
+      
+      // Update the example with new tool calls
+      const updatedExample = {
+        ...editedExample,
+        tool_calls: parsed
+      };
+      
+      setIsSaving(true);
+      
+      try {
+        await api.updateExample(datasetId, example.id, updatedExample);
+        toast.success("Tool calls updated successfully");
+        
+        // Update local state
+        setEditedExample(updatedExample);
+        if (onExampleUpdated) {
+          onExampleUpdated(updatedExample);
+        }
+        
+        // Exit editing mode
+        setEditingToolCalls(false);
+      } catch (error) {
+        console.error("Failed to update tool calls:", error);
+        toast.error(error.message || "Failed to update tool calls");
+      } finally {
+        setIsSaving(false);
+      }
+    } catch (e) {
+      toast.error(`Failed to parse JSON: ${e.message}`);
+    }
+  }, [toolCallValidationError, editedToolCalls, editedExample, datasetId, example?.id, onExampleUpdated]);
+  
+  // Cancel tool call editing
+  const cancelToolCallsEdit = useCallback(() => {
+    setEditingToolCalls(false);
+    setEditedToolCalls('');
+    setToolCallValidationError(null);
+  }, []);
+  
+  // Format tool calls JSON
+  const formatToolCalls = useCallback(() => {
+    try {
+      const parsed = JSON.parse(editedToolCalls);
+      setEditedToolCalls(JSON.stringify(parsed, null, 2));
+      toast.success("JSON formatted successfully");
+    } catch (e) {
+      toast.error(`Cannot format invalid JSON: ${e.message}`);
+    }
+  }, [editedToolCalls]);
+  
+  // Render the tool calls tab with enhanced UI and editing capabilities
   const renderToolCallsTab = () => {
     if (!hasToolCalls) return null;
 
@@ -388,53 +482,227 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <h3 className="text-md font-medium text-gray-700 flex items-center">
-            <Icon name="tool" className="h-4 w-4 mr-1 text-gray-500" />
+            <Icon name="tool" className="h-4 w-4 mr-1 text-blue-600" />
             Tool Calls
-            <span className="ml-2 bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full text-xs">
+            <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-xs">
               {example.tool_calls.length}
             </span>
           </h3>
+          
+          {/* Toggle edit mode if not already editing */}
+          {!isEditing && !editingToolCalls && (
+            <button
+              onClick={() => setEditingToolCalls(true)}
+              className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 transition-colors flex items-center"
+            >
+              <Icon name="edit" className="h-3 w-3 mr-1" />
+              Edit Tool Calls
+            </button>
+          )}
         </div>
         
-        {/* Note: Tool calls are not editable in this version */}
-        <div className="divide-y divide-gray-100">
-          {example.tool_calls.map((call, index) => {
-            // Extract function name and arguments based on the structure
-            let name = "Unknown Tool";
-            let args = {};
-            
-            if (call.function) {
-              // Standard OpenAI format
-              name = call.function.name || "Unknown Tool";
-              try {
-                args = typeof call.function.arguments === 'string' 
-                  ? JSON.parse(call.function.arguments) 
-                  : call.function.arguments || {};
-              } catch (e) {
-                console.error("Error parsing tool call arguments:", e);
-                args = { error: "Failed to parse", raw: call.function.arguments };
-              }
-            } else if (call.name) {
-              // Simple format with name and parameters directly
-              name = call.name;
-              args = call.parameters || {};
-            }
-            
-            return (
-              <div key={index} className="py-3 first:pt-0 last:pb-0">
-                <div className="flex items-center">
-                  <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-100 text-blue-800 text-xs font-medium mr-2">
-                    {index + 1}
+        {/* JSON editor for tool calls */}
+        {editingToolCalls ? (
+          <div className="border border-blue-200 rounded-md p-3 bg-blue-50">
+            <div className="flex justify-between items-center mb-2">
+              <div className="text-sm text-gray-600">
+                {toolCallValidationError ? (
+                  <span className="text-red-600 flex items-center">
+                    <Icon name="alert" className="h-4 w-4 mr-1" />
+                    {toolCallValidationError}
                   </span>
-                  <div className="font-medium text-blue-700">{name}</div>
-                </div>
-                <pre className="text-xs mt-2 bg-gray-100 p-2 rounded overflow-x-auto border border-gray-200 max-h-64 scrollbar-thin scrollbar-thumb-gray-300">
-                  {JSON.stringify(args, null, 2)}
-                </pre>
+                ) : (
+                  <span className="text-green-600 flex items-center">
+                    <Icon name="check" className="h-4 w-4 mr-1" />
+                    Valid JSON
+                  </span>
+                )}
               </div>
-            );
-          })}
-        </div>
+              <button
+                onClick={formatToolCalls}
+                className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs hover:bg-gray-300 transition-colors"
+                title="Format JSON"
+              >
+                <Icon name="code" className="h-3 w-3 mr-1 inline-block" />
+                Format
+              </button>
+            </div>
+            
+            <textarea
+              className={`w-full h-64 p-2 border ${
+                toolCallValidationError ? 'border-red-300 bg-red-50' : 'border-blue-300'
+              } rounded-md font-mono text-sm focus:ring-blue-500 focus:border-blue-500 transition-colors`}
+              value={editedToolCalls}
+              onChange={(e) => setEditedToolCalls(e.target.value)}
+              spellCheck="false"
+            />
+            
+            <div className="flex justify-end space-x-2 mt-3">
+              <button
+                onClick={cancelToolCallsEdit}
+                className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors"
+                disabled={isSaving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveToolCalls}
+                className={`px-3 py-1 ${
+                  toolCallValidationError ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+                } text-white rounded text-sm transition-colors flex items-center`}
+                disabled={!!toolCallValidationError || isSaving}
+              >
+                {isSaving ? (
+                  <>
+                    <Icon name="spinner" className="animate-spin h-3 w-3 mr-1" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Icon name="save" className="h-3 w-3 mr-1" />
+                    Save Tool Calls
+                  </>
+                )}
+              </button>
+            </div>
+            
+            <div className="text-xs text-gray-500 mt-2">
+              <p>Tool calls must be an array of JSON objects with the proper structure.</p>
+              <p>Example format:</p>
+              <pre className="mt-1 text-xs bg-white p-1 rounded border border-gray-200">
+{`[
+  {
+    "type": "function",
+    "function": {
+      "name": "tool_name",
+      "arguments": "{}"
+    }
+  }
+]`}
+              </pre>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3 bg-white p-3 rounded-md border border-gray-200">
+            {example.tool_calls.map((call, index) => {
+              // Extract function name and arguments based on the structure
+              let name = "Unknown Tool";
+              let args = {};
+              let error = null;
+              
+              try {
+                if (call.function && typeof call.function === 'object') {
+                  // Standard OpenAI format
+                  name = call.function.name || "Unknown Tool";
+                  
+                  if (typeof call.function.arguments === 'string') {
+                    try {
+                      args = JSON.parse(call.function.arguments);
+                    } catch (e) {
+                      error = `Invalid JSON in arguments: ${e.message}`;
+                      args = { _raw: call.function.arguments };
+                    }
+                  } else {
+                    args = call.function.arguments || {};
+                  }
+                } else if (call.name) {
+                  // Simple format with name and parameters directly
+                  name = call.name;
+                  args = call.parameters || call.arguments || {};
+                } else if (call.function_call) {
+                  // Alternative OpenAI format
+                  name = call.function_call.name || "Unknown Tool";
+                  if (typeof call.function_call.arguments === 'string') {
+                    try {
+                      args = JSON.parse(call.function_call.arguments);
+                    } catch (e) {
+                      error = `Invalid JSON in arguments: ${e.message}`;
+                      args = { _raw: call.function_call.arguments };
+                    }
+                  } else {
+                    args = call.function_call.arguments || {};
+                  }
+                } else if (call.tool_use) {
+                  // Claude format
+                  name = call.tool_use.name || "Unknown Tool";
+                  args = call.tool_use.parameters || {};
+                } else {
+                  error = "Unrecognized tool call format";
+                }
+              } catch (e) {
+                console.error("Error processing tool call:", e);
+                error = `Failed to process tool call: ${e.message}`;
+              }
+              
+              // Count parameters for badge
+              const paramCount = Object.keys(args).length;
+              
+              return (
+                <div 
+                  key={index} 
+                  className={`p-3 ${
+                    error ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-100'
+                  } rounded-md`}
+                >
+                  <div className="flex items-center">
+                    <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-200 text-blue-800 text-sm font-medium mr-2">
+                      {index + 1}
+                    </span>
+                    <div className="font-medium text-blue-700">{name}</div>
+                    {paramCount > 0 && (
+                      <span className="ml-2 bg-blue-200 text-blue-800 text-xs px-2 py-0.5 rounded">
+                        {paramCount} parameter{paramCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    <div className="ml-auto text-xs text-gray-500">
+                      <code className="bg-blue-100 px-1 py-0.5 rounded">
+                        {call.type || 'function'}
+                      </code>
+                    </div>
+                  </div>
+                  
+                  {error && (
+                    <div className="mt-2 text-red-600 bg-red-50 p-2 rounded border border-red-200 flex items-start">
+                      <Icon name="alert" className="h-4 w-4 text-red-600 mt-0.5 mr-2 flex-shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+                  
+                  <div className="mt-2">
+                    <div className="flex items-center mb-1 text-xs text-gray-500">
+                      <Icon name="code" className="h-3 w-3 mr-1" />
+                      Arguments:
+                    </div>
+                    <pre className="text-xs bg-white p-2 rounded border border-gray-200 overflow-x-auto max-h-64 scrollbar-thin scrollbar-thumb-gray-300">
+                      {JSON.stringify(args, null, 2)}
+                    </pre>
+                  </div>
+                  
+                  {/* Show raw format button */}
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      onClick={() => {
+                        toast.info(
+                          <div>
+                            <div className="font-medium mb-1">Raw Tool Call Format:</div>
+                            <pre className="text-xs bg-gray-100 p-2 rounded overflow-x-auto max-h-40">
+                              {JSON.stringify(call, null, 2)}
+                            </pre>
+                          </div>,
+                          { autoClose: false }
+                        );
+                      }}
+                      className="text-xs text-gray-500 hover:text-gray-700 flex items-center"
+                    >
+                      <Icon name="info" className="h-3 w-3 mr-1" />
+                      View Raw Format
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
