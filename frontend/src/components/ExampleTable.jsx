@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import ExampleDetailModal from './ExampleDetailModal';
 import ExportDialog from './ExportDialog';
+import ConfirmationModal from './ConfirmationModal'; // Import ConfirmationModal
 
 const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const [examples, setExamples] = useState([]);
@@ -39,6 +40,10 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   
   // For pagination loading state
   const [isPaginationLoading, setIsPaginationLoading] = useState(false);
+
+  // For archive confirmation modal
+  const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
+  const [examplesToDelete, setExamplesToDelete] = useState(new Set());
 
   // Function to fetch examples that can be called programmatically 
   const fetchExamples = async () => {
@@ -233,20 +238,26 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     }
   };
   
-  // Delete selected examples
-  const handleDeleteSelected = async () => {
+  // Delete selected examples - Opens confirmation modal
+  const handleDeleteSelected = () => {
     if (selectedExamples.size === 0) return;
     
-    if (!confirm(`Are you sure you want to delete ${selectedExamples.size} example(s)?`)) {
-      return;
-    }
+    setExamplesToDelete(new Set(selectedExamples)); // Store IDs to delete
+    setIsArchiveConfirmOpen(true); // Open the modal
+  };
+
+  // Confirm deletion after modal confirmation
+  const confirmDeleteExamples = async () => {
+    if (examplesToDelete.size === 0) return;
     
     setIsProcessing(true);
+    setIsArchiveConfirmOpen(false); // Close modal immediately
     
     try {
-      await api.deleteExamples(datasetId, Array.from(selectedExamples));
-      toast.success(`${selectedExamples.size} example(s) deleted successfully`);
-      setSelectedExamples(new Set());
+      await api.deleteExamples(datasetId, Array.from(examplesToDelete));
+      toast.success(`${examplesToDelete.size} example(s) deleted successfully`);
+      setSelectedExamples(new Set()); // Clear selection in the table
+      setExamplesToDelete(new Set()); // Clear the stored IDs
       fetchExamples(); // Refresh the list
     } catch (error) {
       console.error('Failed to delete examples:', error);
@@ -495,7 +506,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
         <div className="flex space-x-2">
           {selectedExamples.size > 0 && (
             <button
-              onClick={handleDeleteSelected}
+              onClick={handleDeleteSelected} // Changed to open modal
               className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm transition-all duration-200 transform hover:shadow active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
               disabled={isProcessing}
             >
@@ -908,6 +919,25 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
         onClose={() => setIsExportDialogOpen(false)}
         datasetId={datasetId}
         datasetName={datasetName}
+      />
+
+      {/* Archive Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={isArchiveConfirmOpen}
+        onClose={() => {
+          setIsArchiveConfirmOpen(false);
+          setExamplesToDelete(new Set()); // Clear IDs if cancelled
+        }}
+        onConfirm={confirmDeleteExamples}
+        title="Confirm Delete"
+        message={
+          <>
+            Are you sure you want to delete <strong>{examplesToDelete.size}</strong> selected example(s)?
+            This action cannot be undone.
+          </>
+        }
+        confirmButtonText="Confirm Delete"
+        confirmButtonVariant="danger"
       />
     </div>
   );

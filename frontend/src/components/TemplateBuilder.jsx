@@ -5,6 +5,7 @@ import api from '../api/apiClient';
 import SystemPromptEditor from './SystemPromptEditor';
 import ModelSelector from './ModelSelector'; // Import ModelSelector
 import ToggleSwitch from './ToggleSwitch'; // Assuming a ToggleSwitch component exists or will be created
+import ConfirmationModal from './ConfirmationModal'; // Import the new component
 
 const TemplateBuilder = ({ context }) => { // Accept context as prop
   // Destructure selectedDataset from context
@@ -614,31 +615,22 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       )}
 
       {/* Archive Confirmation Modal */}
-      {isArchiveConfirmOpen && selectedTemplate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
-            <h3 className="text-lg font-medium mb-4">Confirm Archive</h3>
-            <p className="mb-6 text-gray-700">
+      <ConfirmationModal
+        isOpen={isArchiveConfirmOpen}
+        onClose={() => setIsArchiveConfirmOpen(false)}
+        onConfirm={confirmArchiveTemplate}
+        title="Confirm Archive"
+        message={
+          selectedTemplate ? (
+            <>
               Are you sure you want to archive the template "<strong>{selectedTemplate.name}</strong>"?
               This action cannot be undone directly.
-            </p>
-            <div className="flex justify-end space-x-2">
-              <button
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
-                onClick={() => setIsArchiveConfirmOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                onClick={confirmArchiveTemplate}
-              >
-                Confirm Archive
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            </>
+          ) : ''
+        }
+        confirmButtonText="Confirm Archive"
+        confirmButtonVariant="danger"
+      />
     </div>
   );
 };
