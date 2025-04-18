@@ -1,7 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, col
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..db import get_session
 from ..core.security import get_current_user
@@ -97,7 +97,7 @@ async def create_export_template(
         template=template.template,
         is_default=template.is_default,
         owner_id=user.id,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
         archived=False
     )
     

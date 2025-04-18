@@ -92,7 +92,7 @@ def test_create_tool_calling_template():
         # Create a mock session
         active_sessions[user.username] = {
             "user_id": user.id,
-            "valid_until": datetime.utcnow() + timedelta(minutes=30)
+            "valid_until": datetime.now(datetime.timezone.utc) + timedelta(minutes=30)
         }
         token = base64.b64encode(f"{user.username}:password123".encode()).decode()
     
@@ -145,7 +145,7 @@ def test_create_and_get_example_with_tool_calls():
         # Create a mock session
         active_sessions[user.username] = {
             "user_id": user.id,
-            "valid_until": datetime.utcnow() + timedelta(minutes=30)
+            "valid_until": datetime.now(datetime.timezone.utc) + timedelta(minutes=30)
         }
         token = base64.b64encode(f"{user.username}:password123".encode()).decode()
     
@@ -218,7 +218,7 @@ def test_export_dataset_with_tool_calls():
         # Create a mock session
         active_sessions[user.username] = {
             "user_id": user.id,
-            "valid_until": datetime.utcnow() + timedelta(minutes=30)
+            "valid_until": datetime.now(datetime.timezone.utc) + timedelta(minutes=30)
         }
         token = base64.b64encode(f"{user.username}:password123".encode()).decode()
     

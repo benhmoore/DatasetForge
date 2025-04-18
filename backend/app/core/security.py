@@ -2,7 +2,7 @@ import os
 import base64
 import bcrypt
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -79,7 +79,7 @@ def authenticate_user(
         )
     
     # Create session with 30-minute expiry
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     active_sessions[user.username] = {
         "valid_until": now + timedelta(minutes=settings.SESSION_TIMEOUT),
         "user_id": user.id,
@@ -103,7 +103,7 @@ def get_current_user(
     # Check if user has an active session
     user_session = active_sessions.get(credentials.username)
     
-    if not user_session or datetime.utcnow() > user_session["valid_until"]:
+    if not user_session or datetime.now(timezone.utc) > user_session["valid_until"]:
         # Session expired or doesn't exist
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -111,7 +111,7 @@ def get_current_user(
         )
     
     # Refresh session expiry time
-    user_session["valid_until"] = datetime.utcnow() + timedelta(minutes=settings.SESSION_TIMEOUT)
+    user_session["valid_until"] = datetime.now(timezone.utc) + timedelta(minutes=settings.SESSION_TIMEOUT)
     
     # Get user from database
     user = session.exec(

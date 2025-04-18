@@ -92,6 +92,8 @@ class ExampleRead(ExampleBase):
     id: int
     dataset_id: int
     timestamp: datetime
+    created_at: datetime  # Added created_at
+    updated_at: datetime  # Added updated_at
 
 
 class ExamplePagination(BaseModel):

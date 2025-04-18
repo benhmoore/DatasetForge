@@ -8,6 +8,7 @@ from sqlmodel import Session, select, SQLModel
 from sqlalchemy.sql import func
 from sqlalchemy import inspect
 import datetime  # Added for database_status timestamp formatting
+from datetime import timezone  # Import timezone for timestamp formatting
 
 # Support both ways of running:
 # 1. From the container's /app directory: python app/cli.py

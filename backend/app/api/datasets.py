@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from fastapi.responses import StreamingResponse
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlmodel import Session, select, col
 
 from ..db import get_session
@@ -74,7 +74,7 @@ async def create_dataset(
         owner_id=user.id,
         salt=salt,
         archived=False,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
 
     session.add(db_dataset)
@@ -278,6 +278,7 @@ async def add_examples(
     for example_data in examples:
         # In a real implementation, encrypt fields using the key
         # For now, just create the example
+        now = datetime.now(timezone.utc) # Get current time once with timezone awareness
         example = Example(
             dataset_id=dataset_id,
             system_prompt=example_data.system_prompt,
@@ -285,7 +286,9 @@ async def add_examples(
             slots=example_data.slots,
             output=example_data.output,
             tool_calls=example_data.tool_calls,
-            timestamp=datetime.utcnow(),
+            timestamp=now, # Use the same timestamp for consistency
+            created_at=now, # Set created_at
+            updated_at=now, # Set updated_at initially
         )
         db_examples.append(example)
 
@@ -334,6 +337,7 @@ async def update_example(
     example.slots = example_data.slots
     example.output = example_data.output
     example.tool_calls = example_data.tool_calls
+    example.updated_at = datetime.now(timezone.utc) # Update the updated_at timestamp
 
     session.add(example)
     session.commit()

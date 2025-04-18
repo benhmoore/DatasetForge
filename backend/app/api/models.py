@@ -50,6 +50,8 @@ class Example(SQLModel, table=True):
         default=None, sa_column=Column(JSON)
     )
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class ExportTemplate(SQLModel, table=True):
