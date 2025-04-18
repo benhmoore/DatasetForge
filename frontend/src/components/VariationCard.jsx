@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import ToolCallEditor from './ToolCallEditor';
 
 const VariationCard = ({ 
   variation, 
@@ -7,12 +8,13 @@ const VariationCard = ({
   onStar, 
   onEdit, 
   onRegenerate, 
-  onDismiss, // Add onDismiss prop
+  onDismiss, 
   isStarred = false,
   isGenerating = false,
   error = null,
   tool_calls = null,
-  processed_prompt = null
+  processed_prompt = null,
+  onToolCallsChange // new prop for tool calls editing
 }) => {
   const [editedOutput, setEditedOutput] = useState(output);
   const [isEditing, setIsEditing] = useState(false);
@@ -20,34 +22,68 @@ const VariationCard = ({
   const [regenerateInstruction, setRegenerateInstruction] = useState('');
   const regenerateInputRef = useRef(null);
   const [showPrompt, setShowPrompt] = useState(false);  // State to control prompt visibility
-  
+  const outputDisplayRef = useRef(null); // Ref for the output display area
+  const [isToolEditorOpen, setIsToolEditorOpen] = useState(false); // state for tool-call editor modal
+
   // Focus the instruction input when the modal opens
   useEffect(() => {
     if (isRegenerateModalOpen && regenerateInputRef.current) {
       regenerateInputRef.current.focus();
     }
   }, [isRegenerateModalOpen]);
-  
+
+  // Start editing mode
+  const startEditing = (e) => { // Accept event argument
+    // Check if the click originated within the tool calls section
+    if (e && e.target.closest('[data-testid="tool-calls-section"]')) {
+      return; // Do nothing if click is inside tool calls
+    }
+
+    if (isGenerating || isEditing) return;
+    // Ensure the editor starts with the current output value
+    setEditedOutput(output);
+    setIsEditing(true);
+  };
+
+  // Save the edited output
+  const saveEdit = () => {
+    if (editedOutput.trim() === '') {
+      toast.error('Output cannot be empty. Edit cancelled.');
+      // Revert changes and exit editing mode
+      setEditedOutput(output);
+      setIsEditing(false);
+      return;
+    }
+    // Only call onEdit if the content actually changed
+    if (editedOutput !== output) {
+      onEdit(editedOutput);
+    }
+    setIsEditing(false);
+  };
+
+  // Handle output text change
+  const handleOutputChange = (e) => {
+    setEditedOutput(e.target.value);
+  };
+
   // Function to render tool calls
   const renderToolCalls = (toolCalls) => {
     if (!toolCalls || !Array.isArray(toolCalls) || toolCalls.length === 0) {
       return null;
     }
-    
-    // For debugging
-    console.log("Rendering tool calls:", toolCalls);
-    
     return (
-      <div className="mt-2 pt-2 border-t border-gray-200">
+      <div 
+        data-testid="tool-calls-section" 
+        className="mt-2 pt-2 border-t border-gray-200 cursor-pointer" 
+        onClick={(e) => { e.stopPropagation(); setIsToolEditorOpen(true); }} // open editor on click
+      >
         <h5 className="text-xs font-medium text-gray-700 mb-1">Tool Calls:</h5>
         <div className="space-y-1">
           {toolCalls.map((call, index) => {
-            // Handle different tool call formats
             let name = "Unknown Tool";
             let parameters = {};
             
             if (call.function && typeof call.function === 'object') {
-              // Standard format (function.name & function.arguments)
               name = call.function.name || "Unknown Tool";
               try {
                 parameters = typeof call.function.arguments === 'string' 
@@ -58,7 +94,6 @@ const VariationCard = ({
                 parameters = { error: "Failed to parse arguments", raw: call.function.arguments };
               }
             } else if (call.name) {
-              // Simple format (name & parameters directly)
               name = call.name;
               parameters = call.parameters || {};
             }
@@ -76,34 +111,13 @@ const VariationCard = ({
       </div>
     );
   };
-  
+
   // Handle star button click
   const handleStar = () => {
     if (isGenerating) return;
     onStar(isEditing ? editedOutput : output);
   };
-  
-  // Handle edit button click
-  const handleEditToggle = () => {
-    if (isGenerating) return;
-    
-    if (isEditing) {
-      // Save the edit
-      if (editedOutput.trim() === '') {
-        toast.error('Output cannot be empty');
-        return;
-      }
-      
-      onEdit(editedOutput);
-      setIsEditing(false);
-    } else {
-      // Start editing
-      // Ensure the editor starts with the current output value
-      setEditedOutput(output);
-      setIsEditing(true);
-    }
-  };
-  
+
   // Handle regenerate button click
   const handleRegenerate = () => {
     if (isGenerating) return;
@@ -126,12 +140,7 @@ const VariationCard = ({
       setRegenerateInstruction('');
     }
   };
-  
-  // Handle output text change
-  const handleOutputChange = (e) => {
-    setEditedOutput(e.target.value);
-  };
-  
+
   // Render loading state
   if (isGenerating) {
     return (
@@ -205,22 +214,14 @@ const VariationCard = ({
             </span>
           </button>
           <button
-            onClick={handleEditToggle}
-            className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
-            title={isEditing ? 'Save' : 'Edit'}
-          >
-            {isEditing ? '💾' : '✎'}
-          </button>
-          <button
             onClick={handleRegenerate}
             className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
             title="Regenerate"
           >
             <span className="inline-block hover:rotate-180 transition-transform duration-500">🔄</span>
           </button>
-          {/* Add Dismiss Button */}
           <button
-            onClick={onDismiss} // Call onDismiss prop
+            onClick={onDismiss}
             className="text-red-500 hover:text-red-700 p-1 transition-colors"
             title="Dismiss"
           >
@@ -231,20 +232,25 @@ const VariationCard = ({
       
       {isEditing ? (
         <textarea
+          ref={outputDisplayRef}
           value={editedOutput}
           onChange={handleOutputChange}
+          onBlur={saveEdit}
           className="w-full p-2 border border-gray-300 rounded-md h-32 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
           placeholder="Output"
           autoFocus
         />
       ) : (
-        <div className="p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap transition-all duration-200 hover:border-gray-200">
+        <div
+          ref={outputDisplayRef}
+          onClick={startEditing}
+          className="p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap transition-all duration-200 hover:border-gray-200 cursor-pointer min-h-[5rem]"
+        >
           {output}
           {renderToolCalls(tool_calls)}
         </div>
       )}
 
-      {/* Collapsible Processed Prompt Section */}
       {processed_prompt && (
         <div className="mt-3 pt-3 border-t border-gray-100">
           <button
@@ -266,7 +272,6 @@ const VariationCard = ({
         </div>
       )}
       
-      {/* Regenerate Modal */}
       {isRegenerateModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
           <div className="bg-white rounded-lg p-6 max-w-lg w-full shadow-xl animate-fadeIn">
@@ -306,6 +311,13 @@ const VariationCard = ({
           </div>
         </div>
       )}
+
+      <ToolCallEditor
+        isOpen={isToolEditorOpen}
+        toolCalls={tool_calls}
+        onChange={onToolCallsChange}
+        onClose={() => setIsToolEditorOpen(false)}
+      />
     </div>
   );
 };

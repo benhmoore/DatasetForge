@@ -22,12 +22,11 @@ const generatePromptPreview = (promptTemplate, slotValues) => {
   return preview;
 };
 
-const SeedForm = ({ template, onGenerate, isGenerating }) => {
+const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing, setIsParaphrasing }) => { // Add setIsParaphrasing prop
   // Store a list of seeds, each seed is an object with slot values
   const [seedList, setSeedList] = useState([{}]); 
   const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
   const [variationsPerSeed, setVariationsPerSeed] = useState(3); // Renamed from batchSize
-  const [isParaphrasing, setIsParaphrasing] = useState(false); // State for paraphrase loading
   const [isAiModalOpen, setIsAiModalOpen] = useState(false); // State for AI modal
 
   // Initialize/Reset seeds when template changes
@@ -162,7 +161,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
     }
 
     setIsAiModalOpen(false); // Close modal before starting
-    setIsParaphrasing(true);
+    setIsParaphrasing(true); // Use the passed setter
     try {
       const payload = {
         template_id: template.id,
@@ -196,7 +195,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
       const errorMsg = error.response?.data?.detail || error.message || 'Failed to generate paraphrased seeds.';
       toast.error(errorMsg);
     } finally {
-      setIsParaphrasing(false);
+      setIsParaphrasing(false); // Use the passed setter
     }
   };
   
@@ -349,11 +348,11 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
             />
           </div>
           
-          {/* Generate button */}
-          <div className="pt-2">
+          {/* Generate/Cancel buttons */}
+          <div className="pt-2 flex space-x-2">
             <button
               type="submit"
-              className="w-full py-2 px-4 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-primary-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:shadow-md active:scale-[0.98]"
+              className="flex-grow py-2 px-4 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-primary-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:shadow-md active:scale-[0.98]"
               disabled={isGenerating || isParaphrasing}
             >
               {isGenerating ? (
@@ -362,7 +361,7 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Generating ({seedList.length} Seeds)... 
+                  Generating ({seedList.length * variationsPerSeed} Examples)... 
                 </span>
               ) : isParaphrasing ? (
                  <span className="flex items-center justify-center">
@@ -372,8 +371,17 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
                   </svg>
                   Generating Seeds...
                 </span>
-              ) : `Generate (${seedList.length} Seeds)`}
+              ) : `Generate (${seedList.length * variationsPerSeed} Example${seedList.length * variationsPerSeed !== 1 ? 's' : ''})`}
             </button>
+            {isGenerating && ( // Show Cancel button only when generating
+              <button
+                type="button"
+                onClick={onCancel} // Call the cancel handler passed from Generate
+                className="py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors duration-200"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         </div>
       </form>

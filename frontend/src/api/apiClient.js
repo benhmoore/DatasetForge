@@ -92,7 +92,7 @@ const api = {
     .then(response => response.data),
   
   // Generation
-  generate: async (data, onData) => { // Modify to be async and accept onData callback
+  generate: async (data, onData, signal) => { // Modify to accept signal
     // Debug log to verify data format
     console.log('Sending generation request:', JSON.stringify(data));
     
@@ -104,10 +104,15 @@ const api = {
         'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
       },
       body: JSON.stringify(data),
+      signal: signal // Pass the signal to fetch
     });
 
     if (!response.ok) {
-      // Handle non-2xx responses
+      // Handle non-2xx responses including AbortError
+      if (signal?.aborted) {
+        console.log('Generation request aborted.');
+        throw new DOMException('Aborted', 'AbortError'); 
+      }
       const errorText = await response.text();
       console.error('Generation request failed:', response.status, errorText);
       throw new Error(`Generation failed: ${response.status} ${errorText || response.statusText}`);
@@ -123,9 +128,23 @@ const api = {
     let buffer = '';
 
     while (true) {
+      // Check if aborted before reading
+      if (signal?.aborted) {
+        console.log('Generation stream aborted during processing.');
+        reader.cancel('Aborted by user'); // Cancel the reader
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      
       const { done, value } = await reader.read();
       if (done) {
         break;
+      }
+      
+      // Check if aborted after reading
+      if (signal?.aborted) {
+        console.log('Generation stream aborted after read.');
+        reader.cancel('Aborted by user');
+        throw new DOMException('Aborted', 'AbortError');
       }
 
       buffer += decoder.decode(value, { stream: true });
@@ -141,7 +160,6 @@ const api = {
             }
           } catch (e) {
             console.error('Failed to parse JSON line:', line, e);
-            // Optionally, call onData with an error object
             if (onData) {
               onData({ error: `Failed to parse stream data: ${line}` });
             }

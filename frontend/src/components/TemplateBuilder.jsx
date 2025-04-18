@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import SystemPromptEditor from './SystemPromptEditor';
 import ModelSelector from './ModelSelector'; // Import ModelSelector
+import ToggleSwitch from './ToggleSwitch'; // Assuming a ToggleSwitch component exists or will be created
 
 const TemplateBuilder = ({ context }) => { // Accept context as prop
   // Destructure selectedDataset from context
@@ -14,6 +15,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [isSaving, setIsSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
+  const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false); // State for archive confirmation modal
 
   // Form fields
   const [name, setName] = useState('');
@@ -25,8 +27,9 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [toolDefinitions, setToolDefinitions] = useState([]);
   const [newToolName, setNewToolName] = useState('');
   const [newToolDescription, setNewToolDescription] = useState('');
-  const [newToolParameters, setNewToolParameters] = useState('{}');
+  const [newToolParameters, setNewToolParameters] = useState('');
   const [modelOverride, setModelOverride] = useState(''); // Add state for model override
+  const [parameterError, setParameterError] = useState(''); // State for JSON validation error
 
   // Fetch templates from API
   const fetchTemplates = async () => {
@@ -147,24 +150,33 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
     }
   };
 
-  // Handle template archive
-  const handleArchiveTemplate = async () => {
+  // Handle template archive confirmation
+  const confirmArchiveTemplate = async () => {
     if (!selectedTemplate) return;
-    
+
     try {
       await api.archiveTemplate(selectedTemplate.id);
-      
+
       // Clear selection
       setSelectedTemplate(null);
       populateForm(null);
-      
+
       // Refresh templates
       fetchTemplates();
-      
+
       toast.success('Template archived successfully');
     } catch (error) {
       console.error('Failed to archive template:', error);
       toast.error('Failed to archive template');
+    } finally {
+      setIsArchiveConfirmOpen(false); // Close the confirmation modal
+    }
+  };
+
+  // Open archive confirmation modal
+  const handleArchiveClick = () => {
+    if (selectedTemplate) {
+      setIsArchiveConfirmOpen(true);
     }
   };
 
@@ -222,26 +234,40 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
 
   // Add tool definition
   const handleAddToolDefinition = () => {
+    setParameterError(''); // Clear previous errors
     try {
-      const parameters = JSON.parse(newToolParameters);
-      
+      // Basic validation: Check if it's potentially valid JSON before parsing
+      const trimmedParams = newToolParameters.trim();
+      if (!trimmedParams.startsWith('{') || !trimmedParams.endsWith('}')) {
+         throw new Error('Parameters must be a valid JSON object.');
+      }
+      const parameters = JSON.parse(trimmedParams);
+
       if (!newToolName.trim()) {
         toast.error('Please enter a tool name');
         return;
       }
-      
+      if (!newToolDescription.trim()) {
+        toast.error('Please enter a tool description');
+        return;
+      }
+
       const newTool = {
+        // Add a simple unique ID for list keys, backend should handle persistent IDs
+        id: `tool-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         name: newToolName,
         description: newToolDescription,
         parameters
       };
-      
+
       setToolDefinitions([...toolDefinitions, newTool]);
       setNewToolName('');
       setNewToolDescription('');
       setNewToolParameters('{}');
     } catch (e) {
-      toast.error('Invalid JSON for parameters');
+      console.error("Parameter JSON parsing error:", e);
+      setParameterError(e.message || 'Invalid JSON format for parameters.');
+      toast.error('Failed to add tool: Invalid JSON for parameters.');
     }
   };
   
@@ -325,7 +351,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
             {selectedTemplate && (
               <button
                 className="px-3 py-1 text-red-600 hover:text-red-800 border border-red-200 rounded-md"
-                onClick={handleArchiveTemplate}
+                onClick={handleArchiveClick} // Changed to open confirmation modal
                 disabled={isSaving}
               >
                 Archive
@@ -436,76 +462,108 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               ))}
             </div>
           </div>
-          
-          {/* Tool Calling Toggle */}
-          <div className="mb-4">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
+
+          {/* Tool Calling Toggle & Section */}
+          <div className="space-y-4 p-4 border border-gray-200 rounded-md">
+            <div className="flex items-center justify-between">
+              <div>
+                <label htmlFor="toolCallingToggle" className="text-md font-semibold text-gray-800">
+                  Enable Tool Calling
+                </label>
+                <p className="text-sm text-gray-500">Allow the model to call predefined functions during generation.</p>
+              </div>
+              <ToggleSwitch
                 id="toolCallingToggle"
-                checked={isToolCallingTemplate}
-                onChange={(e) => setIsToolCallingTemplate(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                checked={isToolCallingTemplate} // Changed 'enabled' to 'checked'
+                onChange={setIsToolCallingTemplate}
               />
-              <label htmlFor="toolCallingToggle" className="text-sm font-medium text-gray-700">
-                Tool Calling Template
-              </label>
             </div>
-          </div>
-          
-          {/* Tool Definitions Section - only show if toolCallingTemplate is enabled */}
-          {isToolCallingTemplate && (
-            <div className="mb-4 p-3 border border-gray-200 rounded-md">
-              <h3 className="text-md font-semibold mb-2">Tool Definitions</h3>
-              
-              {toolDefinitions.map((tool, index) => (
-                <div key={index} className="p-2 mb-2 bg-gray-50 rounded border flex justify-between items-start">
-                  <div>
-                    <div className="font-medium">{tool.name}</div>
-                    <div className="text-sm text-gray-600">{tool.description}</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      Parameters: {JSON.stringify(tool.parameters)}
+
+            {/* Tool Definitions Section - always visible, but disabled visually */}
+            <div className={`space-y-4 transition-opacity duration-300 ${!isToolCallingTemplate ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+              <h3 className="text-md font-semibold text-gray-700 pt-2 border-t border-gray-200">Tool Definitions</h3>
+
+              {/* Display Existing Tools */}
+              {toolDefinitions.length === 0 && isToolCallingTemplate && (
+                <p className="text-sm text-gray-500 italic">No tools defined yet. Add one below.</p>
+              )}
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                {toolDefinitions.map((tool, index) => (
+                  <div key={tool.id || index} className="p-3 bg-gray-50 rounded border border-gray-200 flex justify-between items-start shadow-sm">
+                    <div className="flex-1 mr-2">
+                      <div className="font-medium text-gray-800">{tool.name}</div>
+                      <div className="text-sm text-gray-600 mt-1">{tool.description}</div>
+                      <details className="mt-2 text-xs">
+                        <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Parameters Schema</summary>
+                        <pre className="mt-1 p-2 bg-gray-100 rounded text-gray-700 overflow-x-auto">
+                          {JSON.stringify(tool.parameters, null, 2)}
+                        </pre>
+                      </details>
                     </div>
+                    <button
+                      onClick={() => handleRemoveToolDefinition(index)}
+                      className="text-red-500 hover:text-red-700 text-xl font-light p-1"
+                      title="Remove tool"
+                      disabled={!isToolCallingTemplate} // Also disable button explicitly
+                    >
+                      &times; {/* More standard 'remove' icon */}
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => handleRemoveToolDefinition(index)} 
-                    className="text-red-600 hover:text-red-800"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              
-              <div className="mt-2 space-y-2">
-                <input
-                  type="text"
-                  placeholder="Tool Name"
-                  value={newToolName}
-                  onChange={(e) => setNewToolName(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                />
-                <input
-                  type="text"
-                  placeholder="Tool Description"
-                  value={newToolDescription}
-                  onChange={(e) => setNewToolDescription(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md"
-                />
-                <textarea
-                  placeholder="Parameters JSON Schema"
-                  value={newToolParameters}
-                  onChange={(e) => setNewToolParameters(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md h-24"
-                />
-                <button
-                  onClick={handleAddToolDefinition}
-                  className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-                >
-                  Add Tool
-                </button>
+                ))}
+              </div>
+
+              {/* Add New Tool Form */}
+              <div className="pt-4 border-t border-gray-200">
+                 <h4 className="text-sm font-semibold text-gray-700 mb-2">Add New Tool</h4>
+                 <div className="space-y-3">
+                   <div>
+                     <label className="block text-xs font-medium text-gray-600 mb-1">Tool Name</label>
+                     <input
+                       type="text"
+                       placeholder="e.g., getWeather"
+                       value={newToolName}
+                       onChange={(e) => setNewToolName(e.target.value)}
+                       className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                       disabled={!isToolCallingTemplate}
+                     />
+                   </div>
+                   <div>
+                     <label className="block text-xs font-medium text-gray-600 mb-1">Tool Description</label>
+                     <input
+                       type="text"
+                       placeholder="e.g., Gets the current weather for a location"
+                       value={newToolDescription}
+                       onChange={(e) => setNewToolDescription(e.target.value)}
+                       className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                       disabled={!isToolCallingTemplate}
+                     />
+                   </div>
+                   <div>
+                     <label className="block text-xs font-medium text-gray-600 mb-1">Parameters (JSON Schema)</label>
+                     <textarea
+                       placeholder='e.g., { "type": "object", "properties": { "location": { "type": "string", "description": "City name" } }, "required": ["location"] }, or {} for no parameters'
+                       value={newToolParameters}
+                       onChange={(e) => {
+                         setNewToolParameters(e.target.value);
+                         setParameterError(''); // Clear error on change
+                       }}
+                       className={`w-full p-2 border rounded-md h-28 font-mono text-sm ${parameterError ? 'border-red-500' : 'border-gray-300'}`}
+                       disabled={!isToolCallingTemplate}
+                     />
+                     {parameterError && <p className="text-xs text-red-600 mt-1">{parameterError}</p>}
+                     {!parameterError && <p className="text-xs text-gray-500 mt-1">Define the input parameters for the tool using JSON Schema.</p>}
+                   </div>
+                   <button
+                     onClick={handleAddToolDefinition}
+                     className="px-4 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm disabled:opacity-50"
+                     disabled={!isToolCallingTemplate}
+                   >
+                     Add Tool Definition
+                   </button>
+                 </div>
               </div>
             </div>
-          )}
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -549,6 +607,33 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                 onClick={handleCreateTemplate}
               >
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Archive Confirmation Modal */}
+      {isArchiveConfirmOpen && selectedTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+            <h3 className="text-lg font-medium mb-4">Confirm Archive</h3>
+            <p className="mb-6 text-gray-700">
+              Are you sure you want to archive the template "<strong>{selectedTemplate.name}</strong>"?
+              This action cannot be undone directly.
+            </p>
+            <div className="flex justify-end space-x-2">
+              <button
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                onClick={() => setIsArchiveConfirmOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                onClick={confirmArchiveTemplate}
+              >
+                Confirm Archive
               </button>
             </div>
           </div>

@@ -17,11 +17,14 @@ const Generate = ({ context }) => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isParaphrasing, setIsParaphrasing] = useState(false); // Add state for paraphrasing
   const [variations, setVariations] = useState([]);
   const [starredVariations, setStarredVariations] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [refreshExamplesTrigger, setRefreshExamplesTrigger] = useState(0);
+  const [examples, setExamples] = useState([]);
   const variationsRef = useRef(variations);
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     variationsRef.current = variations;
@@ -81,6 +84,16 @@ const Generate = ({ context }) => {
     setStarredVariations(new Set());
   };
 
+  const handleCancelGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      toast.info("Generation cancelled.");
+      setVariations(prev => prev.map(v => v.isGenerating ? { ...v, isGenerating: false, error: 'Cancelled by user' } : v));
+      setIsGenerating(false);
+      abortControllerRef.current = null;
+    }
+  };
+
   const handleGenerate = useCallback(async (data) => {
     if (!selectedDataset || !selectedTemplate) {
       toast.warning('Please select a dataset and template first');
@@ -93,6 +106,9 @@ const Generate = ({ context }) => {
     }
 
     setIsGenerating(true);
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     const totalVariations = data.seeds.length * data.count;
 
     const initialVariations = Array.from({ length: totalVariations }, (_, globalIndex) => {
@@ -118,6 +134,10 @@ const Generate = ({ context }) => {
 
     try {
       await api.generate(data, (result) => {
+        if (signal.aborted) {
+          console.log("Skipping update for aborted request.");
+          return;
+        }
         setVariations(prevVariations => {
           const updated = [...prevVariations];
           const targetIndex = updated.findIndex(v =>
@@ -138,16 +158,25 @@ const Generate = ({ context }) => {
           }
           return updated;
         });
-      });
+      }, signal);
 
-      toast.info('Generation stream finished.');
+      if (!signal.aborted) {
+        toast.info('Generation stream finished.');
+      }
 
     } catch (error) {
-      console.error('Generation stream failed:', error);
-      toast.error(`Generation failed: ${error.message}`);
-      setVariations(prev => prev.map(v => v.isGenerating ? { ...v, isGenerating: false, error: 'Stream failed' } : v));
+      if (error.name === 'AbortError') {
+        console.log('Generation fetch aborted successfully.');
+      } else {
+        console.error('Generation stream failed:', error);
+        toast.error(`Generation failed: ${error.message}`);
+        setVariations(prev => prev.map(v => v.isGenerating ? { ...v, isGenerating: false, error: `Stream failed: ${error.message}` } : v));
+      }
     } finally {
-      setIsGenerating(false);
+      if (!signal?.aborted) {
+        setIsGenerating(false);
+      }
+      abortControllerRef.current = null;
     }
   }, [selectedDataset, selectedTemplate]);
 
@@ -352,6 +381,32 @@ const Generate = ({ context }) => {
     });
   };
 
+  // Function to handle updates to tool calls from VariationCard
+  const handleToolCallsChange = (variationId, newToolCalls) => {
+    setVariations(prevVariations => {
+      const updatedVariations = [...prevVariations];
+      const index = updatedVariations.findIndex(v => v.id === variationId);
+      if (index !== -1) {
+        updatedVariations[index] = { 
+          ...updatedVariations[index], 
+          tool_calls: newToolCalls 
+        };
+        // If the item was starred, unstar it because it has been modified
+        if (starredVariations.has(variationId)) {
+          setStarredVariations(prevStarred => {
+            const newStarred = new Set(prevStarred);
+            newStarred.delete(variationId);
+            toast.info("Unstarred item due to tool call edit.");
+            return newStarred;
+          });
+        }
+      } else {
+        console.error('Cannot update tool calls: variation not found with id', variationId);
+      }
+      return updatedVariations;
+    });
+  };
+
   const templateOptions = templates.map(template => ({
     value: template.id,
     label: template.name
@@ -359,7 +414,7 @@ const Generate = ({ context }) => {
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-[500px_1fr] gap-6">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -379,6 +434,9 @@ const Generate = ({ context }) => {
             template={selectedTemplate}
             onGenerate={handleGenerate}
             isGenerating={isGenerating}
+            onCancel={handleCancelGeneration}
+            isParaphrasing={isParaphrasing} // Pass paraphrasing state
+            setIsParaphrasing={setIsParaphrasing} // Pass paraphrasing state setter
           />
 
           {variations.length > 0 && starredVariations.size > 0 && (
@@ -408,7 +466,7 @@ const Generate = ({ context }) => {
               {variations.map((variation) => (
                 <VariationCard
                   key={variation.id}
-                  id={variation.id}
+                  id={variation.id} // Pass id
                   variation={variation.variation}
                   output={variation.output}
                   tool_calls={variation.tool_calls}
@@ -420,6 +478,7 @@ const Generate = ({ context }) => {
                   onEdit={(output) => handleEdit(variation.id, output)}
                   onRegenerate={(instruction) => handleRegenerate(variation.id, instruction)}
                   onDismiss={() => handleDismiss(variation.id)}
+                  onToolCallsChange={(newToolCalls) => handleToolCallsChange(variation.id, newToolCalls)} // Pass variation id
                 />
               ))}
             </div>
