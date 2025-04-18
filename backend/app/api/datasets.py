@@ -84,6 +84,33 @@ async def create_dataset(
     return db_dataset
 
 
+@router.get(
+  "/datasets/{dataset_id}",
+  response_model=DatasetRead,
+  status_code=status.HTTP_200_OK
+)
+async def get_dataset(
+  dataset_id: int,
+  user: User = Depends(get_current_user),
+  session: Session = Depends(get_session)
+):
+  """
+  Get a single dataset by ID
+  """
+  dataset = session.get(Dataset, dataset_id)
+  if not dataset:
+    raise HTTPException(
+      status_code=status.HTTP_404_NOT_FOUND,
+      detail="Dataset not found"
+    )
+  if dataset.owner_id != user.id:
+    raise HTTPException(
+      status_code=status.HTTP_403_FORBIDDEN,
+      detail="Not authorized to access this dataset"
+    )
+  return dataset
+
+
 @router.put("/datasets/{dataset_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
 async def archive_dataset(
     dataset_id: int,

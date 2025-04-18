@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Add useEffect
 import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import DatasetSelector from './DatasetSelector';
@@ -6,14 +6,55 @@ import SettingsModal from './SettingsModal';
 import LogoutButton from './LogoutButton';
 import TemplateBuilder from './TemplateBuilder';
 import Generate from './Generate';
+import api from '../api/apiClient'; // Import api
 
 const Layout = () => {
-  const [selectedDataset, setSelectedDataset] = useState(null);
+  // Initialize state from localStorage or null
+  const [selectedDataset, setSelectedDataset] = useState(() => {
+    const savedDatasetId = localStorage.getItem('datasetforge_selectedDatasetId');
+    // We only store the ID, need to fetch the full object later
+    return savedDatasetId ? { id: parseInt(savedDatasetId, 10), name: 'Loading...' } : null;
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const location = useLocation();
   
   // Determine active tab based on current path
   const activeTab = location.pathname === '/generate' ? 'generate' : 'templates';
+
+  // Fetch full dataset details if only ID was loaded from localStorage
+  useEffect(() => {
+    const loadInitialDataset = async () => {
+      const savedDatasetId = localStorage.getItem('datasetforge_selectedDatasetId');
+      // Only attempt load if the placeholder is set
+      if (savedDatasetId && selectedDataset?.name === 'Loading...') {
+        try {
+          // Fetch the specific dataset by ID for persistence
+          const dataset = await api.getDatasetById(parseInt(savedDatasetId, 10));
+          if (dataset && !dataset.archived) {
+            setSelectedDataset(dataset);
+          } else {
+            localStorage.removeItem('datasetforge_selectedDatasetId');
+            setSelectedDataset(null);
+          }
+        } catch (error) {
+          console.error("Failed to load initial dataset from list:", error);
+          localStorage.removeItem('datasetforge_selectedDatasetId');
+          setSelectedDataset(null);
+        }
+      }
+    };
+    loadInitialDataset();
+  }, []); // Run only once on mount
+
+  // Save selected dataset ID to localStorage when it changes
+  useEffect(() => {
+    if (selectedDataset && selectedDataset.id) {
+      localStorage.setItem('datasetforge_selectedDatasetId', selectedDataset.id.toString());
+    } else {
+      // Clear from localStorage if no dataset is selected
+      localStorage.removeItem('datasetforge_selectedDatasetId');
+    }
+  }, [selectedDataset]);
 
   // Create context object to pass down
   const outletContext = { selectedDataset, setSelectedDataset };

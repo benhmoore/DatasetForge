@@ -168,21 +168,21 @@ const VariationCard = ({
   if (error) {
     return (
       <div className="p-4 bg-white rounded-lg border border-red-200 shadow-sm transform transition-all duration-300 hover:shadow-md">
-        <div className="flex justify-between items-center mb-2">
-          <h4 className="font-medium text-gray-900">{variation}</h4>
-          <div className="flex space-x-1">
-            <button
-              onClick={handleRegenerate}
-              className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
-              title="Regenerate"
-            >
-              <span className="inline-block hover:rotate-180 transition-transform duration-500">🔄</span>
-            </button>
-          </div>
+      <div className="flex justify-between items-center mb-2">
+        <h4 className="font-medium text-gray-900">{variation}</h4>
+        <div className="flex space-x-1">
+        <button
+          onClick={onDismiss}
+          className="text-red-500 hover:text-red-700 p-1 transition-colors"
+          title="Dismiss"
+        >
+          <span className="inline-block hover:scale-110 transition-transform duration-200">🗑️</span>
+        </button>
         </div>
-        <div className="p-3 bg-red-50 text-red-700 rounded border border-red-100 text-sm animate-fadeIn">
-          {error}
-        </div>
+      </div>
+      <div className="p-3 bg-red-50 text-red-700 rounded border border-red-100 text-sm animate-fadeIn">
+        {error}
+      </div>
       </div>
     );
   }

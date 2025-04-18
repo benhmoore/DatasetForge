@@ -13,7 +13,10 @@ const Generate = ({ context }) => {
   const location = useLocation();
 
   const [templates, setTemplates] = useState([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  // Initialize selectedTemplateId from localStorage
+  const [selectedTemplateId, setSelectedTemplateId] = useState(() => {
+    return localStorage.getItem('datasetforge_selectedTemplateId') || null;
+  });
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -41,16 +44,32 @@ const Generate = ({ context }) => {
           const activeTemplates = fetchedTemplates.filter(t => !t.archived);
           setTemplates(activeTemplates);
 
-          if (selectedTemplateId) {
-            const updatedSelected = activeTemplates.find(t => t.id === selectedTemplateId);
-            if (updatedSelected) {
-              setSelectedTemplate(updatedSelected);
-            } else {
-              setSelectedTemplateId(null);
-              setSelectedTemplate(null);
-              setVariations([]);
-              setStarredVariations(new Set());
-            }
+          // Validate and set the selected template based on localStorage or default
+          const currentSelectedId = localStorage.getItem('datasetforge_selectedTemplateId');
+          let templateToSelect = null;
+          if (currentSelectedId) {
+            templateToSelect = activeTemplates.find(t => t.id.toString() === currentSelectedId);
+          }
+          
+          // If saved ID is invalid or not found, maybe select the first one?
+          // Or just leave it null if no valid saved ID.
+          if (!templateToSelect && activeTemplates.length > 0) {
+            // Optionally select the first template as a default if no valid saved one
+            // templateToSelect = activeTemplates[0]; 
+            // For now, let's clear invalid selection
+            localStorage.removeItem('datasetforge_selectedTemplateId');
+            setSelectedTemplateId(null);
+          }
+
+          if (templateToSelect) {
+            setSelectedTemplateId(templateToSelect.id);
+            setSelectedTemplate(templateToSelect);
+          } else {
+            // If no template could be selected (empty list or invalid saved ID)
+            setSelectedTemplateId(null);
+            setSelectedTemplate(null);
+            setVariations([]);
+            setStarredVariations(new Set());
           }
         }
       } catch (error) {
@@ -74,7 +93,17 @@ const Generate = ({ context }) => {
     return () => {
       isMounted = false;
     };
-  }, [location.pathname, selectedTemplateId]);
+  // Remove selectedTemplateId from dependency array to avoid loop
+  }, [location.pathname]); 
+
+  // Save selectedTemplateId to localStorage when it changes
+  useEffect(() => {
+    if (selectedTemplateId) {
+      localStorage.setItem('datasetforge_selectedTemplateId', selectedTemplateId.toString());
+    } else {
+      localStorage.removeItem('datasetforge_selectedTemplateId');
+    }
+  }, [selectedTemplateId]);
 
   const handleTemplateChange = (templateId) => {
     setSelectedTemplateId(templateId);

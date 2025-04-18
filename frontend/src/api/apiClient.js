@@ -191,6 +191,9 @@ const api = {
     params: { page, size }
   }).then(response => response.data),
   
+  getDatasetById: (datasetId) => apiClient.get(`/datasets/${datasetId}`)
+    .then(response => response.data),
+  
   createDataset: (name) => apiClient.post('/datasets', { name })
     .then(response => response.data),
   
