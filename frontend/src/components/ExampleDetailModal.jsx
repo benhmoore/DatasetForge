@@ -90,7 +90,12 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
   useEffect(() => {
     if (example) {
       // Create a deep copy of the example to avoid reference issues
-      setEditedExample(JSON.parse(JSON.stringify(example)));
+      // Ensure the mask fields are always defined in the copy
+      const exampleCopy = JSON.parse(JSON.stringify(example));
+      exampleCopy.system_prompt_mask = example.system_prompt_mask || null;
+      exampleCopy.user_prompt_mask = example.user_prompt_mask || null;
+      
+      setEditedExample(exampleCopy);
       
       // Reset editing state and unsaved changes flag if example changes
       setIsEditing(false);
@@ -198,10 +203,17 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
   // Render the content tab
   const renderContentTab = () => (
     <div className="space-y-4">
-      {/* System Prompt */}
+      {/* System Prompt - Display masked version if available */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          System Prompt
+        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+          {example.system_prompt_mask ? (
+            <>
+              <span className="mr-2">System Prompt</span>
+              <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">MASKED</span>
+            </>
+          ) : (
+            "System Prompt"
+          )}
         </label>
         {isEditing ? (
           <textarea
@@ -214,15 +226,31 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
           />
         ) : (
           <div className="p-3 bg-gray-50 rounded-md whitespace-pre-wrap min-h-[4em] border border-gray-100">
-            {example.system_prompt || <span className="text-gray-400 italic">No system prompt</span>}
+            {example.system_prompt_mask ? (
+              <>
+                <div className="whitespace-pre-wrap">{example.system_prompt_mask}</div>
+                <div className="mt-2 text-xs text-indigo-500">
+                  <em>This is a masked prompt that will be used for exports. View the actual prompt in the Metadata tab.</em>
+                </div>
+              </>
+            ) : (
+              example.system_prompt || <span className="text-gray-400 italic">No system prompt</span>
+            )}
           </div>
         )}
       </div>
       
-      {/* User Prompt */}
+      {/* User Prompt - Display masked version if available */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          User Prompt
+        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+          {example.user_prompt_mask ? (
+            <>
+              <span className="mr-2">User Prompt</span>
+              <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">MASKED</span>
+            </>
+          ) : (
+            "User Prompt"
+          )}
         </label>
         {isEditing ? (
           <textarea
@@ -234,7 +262,16 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
           />
         ) : (
           <div className="p-3 bg-gray-50 rounded-md whitespace-pre-wrap min-h-[3em] border border-gray-100">
-            {example.user_prompt || <span className="text-gray-400 italic">No user prompt</span>}
+            {example.user_prompt_mask ? (
+              <>
+                <div className="whitespace-pre-wrap">{example.user_prompt_mask}</div>
+                <div className="mt-2 text-xs text-indigo-500">
+                  <em>This is a masked prompt that will be used for exports. View the actual prompt in the Metadata tab.</em>
+                </div>
+              </>
+            ) : (
+              example.user_prompt || <span className="text-gray-400 italic">No user prompt</span>
+            )}
           </div>
         )}
       </div>
@@ -410,7 +447,6 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
       'Created At': formatDate(example.created_at),
       'Updated At': formatDate(example.updated_at),
       'Dataset ID': datasetId,
-      'Has System Prompt': example.system_prompt ? 'Yes' : 'No',
       'Number of Slots': slotKeys.length,
       'Number of Tool Calls': example.tool_calls?.length || 0,
     };
@@ -423,12 +459,136 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
         </h3>
         
         <div className="bg-gray-50 rounded-md border border-gray-100 divide-y divide-gray-200">
+          {/* Basic metadata */}
           {Object.entries(metadata).map(([key, value]) => (
             <div key={key} className="flex p-3">
               <span className="w-1/3 font-medium text-gray-700">{key}</span>
               <span className="w-2/3 text-gray-600 break-all">{value}</span>
             </div>
           ))}
+          
+          {/* Prompt details section */}
+          <div key="prompt-section" className="p-3">
+            <span className="font-medium text-gray-700 block mb-2">Prompt Details</span>
+            
+            {/* System prompt details */}
+            <div className="mb-4">
+              <div className="flex items-center mb-1">
+                <span className="text-sm font-medium text-gray-700">Actual System Prompt</span>
+                <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-1 rounded">Used for generation</span>
+              </div>
+              <div className="p-2 bg-white border border-gray-200 rounded-md text-sm whitespace-pre-wrap">
+                {example.system_prompt || <span className="text-gray-400 italic">No system prompt</span>}
+              </div>
+              
+              <div className="mt-3">
+                <div className="flex items-center mb-1">
+                  <span className="text-sm font-medium text-indigo-700">Masked System Prompt</span>
+                  <span className="ml-2 text-xs bg-indigo-100 text-indigo-800 px-1 rounded">Used for exports</span>
+                  {!isEditing && example.system_prompt_mask && (
+                    <button 
+                      className="ml-auto text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
+                      onClick={handleEdit}
+                    >
+                      Edit Mask
+                    </button>
+                  )}
+                </div>
+                {isEditing ? (
+                  <textarea
+                    value={editedExample.system_prompt_mask || ''}
+                    onChange={(e) => handleInputChange('system_prompt_mask', e.target.value)}
+                    className="w-full p-2 border border-indigo-300 bg-indigo-50 rounded-md focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                    rows={4}
+                    placeholder="Enter masked system prompt (leave empty to use actual prompt)"
+                  />
+                ) : (
+                  <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-md text-sm whitespace-pre-wrap min-h-[2em]">
+                    {example.system_prompt_mask ? (
+                      example.system_prompt_mask
+                    ) : (
+                      <span className="text-gray-400 italic">No mask (exports will use actual prompt)</span>
+                    )}
+                  </div>
+                )}
+                {isEditing && (
+                  <div className="flex justify-end mt-1">
+                    <button 
+                      className="text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
+                      onClick={() => handleInputChange('system_prompt_mask', example.system_prompt)}
+                    >
+                      Copy from actual
+                    </button>
+                    <button 
+                      className="text-xs px-2 py-0.5 text-red-600 bg-red-50 rounded hover:bg-red-100 ml-2"
+                      onClick={() => handleInputChange('system_prompt_mask', '')}
+                    >
+                      Clear mask
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* User prompt details */}
+            <div>
+              <div className="flex items-center mb-1">
+                <span className="text-sm font-medium text-gray-700">Actual User Prompt</span>
+                <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-1 rounded">Used for generation</span>
+              </div>
+              <div className="p-2 bg-white border border-gray-200 rounded-md text-sm whitespace-pre-wrap">
+                {example.user_prompt || <span className="text-gray-400 italic">No user prompt</span>}
+              </div>
+              
+              <div className="mt-3">
+                <div className="flex items-center mb-1">
+                  <span className="text-sm font-medium text-indigo-700">Masked User Prompt</span>
+                  <span className="ml-2 text-xs bg-indigo-100 text-indigo-800 px-1 rounded">Used for exports</span>
+                  {!isEditing && example.user_prompt_mask && (
+                    <button 
+                      className="ml-auto text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
+                      onClick={handleEdit}
+                    >
+                      Edit Mask
+                    </button>
+                  )}
+                </div>
+                {isEditing ? (
+                  <textarea
+                    value={editedExample.user_prompt_mask || ''}
+                    onChange={(e) => handleInputChange('user_prompt_mask', e.target.value)}
+                    className="w-full p-2 border border-indigo-300 bg-indigo-50 rounded-md focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                    rows={4}
+                    placeholder="Enter masked user prompt (leave empty to use actual prompt)"
+                  />
+                ) : (
+                  <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-md text-sm whitespace-pre-wrap min-h-[2em]">
+                    {example.user_prompt_mask ? (
+                      example.user_prompt_mask
+                    ) : (
+                      <span className="text-gray-400 italic">No mask (exports will use actual prompt)</span>
+                    )}
+                  </div>
+                )}
+                {isEditing && (
+                  <div className="flex justify-end mt-1">
+                    <button 
+                      className="text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
+                      onClick={() => handleInputChange('user_prompt_mask', example.user_prompt)}
+                    >
+                      Copy from actual
+                    </button>
+                    <button 
+                      className="text-xs px-2 py-0.5 text-red-600 bg-red-50 rounded hover:bg-red-100 ml-2"
+                      onClick={() => handleInputChange('user_prompt_mask', '')}
+                    >
+                      Clear mask
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );

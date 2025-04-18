@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient'; // Correct: Import the default export 'api'
 import AiSeedModal from './AiSeedModal'; // Import the new modal component
+import SeedBankModal from './SeedBankModal'; // Import the seed bank modal
 import Icon from './Icons'; // Import the Icon component
 import CustomSlider from './CustomSlider'; // Import the new CustomSlider component
 
@@ -92,6 +93,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
   const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
   const [variationsPerSeed, setVariationsPerSeed] = useState(3);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isSeedBankModalOpen, setIsSeedBankModalOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState({}); // { seedIndex: { slotName: true } }
   const [isInitialized, setIsInitialized] = useState(false); // Track if initial load/reset is done
 
@@ -672,6 +674,16 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
               <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
                 Seed {currentSeedIndex + 1} of {seedList.length}
               </span>
+              <button
+                type="button"
+                onClick={() => setIsSeedBankModalOpen(true)}
+                disabled={isDisabled}
+                className="ml-2 px-2 py-1 text-xs bg-teal-100 text-teal-700 border border-teal-300 rounded hover:bg-teal-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors duration-150"
+                title="View and edit all seeds"
+                aria-label="View and edit all seeds"
+              >
+                <Icon name="database" className="w-3 h-3 mr-1" />
+              </button>
             </div>
             
             <div className="flex items-center space-x-1">
@@ -824,6 +836,17 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
         onClose={() => setIsAiModalOpen(false)}
         onGenerate={handleParaphraseSeeds}
         isGenerating={isParaphrasing}
+      />
+      
+      <SeedBankModal 
+        isOpen={isSeedBankModalOpen}
+        onClose={() => setIsSeedBankModalOpen(false)}
+        seedList={seedList}
+        setSeedList={setSeedList}
+        template={template}
+        isDisabled={isDisabled}
+        currentSeedIndex={currentSeedIndex}
+        setCurrentSeedIndex={setCurrentSeedIndex}
       />
     </div>
   );

@@ -251,7 +251,26 @@ const api = {
       responseType: 'blob',
       params
     }).then(response => response.data);
-  }
+  },
+  
+  // Seed Banks
+  getSeedBanks: (templateId = null) => {
+    const params = templateId ? { template_id: templateId } : {};
+    return apiClient.get('/seed_banks', { params })
+      .then(response => response.data);
+  },
+  
+  getSeedBankById: (seedBankId) => apiClient.get(`/seed_banks/${seedBankId}`)
+    .then(response => response.data),
+  
+  createSeedBank: (seedBank) => apiClient.post('/seed_banks', seedBank)
+    .then(response => response.data),
+  
+  updateSeedBank: (seedBankId, seedBank) => apiClient.put(`/seed_banks/${seedBankId}`, seedBank)
+    .then(response => response.data),
+  
+  deleteSeedBank: (seedBankId) => apiClient.delete(`/seed_banks/${seedBankId}`)
+    .then(response => response.data)
 };
 
 export default api;

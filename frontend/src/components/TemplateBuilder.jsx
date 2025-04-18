@@ -125,6 +125,8 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       setUserPrompt(template.user_prompt);
       setSystemPromptMask(template.system_prompt_mask || '');
       setUserPromptMask(template.user_prompt_mask || '');
+      // Set showMasks based on whether masks are defined
+      setShowMasks(Boolean(template.system_prompt_mask || template.user_prompt_mask));
       setSlots(template.slots || []); // Ensure slots is always an array
       setIsToolCallingTemplate(template.is_tool_calling_template || false);
       // Deep clone tool definitions to avoid modifying original template data
@@ -146,6 +148,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       setUserPrompt('');
       setSystemPromptMask('');
       setUserPromptMask('');
+      setShowMasks(false); // Reset masks visibility for new template
       setSlots([]);
       setIsToolCallingTemplate(false);
       setToolDefinitions([]);
@@ -489,18 +492,26 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
 
   // Handle toggle masks visibility
   const toggleMasks = () => {
-    setShowMasks(!showMasks);
+    const newMasksState = !showMasks;
+    setShowMasks(newMasksState);
     
     // If turning on masks and they're not set yet, initialize with actual prompts
-    if (!showMasks) {
+    if (newMasksState) {
       if (!systemPromptMask) {
         setSystemPromptMask(systemPrompt);
       }
       if (!userPromptMask) {
         setUserPromptMask(userPrompt);
       }
+    } else {
+      // If turning off masks, clear them in the UI (changes won't persist until saved)
+      setSystemPromptMask('');
+      setUserPromptMask('');
     }
   };
+  
+  // Check if masks have been defined
+  const hasMasks = Boolean(systemPromptMask || userPromptMask);
 
   // Handle changes in model parameter inputs
   const handleParameterChange = (param, value) => {
@@ -706,17 +717,22 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               <span className="text-sm font-medium text-gray-700">Prompt Masking</span>
               <p className="text-xs text-gray-500">Enable mask fields to create alternate prompts for exports</p>
             </div>
-            <button 
-              className={`flex items-center px-3 py-1 rounded-md transition-colors duration-200 ${
-                showMasks ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
-              }`}
-              onClick={toggleMasks}
-              title={showMasks ? "Hide mask fields" : "Show mask fields"}
-              disabled={isLoading || isSaving}
-            >
-              <Icon name={showMasks ? "check" : "sparkles"} className="h-4 w-4 mr-1" />
-              {showMasks ? "Masking On" : "Masking Off"}
-            </button>
+            <div className="flex flex-col items-end">
+              <button 
+                className={`flex items-center px-3 py-1 rounded-md transition-colors duration-200 ${
+                  showMasks ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                } ${!hasMasks && !showMasks ? 'opacity-75' : 'opacity-100'}`}
+                onClick={toggleMasks}
+                title={showMasks ? "Turn off masking (will clear masks when saved)" : "Turn on masking"}
+                disabled={isLoading || isSaving}
+              >
+                <Icon name={showMasks ? "check" : "sparkles"} className="h-4 w-4 mr-1" />
+                {showMasks ? "Masking On" : (hasMasks ? "Masking Off" : "No Masks")}
+              </button>
+              {showMasks !== Boolean(hasMasks) && (
+                <span className="text-xs text-amber-600 mt-1">Save template to {showMasks ? "keep" : "clear"} masks</span>
+              )}
+            </div>
           </div>
 
           {/* System Prompt Section with conditional mask field */}
@@ -991,12 +1007,12 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
           <div>
             <div className="flex items-center border-b border-gray-200 mb-2">
               <div 
-                className={`px-4 py-2 font-medium text-sm border-b-2 cursor-pointer ${!showMasks || !systemPromptMask && !userPromptMask ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                className={`px-4 py-2 font-medium text-sm border-b-2 cursor-pointer ${!showMasks ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
                 onClick={() => setShowMasks(false)}
               >
                 Actual Preview
               </div>
-              {showMasks && (systemPromptMask || userPromptMask) && (
+              {hasMasks && (
                 <div 
                   className={`px-4 py-2 font-medium text-sm border-b-2 cursor-pointer ${showMasks ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
                   onClick={() => setShowMasks(true)}
@@ -1007,11 +1023,11 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
             </div>
             
             <div className="p-3 bg-gray-50 border border-gray-200 rounded-md min-h-[100px]">
-              <h4 className="text-xs font-semibold mb-1">{!showMasks || !systemPromptMask && !userPromptMask ? 'Actual User Prompt Preview' : 'Masked User Prompt Preview'}</h4>
+              <h4 className="text-xs font-semibold mb-1">{!showMasks ? 'Actual User Prompt Preview' : 'Masked User Prompt Preview'}</h4>
               <div className="text-sm">
-                {!showMasks || !systemPromptMask && !userPromptMask ? generatePreview() : generateMaskPreview()}
+                {!showMasks ? generatePreview() : generateMaskPreview()}
               </div>
-              {showMasks && (systemPromptMask || userPromptMask) && (
+              {showMasks && hasMasks && (
                 <p className="text-xs text-indigo-500 italic mt-2">This is how the prompts will appear in exported data.</p>
               )}
             </div>

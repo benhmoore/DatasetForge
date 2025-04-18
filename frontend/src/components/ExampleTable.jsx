@@ -184,6 +184,8 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       
       if (field === 'system_prompt') {
         updateData = { ...example, system_prompt: editValue };
+      } else if (field === 'user_prompt') {
+        updateData = { ...example, user_prompt: editValue };
       } else if (field === 'output') {
         updateData = { ...example, output: editValue };
       } else if (field.startsWith('slot:')) {
@@ -359,7 +361,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       
       // Find the next editable cell
       const currentExample = examples.findIndex(ex => ex.id === example.id);
-      const fields = ['system_prompt', ...slotKeys.map(slot => `slot:${slot}`), 'output'];
+      const fields = ['system_prompt', ...slotKeys.map(slot => `slot:${slot}`), 'user_prompt', 'output'];
       const currentFieldIndex = fields.indexOf(field);
       
       if (e.shiftKey) {
@@ -608,6 +610,18 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   
                   <th 
                     className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
+                    onClick={() => handleSort('user_prompt')}
+                  >
+                    User Prompt
+                    {sortField === 'user_prompt' && (
+                      <span className="ml-1">
+                        {sortDirection === 'asc' ? '↑' : '↓'}
+                      </span>
+                    )}
+                  </th>
+
+                  <th 
+                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
                     onClick={() => handleSort('output')}
                   >
                     Output
@@ -651,7 +665,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                       {example.id}
                     </td>
                     
-                    {/* System Prompt */}
+                    {/* System Prompt (showing masked version if available) */}
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs"> {/* Reduced padding */}
                       {editingCell && editingCell.exampleId === example.id && editingCell.field === 'system_prompt' ? (
                         <div className="flex items-center">
@@ -695,7 +709,17 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                           onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
                         >
                           <div className="flex items-center">
-                            <span className="truncate flex-grow">{example.system_prompt?.substring(0, 50)}{example.system_prompt?.length > 50 ? '...' : ''}</span>
+                            {/* Show masked prompt if available, otherwise show actual */}
+                            <span className="truncate flex-grow">
+                              {example.system_prompt_mask ? (
+                                <>
+                                  <span className="mr-1 text-xs bg-indigo-100 text-indigo-800 px-1 rounded">MASKED</span>
+                                  {example.system_prompt_mask.substring(0, 40)}{example.system_prompt_mask.length > 40 ? '...' : ''}
+                                </>
+                              ) : (
+                                example.system_prompt?.substring(0, 50) + (example.system_prompt?.length > 50 ? '...' : '')
+                              )}
+                            </span>
                             <button 
                               className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
                               onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
@@ -704,9 +728,17 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                               ✎
                             </button>
                           </div>
-                          {/* Conditionally render tooltip only if text is long */}
-                          {example.system_prompt && example.system_prompt.length > 50 && (
-                            <span className="tooltip-text">{example.system_prompt}</span>
+                          {/* Conditionally render tooltip with appropriate content */}
+                          {((example.system_prompt_mask && example.system_prompt_mask.length > 40) || 
+                            (!example.system_prompt_mask && example.system_prompt && example.system_prompt.length > 50)) && (
+                            <span className="tooltip-text">
+                              {example.system_prompt_mask || example.system_prompt}
+                              {example.system_prompt_mask && (
+                                <div className="mt-2 text-xs text-indigo-500">
+                                  <em>This is a masked prompt that will be used for exports.</em>
+                                </div>
+                              )}
+                            </span>
                           )}
                         </div>
                       )}
@@ -777,6 +809,85 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                         )}
                       </td>
                     ))}
+                    
+                    {/* User Prompt (showing masked version if available) */}
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs"> {/* Reduced padding */}
+                      {editingCell && editingCell.exampleId === example.id && editingCell.field === 'user_prompt' ? (
+                        <div className="flex items-center">
+                          <textarea
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            rows={3}
+                            autoFocus
+                            onKeyDown={(e) => handleKeyDown(e, example, 'user_prompt')}
+                          />
+                          <div className="flex flex-col ml-2">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
+                              disabled={isSaving}
+                              className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
+                              title="Save"
+                            >
+                              ✓
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
+                              disabled={isSaving}
+                              className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
+                              title="Cancel"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div 
+                          className="tooltip group relative cursor-pointer"
+                          onMouseEnter={(e) => {
+                            const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                            if (tooltip) {
+                              tooltip.style.top = `${e.clientY - 20}px`;
+                              tooltip.style.left = `${e.clientX + 20}px`;
+                            }
+                          }}
+                          onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'user_prompt'); }}
+                        >
+                          <div className="flex items-center">
+                            {/* Show masked prompt if available, otherwise show actual */}
+                            <span className="truncate flex-grow">
+                              {example.user_prompt_mask ? (
+                                <>
+                                  <span className="mr-1 text-xs bg-indigo-100 text-indigo-800 px-1 rounded">MASKED</span>
+                                  {example.user_prompt_mask.substring(0, 40)}{example.user_prompt_mask.length > 40 ? '...' : ''}
+                                </>
+                              ) : (
+                                example.user_prompt?.substring(0, 50) + (example.user_prompt?.length > 50 ? '...' : '')
+                              )}
+                            </span>
+                            <button 
+                              className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
+                              onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'user_prompt'); }}
+                              title="Edit"
+                            >
+                              ✎
+                            </button>
+                          </div>
+                          {/* Conditionally render tooltip with appropriate content */}
+                          {((example.user_prompt_mask && example.user_prompt_mask.length > 40) || 
+                            (!example.user_prompt_mask && example.user_prompt && example.user_prompt.length > 50)) && (
+                            <span className="tooltip-text">
+                              {example.user_prompt_mask || example.user_prompt}
+                              {example.user_prompt_mask && (
+                                <div className="mt-2 text-xs text-indigo-500">
+                                  <em>This is a masked prompt that will be used for exports.</em>
+                                </div>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     
                     {/* Output */}
                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs"> {/* Reduced padding */}
