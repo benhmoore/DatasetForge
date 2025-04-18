@@ -87,13 +87,16 @@ const loadStateFromSessionStorage = (templateId) => {
 };
 // --- End Session Storage Persistence ---
 
-const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing, setIsParaphrasing }) => {
+const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCancel, isParaphrasing, setIsParaphrasing }) => {
   const [seedList, setSeedList] = useState([{}]); 
   const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
   const [variationsPerSeed, setVariationsPerSeed] = useState(3);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState({}); // { seedIndex: { slotName: true } }
   const [isInitialized, setIsInitialized] = useState(false); // Track if initial load/reset is done
+
+  // Determine disabled state based on generation, paraphrasing, or archived dataset
+  const isDisabled = isGenerating || isParaphrasing || !!selectedDataset?.archived;
 
   // Create a memoized initial seed object when template changes
   const createInitialSeed = useCallback((templateSlots) => {
@@ -225,6 +228,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
   }, [seedList, template, variationsPerSeed, onGenerate, validateSeeds]);
 
   const handleSlotChange = useCallback((slot, value) => {
+    if (isDisabled) return; // Prevent changes if disabled
     setSeedList(prevList => {
       const newList = [...prevList];
       newList[currentSeedIndex] = {
@@ -249,10 +253,11 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       }
       return prevErrors;
     });
-  }, [currentSeedIndex]);
+  }, [currentSeedIndex, isDisabled]);
 
   // Add a new seed (blank)
   const addSeed = useCallback(() => {
+    if (isDisabled) return; // Prevent changes if disabled
     setSeedList(prevList => {
       const blankSeed = createInitialSeed(template?.slots);
       const newList = [...prevList, blankSeed];
@@ -260,9 +265,10 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       setValidationErrors({}); // Clear errors when adding/navigating
       return newList;
     });
-  }, [template, createInitialSeed]);
+  }, [template, createInitialSeed, isDisabled]);
 
   const removeSeed = useCallback(() => {
+    if (isDisabled) return; // Prevent changes if disabled
     if (seedList.length <= 1) {
       toast.info("Cannot remove the last seed.");
       return;
@@ -287,9 +293,10 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       });
       return newList;
     });
-  }, [seedList.length, currentSeedIndex]);
+  }, [seedList.length, currentSeedIndex, isDisabled]);
 
   const navigateSeeds = useCallback((direction) => {
+    if (isDisabled) return; // Prevent changes if disabled
     setCurrentSeedIndex(prevIndex => {
       const newIndex = prevIndex + direction;
       if (newIndex >= 0 && newIndex < seedList.length) {
@@ -297,19 +304,22 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       }
       return prevIndex;
     });
-  }, [seedList.length]);
+  }, [seedList.length, isDisabled]);
   
   // Navigate to first seed
   const navigateToFirstSeed = useCallback(() => {
+    if (isDisabled) return; // Prevent changes if disabled
     setCurrentSeedIndex(0);
-  }, []);
+  }, [isDisabled]);
   
   // Navigate to last seed
   const navigateToLastSeed = useCallback(() => {
+    if (isDisabled) return; // Prevent changes if disabled
     setCurrentSeedIndex(seedList.length - 1);
-  }, [seedList.length]);
+  }, [seedList.length, isDisabled]);
 
   const handleParaphraseSeeds = useCallback(async (count, instructions) => {
+    if (isDisabled) return; // Prevent changes if disabled
     if (!template?.id) {
       toast.error('Cannot paraphrase without a selected template.');
       return;
@@ -364,10 +374,11 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     } finally {
       setIsParaphrasing(false);
     }
-  }, [template, seedList, setIsParaphrasing]);
+  }, [template, seedList, setIsParaphrasing, isDisabled]);
 
   // --- Import/Export Logic ---
   const handleExportSeeds = useCallback(() => {
+    if (isDisabled) return; // Prevent changes if disabled
     if (!template?.name || seedList.length === 0) {
       toast.info("No seeds to export.");
       return;
@@ -398,9 +409,10 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       console.error("Error exporting seeds:", error);
       toast.error("Failed to export seeds.");
     }
-  }, [seedList, template]);
+  }, [seedList, template, isDisabled]);
 
   const handleImportSeeds = useCallback(() => {
+    if (isDisabled) return; // Prevent changes if disabled
     if (!template?.slots) {
       toast.error("Cannot import seeds without a selected template.");
       return;
@@ -488,7 +500,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     };
 
     input.click();
-  }, [template, createInitialSeed]);
+  }, [template, createInitialSeed, isDisabled]);
   // --- End Import/Export Logic ---
 
   // Memoize the pagination indicators to prevent unnecessary recalculations
@@ -504,8 +516,8 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             title="Go to first seed"
             aria-label="Go to first seed"
             role="button"
-            tabIndex={isGenerating || isParaphrasing ? -1 : 0}
-            onKeyDown={(e) => e.key === 'Enter' && navigateToFirstSeed()}
+            tabIndex={isDisabled ? -1 : 0}
+            onKeyDown={(e) => !isDisabled && e.key === 'Enter' && navigateToFirstSeed()}
           >
             <div className="w-1 h-full bg-gray-400"></div>
             <div className="absolute left-1 top-0 bottom-0 w-4 bg-gradient-to-r from-gray-100 to-transparent"></div>
@@ -519,7 +531,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                   <button
                     key={i}
                     type="button"
-                    onClick={() => setCurrentSeedIndex(i)}
+                    onClick={() => !isDisabled && setCurrentSeedIndex(i)}
                     className={`w-1.5 h-1.5 rounded-full ${
                       currentSeedIndex === i
                         ? 'bg-primary-600'
@@ -527,7 +539,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                     } transition-colors duration-150`}
                     title={`Go to seed ${i + 1}`}
                     aria-label={`Go to seed ${i + 1}`}
-                    disabled={isGenerating || isParaphrasing}
+                    disabled={isDisabled}
                   />
                 ) : null;
               } else {
@@ -541,13 +553,13 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                   <button
                     key={i}
                     type="button"
-                    onClick={() => setCurrentSeedIndex(segmentStart)}
+                    onClick={() => !isDisabled && setCurrentSeedIndex(segmentStart)}
                     className={`w-1.5 h-1.5 rounded-full ${
                       isActive ? 'bg-primary-600' : 'bg-gray-300'
                     } transition-colors duration-150`}
                     title={`Go to seeds ${segmentStart + 1}-${segmentEnd + 1}`}
                     aria-label={`Go to seeds ${segmentStart + 1}-${segmentEnd + 1}`}
-                    disabled={isGenerating || isParaphrasing}
+                    disabled={isDisabled}
                   />
                 );
               }
@@ -561,8 +573,8 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             title="Go to last seed"
             aria-label="Go to last seed"
             role="button"
-            tabIndex={isGenerating || isParaphrasing ? -1 : 0}
-            onKeyDown={(e) => e.key === 'Enter' && navigateToLastSeed()}
+            tabIndex={isDisabled ? -1 : 0}
+            onKeyDown={(e) => !isDisabled && e.key === 'Enter' && navigateToLastSeed()}
           >
             <div className="w-1 h-full bg-gray-400"></div>
             <div className="absolute right-1 top-0 bottom-0 w-4 bg-gradient-to-l from-gray-100 to-transparent"></div>
@@ -570,7 +582,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
         )}
       </div>
     );
-  }, [seedList.length, currentSeedIndex, navigateToFirstSeed, navigateToLastSeed, isGenerating, isParaphrasing]);
+  }, [seedList.length, currentSeedIndex, navigateToFirstSeed, navigateToLastSeed, isDisabled]);
 
   // Memoize the seed form fields with validation styling
   const renderSeedFields = useMemo(() => {
@@ -595,9 +607,10 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             value={currentSeed[slot] || ''}
             onChange={(e) => handleSlotChange(slot, e.target.value)}
             className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200
-                        ${hasError ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}`}
+                        ${hasError ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}
+                        ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
             placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
-            disabled={isGenerating || isParaphrasing}
+            disabled={isDisabled}
             aria-invalid={hasError}
             aria-describedby={hasError ? errorId : undefined}
           />
@@ -609,7 +622,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
         </div>
       );
     });
-  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isGenerating, isParaphrasing, validationErrors]);
+  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isDisabled, validationErrors]);
 
   // Calculate total error count across all seeds
   const totalErrorCount = useMemo(() => {
@@ -635,9 +648,18 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
   }
 
   return (
-    <div className="p-6 bg-white rounded-lg border border-gray-200">
+    <div className="p-6 bg-white rounded-lg border border-gray-200 relative">
+      {/* Overlay and message for archived dataset */} 
+      {selectedDataset?.archived && (
+        <div className="absolute inset-0 bg-gray-100 bg-opacity-75 flex items-center justify-center z-10 rounded-lg">
+          <p className="text-center text-gray-600 font-medium p-4 bg-white m-3 rounded shadow border border-gray-200">
+            <Icon name="archiveBox" className="h-5 w-5 inline-block mr-2 align-text-bottom text-gray-500" />
+            Seed editing and generation are disabled for archived datasets.
+          </p>
+        </div>
+      )}
       <form onSubmit={handleSubmit} noValidate>
-        <div className="space-y-4">
+        <div className={`space-y-4 ${selectedDataset?.archived ? 'opacity-50' : ''}`}>
           <h3 className="text-lg font-medium text-gray-900">{template.name}</h3>
           {template.model_override && (
             <p className="text-xs text-gray-500 -mt-3 mb-2">
@@ -659,7 +681,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
               <button
                 type="button"
                 onClick={handleImportSeeds}
-                disabled={isGenerating || isParaphrasing}
+                disabled={isDisabled}
                 className="px-2 py-1 text-xs bg-purple-100 text-purple-700 border border-purple-300 rounded hover:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors duration-150"
                 title="Import seeds from JSON file"
                 aria-label="Import seeds from JSON file"
@@ -670,7 +692,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
               <button
                 type="button"
                 onClick={handleExportSeeds}
-                disabled={isGenerating || isParaphrasing || seedList.length === 0}
+                disabled={isDisabled || seedList.length === 0}
                 className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-300 rounded hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors duration-150"
                 title="Export current seeds to JSON file"
                 aria-label="Export current seeds to JSON file"
@@ -681,7 +703,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
               <button
                 type="button"
                 onClick={addSeed}
-                disabled={isGenerating || isParaphrasing}
+                disabled={isDisabled}
                 className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors duration-150"
                 title="Add new blank seed"
                 aria-label="Add new blank seed"
@@ -690,8 +712,8 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
               </button>
               <button
                 type="button"
-                onClick={() => setIsAiModalOpen(true)}
-                disabled={seedList.length < 1 || isGenerating || isParaphrasing}
+                onClick={() => !isDisabled && setIsAiModalOpen(true)}
+                disabled={isDisabled || seedList.length < 1}
                 className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors duration-150"
                 title="Generate more seeds using AI (requires >= 1 seed)"
                 aria-label="Generate more seeds using AI"
@@ -705,7 +727,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
               <button
                 type="button"
                 onClick={removeSeed}
-                disabled={seedList.length <= 1 || isGenerating || isParaphrasing}
+                disabled={isDisabled || seedList.length <= 1}
                 className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded disabled:opacity-50 hover:bg-red-200 flex items-center space-x-1 transition-colors duration-150"
                 title="Remove current seed"
                 aria-label="Remove current seed"
@@ -716,7 +738,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
               <button
                 type="button"
                 onClick={() => navigateSeeds(-1)}
-                disabled={currentSeedIndex === 0 || isGenerating || isParaphrasing}
+                disabled={isDisabled || currentSeedIndex === 0}
                 className="p-1.5 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 flex items-center justify-center transition-colors duration-150"
                 title="Previous Seed"
                 aria-label="Previous Seed"
@@ -726,7 +748,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
               <button
                 type="button"
                 onClick={() => navigateSeeds(1)}
-                disabled={currentSeedIndex === seedList.length - 1 || isGenerating || isParaphrasing}
+                disabled={isDisabled || currentSeedIndex === seedList.length - 1}
                 className="p-1.5 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 flex items-center justify-center transition-colors duration-150"
                 title="Next Seed"
                 aria-label="Next Seed"
@@ -759,8 +781,8 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
               max={10}
               step={1}
               value={variationsPerSeed}
-              onChange={setVariationsPerSeed}
-              disabled={isGenerating || isParaphrasing}
+              onChange={(value) => !isDisabled && setVariationsPerSeed(value)}
+              disabled={isDisabled}
               showValue={true}
             />
           </div>
@@ -769,7 +791,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             <button
               type="submit"
               className="flex-grow py-2 px-4 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-primary-400 disabled:cursor-not-allowed transition-all duration-200 transform hover:shadow-md active:scale-[0.98]"
-              disabled={isGenerating || isParaphrasing}
+              disabled={isDisabled}
             >
               {isGenerating ? (
                 <span className="flex items-center justify-center">

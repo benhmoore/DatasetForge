@@ -558,7 +558,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
               <thead className="bg-gray-50">
                 <tr>
                   {/* Selection checkbox */}
-                  <th className="px-3 py-3 text-center">
+                  <th className="px-2 py-2 text-center"> {/* Reduced padding */}
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
@@ -568,7 +568,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   </th>
                   {/* Add Example ID Header */}
                   <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
                     onClick={() => handleSort('id')}
                   >
                     ID
@@ -579,7 +579,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     )}
                   </th>
                   <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
                     onClick={() => handleSort('system_prompt')}
                   >
                     System Prompt
@@ -594,7 +594,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   {slotKeys.map(slot => (
                     <th 
                       key={slot} 
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                      className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
                       onClick={() => handleSort(`slot:${slot}`)}
                     >
                       {slot}
@@ -607,7 +607,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   ))}
                   
                   <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                    className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" /* Reduced padding */
                     onClick={() => handleSort('output')}
                   >
                     Output
@@ -620,7 +620,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                   
                   {/* Add Tool Calls column if any examples have tool calls */}
                   {examples.some(ex => ex.tool_calls && ex.tool_calls.length > 0) && (
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"> {/* Reduced padding */}
                       Tool Calls
                     </th>
                   )}
@@ -637,7 +637,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     onClick={() => handleRowClick(example)}
                   >
                     {/* Selection checkbox */}
-                    <td className="px-3 py-4 text-center">
+                    <td className="px-2 py-2 text-center"> {/* Reduced padding */}
                       <input
                         type="checkbox"
                         className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
@@ -647,12 +647,12 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                       />
                     </td>
                     {/* Add Example ID Cell */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 font-mono"> {/* Reduced padding */}
                       {example.id}
                     </td>
                     
                     {/* System Prompt */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs">
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs"> {/* Reduced padding */}
                       {editingCell && editingCell.exampleId === example.id && editingCell.field === 'system_prompt' ? (
                         <div className="flex items-center">
                           <textarea
@@ -695,7 +695,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                           onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
                         >
                           <div className="flex items-center">
-                            <span className="truncate flex-grow">{example.system_prompt.substring(0, 50)}{example.system_prompt.length > 50 ? '...' : ''}</span>
+                            <span className="truncate flex-grow">{example.system_prompt?.substring(0, 50)}{example.system_prompt?.length > 50 ? '...' : ''}</span>
                             <button 
                               className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
                               onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
@@ -704,7 +704,10 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                               ✎
                             </button>
                           </div>
-                          <span className="tooltip-text">{example.system_prompt}</span>
+                          {/* Conditionally render tooltip only if text is long */}
+                          {example.system_prompt && example.system_prompt.length > 50 && (
+                            <span className="tooltip-text">{example.system_prompt}</span>
+                          )}
                         </div>
                       )}
                     </td>
@@ -713,7 +716,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     {slotKeys.map(slot => (
                       <td 
                         key={slot} 
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs"
+                        className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs" /* Reduced padding */
                       >
                         {editingCell && editingCell.exampleId === example.id && editingCell.field === `slot:${slot}` ? (
                           <div className="flex items-center">
@@ -766,6 +769,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                                 ✎
                               </button>
                             </div>
+                            {/* Conditionally render tooltip only if text is long */}
                             {example.slots[slot] && example.slots[slot].length > 30 && (
                               <span className="tooltip-text">{example.slots[slot]}</span>
                             )}
@@ -775,7 +779,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                     ))}
                     
                     {/* Output */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs">
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 max-w-xs"> {/* Reduced padding */}
                       {editingCell && editingCell.exampleId === example.id && editingCell.field === 'output' ? (
                         <div className="flex items-center">
                           <textarea
@@ -818,7 +822,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                           onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'output'); }}
                         >
                           <div className="flex items-center">
-                            <span className="truncate flex-grow">{example.output.substring(0, 50)}{example.output.length > 50 ? '...' : ''}</span>
+                            <span className="truncate flex-grow">{example.output?.substring(0, 50)}{example.output?.length > 50 ? '...' : ''}</span>
                             <button 
                               className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
                               onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'output'); }}
@@ -827,14 +831,17 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                               ✎
                             </button>
                           </div>
-                          <span className="tooltip-text">{example.output}</span>
+                          {/* Conditionally render tooltip only if text is long */}
+                          {example.output && example.output.length > 50 && (
+                            <span className="tooltip-text">{example.output}</span>
+                          )}
                         </div>
                       )}
                     </td>
                     
                     {/* Tool Calls column */}
                     {examples.some(ex => ex.tool_calls && ex.tool_calls.length > 0) && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900"> {/* Reduced padding */}
                         {renderToolCalls(example.tool_calls)}
                       </td>
                     )}
@@ -850,11 +857,11 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
               <nav className="inline-flex rounded-md shadow">
                 <button
                   onClick={() => handlePageChange(page - 1)}
-                  disabled={page === 1 || isLoading}
+                  disabled={page === 1 || isLoading || isPaginationLoading} // Added isPaginationLoading
                   className="px-3 py-1 rounded-l-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
                 >
                   <span className="flex items-center">
-                    <Icon name="chevronLeft" className="w-4 h-4 mr-1" />
+                    {isPaginationLoading && page === page - 1 ? <Icon name="spinner" className="animate-spin h-4 w-4 mr-1" /> : <Icon name="chevronLeft" className="w-4 h-4 mr-1" />}
                     Previous
                   </span>
                 </button>
@@ -865,12 +872,12 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
                 </div>
                 <button
                   onClick={() => handlePageChange(page + 1)}
-                  disabled={page === totalPages || isLoading}
+                  disabled={page === totalPages || isLoading || isPaginationLoading} // Added isPaginationLoading
                   className="px-3 py-1 rounded-r-md bg-white border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
                 >
                   <span className="flex items-center">
                     Next
-                    <Icon name="chevronRight" className="w-4 h-4 ml-1" />
+                    {isPaginationLoading && page === page + 1 ? <Icon name="spinner" className="animate-spin h-4 w-4 ml-1" /> : <Icon name="chevronRight" className="w-4 h-4 ml-1" />}
                   </span>
                 </button>
               </nav>

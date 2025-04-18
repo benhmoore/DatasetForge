@@ -9,7 +9,7 @@
   
   .tooltip-text {
     @apply fixed z-50 p-3 text-xs bg-gray-800 text-white rounded-md shadow-xl
-    max-w-sm whitespace-normal opacity-0 transition-opacity duration-200 
+    max-w-sm whitespace-normal opacity-0 transition-opacity duration-200 delay-300
     pointer-events-none transform-gpu max-h-60 overflow-y-auto;
     /* Position will be set by JS */
   }

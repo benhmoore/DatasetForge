@@ -455,12 +455,13 @@ const Generate = ({ context }) => {
               onChange={handleTemplateChange}
               placeholder="Select a template..."
               isLoading={isLoading}
-              disabled={isLoading || isGenerating || templates.length === 0}
+              disabled={isLoading || isGenerating || templates.length === 0 || selectedDataset?.archived} // Disable if archived
             />
           </div>
 
           <SeedForm
             template={selectedTemplate}
+            selectedDataset={selectedDataset} // Pass selectedDataset
             onGenerate={handleGenerate}
             isGenerating={isGenerating}
             onCancel={handleCancelGeneration}
@@ -473,7 +474,7 @@ const Generate = ({ context }) => {
               <button
                 onClick={handleSaveToDataset}
                 className="w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
-                disabled={starredVariations.size === 0}
+                disabled={starredVariations.size === 0 || selectedDataset?.archived} // Disable if archived
               >
                 Save {starredVariations.size} to Dataset
               </button>
@@ -487,7 +488,9 @@ const Generate = ({ context }) => {
           {variations.length === 0 && !isGenerating ? (
             <div className="p-6 bg-gray-50 rounded-lg border border-gray-200 text-center">
               <p className="text-gray-500">
-                Fill in the form and click "Generate" to create variations.
+                {selectedDataset?.archived
+                  ? 'Generation is disabled for archived datasets.'
+                  : 'Fill in the form and click "Generate" to create variations.'}
               </p>
             </div>
           ) : (
