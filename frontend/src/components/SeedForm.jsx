@@ -122,16 +122,26 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     });
   };
 
+  // Add a new seed (blank)
   const addSeed = () => {
     setSeedList(prevList => {
+      const templateSlots = template?.slots || [];
+      // Create a new blank seed object based on template slots
+      const blankSeed = templateSlots.reduce((acc, slot) => {
+        acc[slot] = ''; // Initialize each slot with an empty string
+        return acc;
+      }, {});
+
       const newList = [
         ...prevList,
-        { ...currentSeed }
+        blankSeed // Add the new blank seed
       ];
-      const templateSlots = template?.slots || [];
-      const cleanedList = cleanupSeedList(newList, templateSlots);
-      setCurrentSeedIndex(prevIndex => Math.min(prevIndex, cleanedList.length - 1));
-      return cleanedList;
+      
+      // Set the index to the newly added blank seed
+      setCurrentSeedIndex(newList.length - 1);
+      
+      // Return the list with the new blank seed added
+      return newList; 
     });
   };
 
@@ -260,7 +270,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                 onClick={addSeed}
                 disabled={isGenerating || isParaphrasing}
                 className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
-                title="Add new seed (copies current)"
+                title="Add new blank seed"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-3 h-3">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
