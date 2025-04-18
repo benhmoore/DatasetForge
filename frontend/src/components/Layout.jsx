@@ -125,32 +125,34 @@ const Layout = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-grow flex flex-col">
-        <div className="flex-grow mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
-          <div className={`${activeTab === 'templates' ? 'h-full' : 'hidden'}`}>
-            <TemplateBuilder context={outletContext} />
-          </div>
+        <main className="flex-grow flex flex-col">
+          <div className="flex-grow mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
+            <div className={`${activeTab === 'templates' ? 'h-full' : 'hidden'}`}>
+          <TemplateBuilder context={outletContext} />
+            </div>
 
-          <div className={`${activeTab === 'generate' ? 'h-full' : 'hidden'}`}>
-            {selectedDataset ? (
-              <Generate context={outletContext} />
-            ) : (
-              <div className="p-8 bg-gray-50 rounded-lg border border-gray-200 text-center">
-                <h2 className="text-xl font-medium text-gray-700 mb-4">No Dataset Selected</h2>
-                <p className="text-gray-500 mb-4">
-                  Please create and select a dataset using the dropdown at the top of the page to use the Generate & Audition feature.
-                </p>
-                <DatasetSelector
-                  selectedDataset={selectedDataset}
-                  onSelectDataset={setSelectedDataset}
-                />
+            <div className={`${activeTab === 'generate' ? 'h-full' : 'hidden'}`}>
+          {selectedDataset ? (
+            <Generate context={outletContext} />
+          ) : (
+            <div className="p-8 bg-gray-50 rounded-lg border border-gray-200 text-center">
+              <h2 className="text-xl font-medium text-gray-700 mb-4">No Dataset Selected</h2>
+              <p className="text-gray-500 mb-4">
+            Please create and select a dataset to use the Generate & Audition feature.
+              </p>
+              <div className="flex justify-center">
+            <DatasetSelector
+              selectedDataset={selectedDataset}
+              onSelectDataset={setSelectedDataset}
+            />
               </div>
-            )}
+            </div>
+          )}
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
 
-      {/* Settings Modal */}
+        {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}

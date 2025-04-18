@@ -221,7 +221,7 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
                   {searchTerm ? (
                     <p>No datasets match your search</p>
                   ) : (
-                    <p>No datasets available. Create one to get started!</p>
+                    <p>No datasets available. Create one to get started.</p>
                   )}
                 </div>
               ) : (
