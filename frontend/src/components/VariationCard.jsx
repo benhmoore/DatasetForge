@@ -7,6 +7,7 @@ const VariationCard = ({
   onStar, 
   onEdit, 
   onRegenerate, 
+  onDismiss, // Add onDismiss prop
   isStarred = false,
   isGenerating = false,
   error = null,
@@ -216,6 +217,14 @@ const VariationCard = ({
             title="Regenerate"
           >
             <span className="inline-block hover:rotate-180 transition-transform duration-500">🔄</span>
+          </button>
+          {/* Add Dismiss Button */}
+          <button
+            onClick={onDismiss} // Call onDismiss prop
+            className="text-red-500 hover:text-red-700 p-1 transition-colors"
+            title="Dismiss"
+          >
+            <span className="inline-block hover:scale-110 transition-transform duration-200">🗑️</span>
           </button>
         </div>
       </div>

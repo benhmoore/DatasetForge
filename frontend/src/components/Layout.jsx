@@ -86,8 +86,8 @@ const Layout = () => {
       
       {/* Main Content */}
       <main className="flex-grow">
-        {/* Reintroduce max-width, but use screen-xl for wider layout */}
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Remove max-width constraint to allow content to fill horizontal space */}
+        <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6"> {/* Removed max-w-screen-xl */}
           {/* Conditionally render TemplateBuilder */}
           <div className={activeTab === 'templates' ? '' : 'hidden'}>
             <TemplateBuilder context={outletContext} />

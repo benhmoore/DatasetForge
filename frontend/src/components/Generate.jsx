@@ -344,6 +344,15 @@ const Generate = ({ context }) => { // Accept context as prop
     }
   };
 
+  const handleDismiss = (index) => {
+    setVariations(prevVariations => prevVariations.filter((_, i) => i !== index));
+    setStarredVariations(prevStarred => {
+      const newStarred = new Set(prevStarred);
+      newStarred.delete(index);
+      return newStarred;
+    });
+  };
+
   const templateOptions = templates.map(template => ({
     value: template.id,
     label: template.name
@@ -351,9 +360,9 @@ const Generate = ({ context }) => { // Accept context as prop
 
   return (
     <div className="space-y-8">
-      {/* Changed grid layout from md:grid-cols-3 to md:grid-cols-2 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="md:col-span-1 space-y-4"> {/* SeedForm column */}
+      {/* Changed grid layout to allow variations to expand */}
+      <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-6"> {/* Changed grid definition */}
+        <div className="space-y-4"> {/* Removed md:col-span-2 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Select Template
@@ -387,7 +396,7 @@ const Generate = ({ context }) => { // Accept context as prop
           )}
         </div>
 
-        <div className="md:col-span-1"> {/* Variations column */}
+        <div className="px-4"> {/* Removed md:col-span-3 and added padding */}
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
 
           {variations.length === 0 && !isGenerating ? (
@@ -397,10 +406,10 @@ const Generate = ({ context }) => { // Accept context as prop
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4"> {/* Changed from space-y-4 to grid */}
               {variations.map((variation, index) => (
                 <VariationCard
-                  key={variation.id}
+                  key={variation.id} // Use the unique temporary ID
                   variation={variation.variation}
                   output={variation.output}
                   tool_calls={variation.tool_calls}
@@ -411,6 +420,7 @@ const Generate = ({ context }) => { // Accept context as prop
                   onStar={(output) => handleStar(index, output)}
                   onEdit={(output) => handleEdit(index, output)}
                   onRegenerate={(instruction) => handleRegenerate(index, instruction)}
+                  onDismiss={() => handleDismiss(index)} // Pass dismiss handler
                 />
               ))}
             </div>
