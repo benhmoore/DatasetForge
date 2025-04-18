@@ -25,6 +25,15 @@ class ParaphraseRequest(BaseModel):
 
 class ParaphraseResponse(BaseModel):
     generated_seeds: List[SeedData]
+    
+# New models for paraphrasing generation outputs
+class TextParaphraseRequest(BaseModel):
+    text: str
+    count: Optional[int] = Field(default=3, ge=1, le=10, description="Number of paraphrases to generate")
+    instructions: Optional[str] = Field(default=None, max_length=500, description="Additional instructions for the AI")
+    
+class TextParaphraseResponse(BaseModel):
+    paraphrases: List[str]
 
 @router.post("/paraphrase", response_model=ParaphraseResponse)
 async def paraphrase_seeds(
@@ -164,3 +173,88 @@ async def paraphrase_seeds(
          )
 
     return ParaphraseResponse(generated_seeds=generated_seeds_list)
+    
+@router.post("/paraphrase_text", response_model=TextParaphraseResponse)
+async def paraphrase_text(
+    request: TextParaphraseRequest,
+    user: User = Depends(get_current_user)
+):
+    """Generate paraphrases of a given text."""
+    if not user.default_para_model:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Default paraphrase model is not set. Please set it in the settings."
+        )
+    
+    if not request.text or not request.text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Text to paraphrase cannot be empty."
+        )
+        
+    num_to_generate = request.count
+    generated_paraphrases = []
+    
+    # Construct system prompt
+    system_prompt = (
+        "You are an AI assistant that specializes in paraphrasing text. "
+        "Your task is to produce HIGH-QUALITY, CREATIVE paraphrases of the given text. "
+        "Each paraphrase should convey the same meaning but use different wording and structure. "
+        "Make the paraphrases diverse in style, vocabulary, and sentence structure. "
+        "Your output should be ONLY the paraphrased text without any explanations or formatting."
+    )
+    
+    # Add additional instructions if provided
+    if request.instructions:
+        system_prompt += f"\n\nAdditional Instructions: {request.instructions}"
+        
+    async with httpx.AsyncClient() as client:
+        for i in range(num_to_generate):
+            print(f"Generating paraphrase {i+1} of {num_to_generate}...")
+            
+            user_prompt = f"Paraphrase the following text:\n\n{request.text}\n\nProvide only the paraphrased version."
+            
+            try:
+                response = await client.post(
+                    f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
+                    json={
+                        "model": user.default_para_model,
+                        "prompt": user_prompt,
+                        "system": system_prompt,
+                        "stream": False,
+                    },
+                    timeout=settings.OLLAMA_TIMEOUT
+                )
+                
+                if response.status_code != 200:
+                    error_detail = f"Ollama API error on paraphrase {i+1} ({response.status_code})"
+                    try:
+                        error_detail += f": {response.json().get('error', response.text)}"
+                    except json.JSONDecodeError:
+                        error_detail += f": {response.text}"
+                    print(f"Error generating paraphrase {i+1}: {error_detail}")
+                    continue # Skip to the next iteration
+                
+                result_text = response.json().get("response", "")
+                
+                # Clean up the result
+                result_text = result_text.strip()
+                if result_text:
+                    generated_paraphrases.append(result_text)
+                    print(f"Successfully generated paraphrase {i+1}.")
+                    
+            except httpx.TimeoutException:
+                print(f"Ollama API timed out while generating paraphrase {i+1}. Skipping.")
+                continue
+            except Exception as e:
+                print(f"Unexpected error generating paraphrase {i+1}: {e}. Skipping.")
+                continue
+    
+    print(f"Finished generation. Total paraphrases generated: {len(generated_paraphrases)} out of {num_to_generate} requested.")
+    if not generated_paraphrases and num_to_generate > 0:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate any valid paraphrases after {num_to_generate} attempts. Check backend logs for details."
+        )
+    
+    return TextParaphraseResponse(paraphrases=generated_paraphrases)

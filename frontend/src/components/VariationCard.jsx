@@ -314,32 +314,18 @@ const VariationCard = ({
   
   // Paraphrase with instruction
   const handleParaphraseWithInstruction = useCallback(async () => {
-    if (!template_id) {
-      toast.error('Cannot paraphrase: No template ID provided.');
-      return;
-    }
-
     try {
       setIsParaphrasing(true);
       setParaphrasedOutputs([]);
       
-      // Create a seed structure with output as the content
-      const seeds = [{
-        slots: {
-          content: output
-        }
-      }];
-      
-      const response = await api.paraphraseSeeds({
-        template_id,
-        seeds,
+      const response = await api.paraphraseText({
+        text: output,
         count: paraphraseCount,
         instructions: paraphraseInstruction || undefined
       });
       
-      if (response && response.generated_seeds && response.generated_seeds.length > 0) {
-        const paraphrased = response.generated_seeds.map(seed => seed.slots.content);
-        setParaphrasedOutputs(paraphrased);
+      if (response && response.paraphrases && response.paraphrases.length > 0) {
+        setParaphrasedOutputs(response.paraphrases);
       } else {
         toast.warning('No paraphrases were generated.');
       }
@@ -349,7 +335,7 @@ const VariationCard = ({
     } finally {
       setIsParaphrasing(false);
     }
-  }, [template_id, output, paraphraseCount, paraphraseInstruction]);
+  }, [output, paraphraseCount, paraphraseInstruction]);
   
   // Handle selecting a paraphrased output
   const handleSelectParaphrase = useCallback((text) => {
@@ -429,8 +415,12 @@ const VariationCard = ({
       role="checkbox" // Role for accessibility
       aria-checked={isSelected} // State for accessibility
       tabIndex={0} // Make it focusable
-      onKeyDown={(e) => { // Allow selection with Space key
-        if (e.key === ' ') {
+      onKeyDown={(e) => {
+        // Only handle space key when not in an input element
+        if (e.key === ' ' && 
+            e.target.tagName !== 'INPUT' && 
+            e.target.tagName !== 'TEXTAREA' && 
+            !e.target.isContentEditable) {
           e.preventDefault();
           handleSelect();
         }
@@ -495,7 +485,7 @@ const VariationCard = ({
               className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
               title="Paraphrase"
               aria-label="Paraphrase output"
-              disabled={isGenerating || isParaphrasing || !template_id}
+              disabled={isGenerating || isParaphrasing}
             >
               <Icon 
                 name="language" 
@@ -560,8 +550,8 @@ const VariationCard = ({
             role="button" // Keep role for semantics, though interaction changes
             aria-label="Edit output"
             tabIndex={0} // Keep focusable
-            onKeyDown={(e) => { // Allow editing with Enter/Space
-              if (!isEditing && (e.key === 'Enter' || e.key === ' ')) {
+            onKeyDown={(e) => { // Allow editing with Enter
+              if (!isEditing && e.key === 'Enter') {
                 e.preventDefault();
                 startEditing(e);
               }
