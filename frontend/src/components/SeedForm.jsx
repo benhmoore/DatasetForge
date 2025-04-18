@@ -7,29 +7,47 @@ import AiSeedModal from './AiSeedModal'; // Import the new modal component
 const generatePromptPreview = (promptTemplate, slotValues) => {
   if (!promptTemplate) return '';
   let preview = promptTemplate;
-  // Match placeholders like {slot_name}
   const placeholders = promptTemplate.match(/\{([^}]+)\}/g) || [];
 
   placeholders.forEach(placeholder => {
-    const slotName = placeholder.slice(1, -1); // Extract slot name like 'slot_name'
+    const slotName = placeholder.slice(1, -1);
     const value = slotValues[slotName]?.trim();
-    // Replace with value or a placeholder like [slot_name] if empty/undefined
     const replacement = value ? value : `[${slotName}]`;
-    // Use a regex with 'g' flag to replace all occurrences, escaping special regex chars in the placeholder
     preview = preview.replace(new RegExp(placeholder.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), replacement);
   });
 
   return preview;
 };
 
-const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing, setIsParaphrasing }) => { // Add setIsParaphrasing prop
-  // Store a list of seeds, each seed is an object with slot values
+// Helper function to check if a seed is blank
+const isBlankSeed = (seed, slots) => {
+  if (!seed || !slots || slots.length === 0) {
+    return true;
+  }
+  return slots.every(slot => !seed[slot]?.trim());
+};
+
+// Helper function to remove blank seeds after adding new ones
+const cleanupSeedList = (list, slots) => {
+  if (!list || list.length === 0 || !slots || slots.length === 0) {
+    return list;
+  }
+
+  const nonBlankSeeds = list.filter(seed => !isBlankSeed(seed, slots));
+
+  if (nonBlankSeeds.length > 0) {
+    return nonBlankSeeds;
+  } else {
+    return list.length > 0 ? [list[0]] : [];
+  }
+};
+
+const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing, setIsParaphrasing }) => {
   const [seedList, setSeedList] = useState([{}]); 
   const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
-  const [variationsPerSeed, setVariationsPerSeed] = useState(3); // Renamed from batchSize
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false); // State for AI modal
+  const [variationsPerSeed, setVariationsPerSeed] = useState(3);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
 
-  // Initialize/Reset seeds when template changes
   useEffect(() => {
     console.log('Template in SeedForm:', template);
     if (template && template.slots && Array.isArray(template.slots)) {
@@ -41,35 +59,29 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
         }
         return acc;
       }, {});
-      // Reset to a single seed with the correct structure
       setSeedList([initialSlots]);
       setCurrentSeedIndex(0);
     } else {
       console.warn('Invalid template or slots:', template);
-      setSeedList([{}]); // Reset to single empty seed if template is invalid
+      setSeedList([{}]);
       setCurrentSeedIndex(0);
     }
   }, [template]);
 
-  // Get current seed based on index
   const currentSeed = seedList[currentSeedIndex] || {};
 
-  // Generate the prompt preview for the current seed
-  const promptPreview = template && template.user_prompt && currentSeed // Changed template.prompt to template.user_prompt
+  const promptPreview = template && template.user_prompt && currentSeed
     ? generatePromptPreview(template.user_prompt, currentSeed)
     : '';
 
-  // Add logging here
   console.log('Rendering SeedForm:');
   console.log('  Template:', template);
   console.log('  Current Seed:', currentSeed);
   console.log('  Prompt Preview:', promptPreview);
 
-  // Handle form submission
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    // Validate all seeds
     let allValid = true;
     const validatedSeeds = seedList.map((seed, index) => {
       const currentSeedSlots = template?.slots || [];
@@ -78,12 +90,11 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
         toast.error(`Seed ${index + 1} is missing values for: ${missingSlots.join(', ')}`);
         allValid = false;
       }
-      // Ensure only defined slots are included
       const validatedSeedData = currentSeedSlots.reduce((acc, slot) => {
         acc[slot] = seed[slot] || '';
         return acc;
       }, {});
-      return { slots: validatedSeedData }; // Match SeedData schema { slots: {...} }
+      return { slots: validatedSeedData };
     });
 
     if (!allValid) return;
@@ -93,15 +104,13 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       return;
     }
     
-    // Call the onGenerate callback with the list of seeds and count per seed
     onGenerate({
       template_id: template.id,
-      seeds: validatedSeeds, // Pass the array of seed data
-      count: variationsPerSeed // Pass variations per seed
+      seeds: validatedSeeds,
+      count: variationsPerSeed
     });
   };
   
-  // Handle slot value changes for the current seed
   const handleSlotChange = (slot, value) => {
     setSeedList(prevList => {
       const newList = [...prevList];
@@ -113,17 +122,19 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     });
   };
 
-  // Add a new seed (copying the current one)
   const addSeed = () => {
-    setSeedList(prevList => [
-      ...prevList,
-      { ...currentSeed } // Copy current seed values
-    ]);
-    // Optionally switch to the new seed
-    // setCurrentSeedIndex(seedList.length);
+    setSeedList(prevList => {
+      const newList = [
+        ...prevList,
+        { ...currentSeed }
+      ];
+      const templateSlots = template?.slots || [];
+      const cleanedList = cleanupSeedList(newList, templateSlots);
+      setCurrentSeedIndex(prevIndex => Math.min(prevIndex, cleanedList.length - 1));
+      return cleanedList;
+    });
   };
 
-  // Remove the current seed
   const removeSeed = () => {
     if (seedList.length <= 1) {
       toast.info("Cannot remove the last seed.");
@@ -131,60 +142,59 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     }
     setSeedList(prevList => {
       const newList = prevList.filter((_, index) => index !== currentSeedIndex);
-      // Adjust index if the last seed was removed
       setCurrentSeedIndex(prevIndex => Math.min(prevIndex, newList.length - 1));
       return newList;
     });
   };
 
-  // Navigate between seeds
   const navigateSeeds = (direction) => {
     setCurrentSeedIndex(prevIndex => {
       const newIndex = prevIndex + direction;
       if (newIndex >= 0 && newIndex < seedList.length) {
         return newIndex;
       }
-      return prevIndex; // Stay within bounds
+      return prevIndex;
     });
   };
 
-  // Generate more seeds using paraphrasing
-  const handleParaphraseSeeds = async (count, instructions) => { // Accept count and instructions
+  const handleParaphraseSeeds = async (count, instructions) => {
     if (!template || !template.id) {
       toast.error('Cannot paraphrase without a selected template.');
       return;
     }
-    // Allow paraphrasing with just one seed
     if (seedList.length < 1) { 
       toast.info('Need at least one seed to generate more via paraphrasing.');
       return;
     }
 
-    setIsAiModalOpen(false); // Close modal before starting
-    setIsParaphrasing(true); // Use the passed setter
+    setIsAiModalOpen(false);
+    setIsParaphrasing(true);
     try {
       const payload = {
         template_id: template.id,
         seeds: seedList.map(seed => ({ slots: seed })), 
-        count: count, // Pass the desired number of seeds
-        instructions: instructions // Pass the additional instructions
+        count: count,
+        instructions: instructions
       };
       console.log('Sending data for paraphrasing:', payload);
       const response = await api.paraphraseSeeds(payload);
       
       if (response && Array.isArray(response.generated_seeds)) {
-        // Ensure new seeds have the correct slot structure based on the template
         const templateSlots = template.slots || [];
         const newSeeds = response.generated_seeds.map(newSeedData => {
           const seedSlots = newSeedData.slots || {};
-          // Filter/map to only include slots defined in the template
           return templateSlots.reduce((acc, slotName) => {
-            acc[slotName] = seedSlots[slotName] || ''; // Keep existing or add empty string
+            acc[slotName] = seedSlots[slotName] || '';
             return acc;
           }, {});
         });
 
-        setSeedList(prevList => [...prevList, ...newSeeds]);
+        setSeedList(prevList => {
+          const updatedList = [...prevList, ...newSeeds];
+          const cleanedList = cleanupSeedList(updatedList, templateSlots);
+          setCurrentSeedIndex(prevIndex => Math.min(prevIndex, cleanedList.length - 1));
+          return cleanedList;
+        });
         toast.success(`Added ${newSeeds.length} new seeds using paraphrasing.`);
       } else {
         console.error('Unexpected response format:', response);
@@ -195,11 +205,10 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       const errorMsg = error.response?.data?.detail || error.message || 'Failed to generate paraphrased seeds.';
       toast.error(errorMsg);
     } finally {
-      setIsParaphrasing(false); // Use the passed setter
+      setIsParaphrasing(false);
     }
   };
   
-  // If no template is selected, show a message
   if (!template) {
     return (
       <div className="p-6 bg-gray-50 rounded-lg border border-gray-200">
@@ -219,13 +228,11 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             </p>
           )}
 
-          {/* Seed Navigation and Management */}
           <div className="flex items-center justify-between p-2 bg-gray-100 rounded-md">
             <span className="text-sm font-medium text-gray-700">
               Seed {currentSeedIndex + 1} of {seedList.length}
             </span>
             <div className="flex items-center space-x-1">
-              {/* Prev Button */}
               <button
                 type="button"
                 onClick={() => navigateSeeds(-1)}
@@ -237,7 +244,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
                 </svg>
               </button>
-              {/* Next Button */}
               <button
                 type="button"
                 onClick={() => navigateSeeds(1)}
@@ -249,7 +255,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                    <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
                  </svg>
               </button>
-              {/* Add Button */}
               <button
                 type="button"
                 onClick={addSeed}
@@ -262,13 +267,12 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                 </svg>
                 <span>Add</span>
               </button>
-              {/* AI Button - Opens Modal */}
               <button
                 type="button"
-                onClick={() => setIsAiModalOpen(true)} // Open modal instead of direct call
-                disabled={seedList.length < 1 || isGenerating || isParaphrasing} // Changed from < 2 to < 1
+                onClick={() => setIsAiModalOpen(true)}
+                disabled={seedList.length < 1 || isGenerating || isParaphrasing}
                 className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
-                title="Generate more seeds using AI (requires >= 1 seed)" // Updated title
+                title="Generate more seeds using AI (requires >= 1 seed)"
               >
                 {isParaphrasing ? (
                   <>
@@ -291,7 +295,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                   </>
                 )}
               </button>
-              {/* Remove Button */}
               <button
                 type="button"
                 onClick={removeSeed}
@@ -307,7 +310,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             </div>
           </div>
 
-          {/* Render slot inputs for the current seed */}
           {template.slots.map(slot => (
             <div key={slot}>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -315,7 +317,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
               </label>
               <input
                 type="text"
-                value={currentSeed[slot] || ''} // Use currentSeed state
+                value={currentSeed[slot] || ''}
                 onChange={(e) => handleSlotChange(slot, e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
                 placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
@@ -324,7 +326,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             </div>
           ))}
 
-          {/* Prompt Preview Section */}
           {promptPreview && (
             <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
               <label className="block text-xs font-medium text-gray-500 mb-1">Prompt Preview:</label>
@@ -332,7 +333,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             </div>
           )}
           
-          {/* Variations per Seed slider */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Variations per Seed: {variationsPerSeed}
@@ -348,7 +348,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             />
           </div>
           
-          {/* Generate/Cancel buttons */}
           <div className="pt-2 flex space-x-2">
             <button
               type="submit"
@@ -373,10 +372,10 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                 </span>
               ) : `Generate (${seedList.length * variationsPerSeed} Example${seedList.length * variationsPerSeed !== 1 ? 's' : ''})`}
             </button>
-            {isGenerating && ( // Show Cancel button only when generating
+            {isGenerating && (
               <button
                 type="button"
-                onClick={onCancel} // Call the cancel handler passed from Generate
+                onClick={onCancel}
                 className="py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors duration-200"
               >
                 Cancel
@@ -386,12 +385,11 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
         </div>
       </form>
 
-      {/* AI Seed Generation Modal */}
       <AiSeedModal
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
-        onGenerate={handleParaphraseSeeds} // Pass the updated handler
-        isGenerating={isParaphrasing} // Pass loading state
+        onGenerate={handleParaphraseSeeds}
+        isGenerating={isParaphrasing}
       />
     </div>
   );
