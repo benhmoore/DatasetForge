@@ -167,6 +167,16 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       return prevIndex;
     });
   };
+  
+  // Navigate to first seed
+  const navigateToFirstSeed = () => {
+    setCurrentSeedIndex(0);
+  };
+  
+  // Navigate to last seed
+  const navigateToLastSeed = () => {
+    setCurrentSeedIndex(seedList.length - 1);
+  };
 
   const handleParaphraseSeeds = async (count, instructions) => {
     if (!template || !template.id) {
@@ -247,67 +257,78 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             </div>
             
             <div className="flex items-center space-x-1">
-              {/* Always show indicator, even with just one seed */}
-              <div className="flex items-center justify-center mx-2 relative">
-                {/* Left edge indicator when there are more seeds to the left */}
-                {seedList.length > 5 && currentSeedIndex > 0 && (
-                  <div className="absolute left-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center z-20">
-                    <div className="w-0.5 h-full bg-gray-400"></div>
+              {seedList.length > 1 && (
+                <div className="flex items-center justify-center mx-2 relative">
+                  {/* Left edge indicator when there are more seeds to the left */}
+                  {seedList.length > 5 && currentSeedIndex > 0 && (
+                    <div 
+                      className="absolute left-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center z-20 cursor-pointer"
+                      onClick={navigateToFirstSeed}
+                      title="Go to first seed"
+                    >
+                      <div className="w-0.5 h-full bg-gray-400"></div>
+                      <div className="absolute left-0.5 top-0 bottom-0 w-4 bg-gradient-to-r from-gray-100 to-transparent"></div>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center space-x-1 relative z-0 px-2">
+                    {/* Always show exactly 5 indicators regardless of seed count */}
+                    {Array.from({ length: 5 }, (_, i) => {
+                      if (seedList.length <= 5) {
+                        // For 5 or fewer seeds, each dot represents one seed
+                        // Hide dots that don't correspond to actual seeds
+                        return i < seedList.length ? (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setCurrentSeedIndex(i)}
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              currentSeedIndex === i
+                                ? 'bg-primary-600'
+                                : 'bg-gray-300'
+                            }`}
+                            title={`Go to seed ${i + 1}`}
+                            disabled={isGenerating || isParaphrasing}
+                          />
+                        ) : null;
+                      } else {
+                        // For more than 5 seeds, divide into segments
+                        const segmentSize = seedList.length / 5;
+                        const segmentStart = Math.floor(i * segmentSize);
+                        const segmentEnd = Math.floor((i + 1) * segmentSize) - 1;
+                        
+                        // Check if current seed index falls within this segment
+                        const isActive = currentSeedIndex >= segmentStart && currentSeedIndex <= segmentEnd;
+                        
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setCurrentSeedIndex(segmentStart)}
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isActive ? 'bg-primary-600' : 'bg-gray-300'
+                            }`}
+                            title={`Go to seeds ${segmentStart + 1}-${segmentEnd + 1}`}
+                            disabled={isGenerating || isParaphrasing}
+                          />
+                        );
+                      }
+                    })}
                   </div>
-                )}
-                
-                <div className="flex items-center space-x-1 relative z-0 px-2">
-                  {/* Always show exactly 5 indicators regardless of seed count */}
-                  {Array.from({ length: 5 }, (_, i) => {
-                    if (seedList.length <= 5) {
-                      // For 5 or fewer seeds, each dot represents one seed
-                      // Hide dots that don't correspond to actual seeds
-                      return i < seedList.length ? (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setCurrentSeedIndex(i)}
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            currentSeedIndex === i
-                              ? 'bg-primary-600'
-                              : 'bg-gray-300'
-                          }`}
-                          title={`Go to seed ${i + 1}`}
-                          disabled={isGenerating || isParaphrasing}
-                        />
-                      ) : null;
-                    } else {
-                      // For more than 5 seeds, divide into segments
-                      const segmentSize = seedList.length / 5;
-                      const segmentStart = Math.floor(i * segmentSize);
-                      const segmentEnd = Math.floor((i + 1) * segmentSize) - 1;
-                      
-                      // Check if current seed index falls within this segment
-                      const isActive = currentSeedIndex >= segmentStart && currentSeedIndex <= segmentEnd;
-                      
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setCurrentSeedIndex(segmentStart)}
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            isActive ? 'bg-primary-600' : 'bg-gray-300'
-                          }`}
-                          title={`Go to seeds ${segmentStart + 1}-${segmentEnd + 1}`}
-                          disabled={isGenerating || isParaphrasing}
-                        />
-                      );
-                    }
-                  })}
+                  
+                  {/* Right edge indicator when there are more seeds to the right */}
+                  {seedList.length > 5 && currentSeedIndex < seedList.length - 1 && (
+                    <div 
+                      className="absolute right-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center justify-end z-20 cursor-pointer"
+                      onClick={navigateToLastSeed}
+                      title="Go to last seed"
+                    >
+                      <div className="w-0.5 h-full bg-gray-400"></div>
+                      <div className="absolute right-0.5 top-0 bottom-0 w-4 bg-gradient-to-l from-gray-100 to-transparent"></div>
+                    </div>
+                  )}
                 </div>
-                
-                {/* Right edge indicator when there are more seeds to the right */}
-                {seedList.length > 5 && currentSeedIndex < seedList.length - 1 && (
-                  <div className="absolute right-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center justify-end z-20">
-                    <div className="w-0.5 h-full bg-gray-400"></div>
-                  </div>
-                )}
-              </div>
+              )}
               
               <button
                 type="button"
