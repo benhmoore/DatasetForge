@@ -366,6 +366,131 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     }
   }, [template, seedList, setIsParaphrasing]);
 
+  // --- Import/Export Logic ---
+  const handleExportSeeds = useCallback(() => {
+    if (!template?.name || seedList.length === 0) {
+      toast.info("No seeds to export.");
+      return;
+    }
+
+    try {
+      const exportData = seedList.map(seed => {
+        const cleanSeed = {};
+        template.slots.forEach(slot => {
+          cleanSeed[slot] = seed[slot] || '';
+        });
+        return cleanSeed;
+      });
+
+      const jsonString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const safeTemplateName = template.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      link.href = url;
+      link.download = `seed_bank_${safeTemplateName || 'export'}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${exportData.length} seeds.`);
+    } catch (error) {
+      console.error("Error exporting seeds:", error);
+      toast.error("Failed to export seeds.");
+    }
+  }, [seedList, template]);
+
+  const handleImportSeeds = useCallback(() => {
+    if (!template?.slots) {
+      toast.error("Cannot import seeds without a selected template.");
+      return;
+    }
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+
+    input.onchange = (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        let ignoredSlots = new Set(); // Keep track of ignored slots across all imported seeds
+        try {
+          const content = e.target?.result;
+          if (typeof content !== 'string') {
+            throw new Error("Failed to read file content.");
+          }
+          const importedData = JSON.parse(content);
+
+          if (!Array.isArray(importedData)) {
+            throw new Error("Invalid format: Imported file must contain a JSON array.");
+          }
+
+          if (importedData.length === 0) {
+            toast.info("Imported file contains no seeds.");
+            return;
+          }
+
+          const templateSlots = template.slots || [];
+          const templateSlotSet = new Set(templateSlots); // Use a Set for efficient lookup
+
+          const newSeeds = importedData.map((importedSeed, index) => {
+            if (typeof importedSeed !== 'object' || importedSeed === null) {
+              console.warn(`Skipping invalid entry at index ${index} during import.`);
+              return null;
+            }
+
+            // Check for extra slots not in the current template
+            Object.keys(importedSeed).forEach(key => {
+              if (!templateSlotSet.has(key)) {
+                ignoredSlots.add(key); // Add extra key to the set
+              }
+            });
+
+            // Create the new seed object using only the template's slots
+            return templateSlots.reduce((acc, slotName) => {
+              acc[slotName] = importedSeed[slotName]?.toString() || '';
+              return acc;
+            }, {});
+          }).filter(seed => seed !== null);
+
+          if (newSeeds.length === 0) {
+             toast.warn("No valid seed objects found in the imported file.");
+             return;
+          }
+
+          const cleanedList = cleanupSeedList(newSeeds, templateSlots);
+          setSeedList(cleanedList.length > 0 ? cleanedList : [createInitialSeed(templateSlots)]);
+          setCurrentSeedIndex(0);
+          setValidationErrors({});
+          toast.success(`Successfully imported ${newSeeds.length} seeds.`);
+
+          // Display warning about ignored slots if any were found
+          if (ignoredSlots.size > 0) {
+            const ignoredSlotsList = Array.from(ignoredSlots).join(', ');
+            toast.warn(`Warning: The following slots from the imported file were ignored as they are not in the current template: ${ignoredSlotsList}`, { autoClose: 5000 });
+          }
+
+        } catch (error) {
+          console.error("Error importing seeds:", error);
+          toast.error(`Import failed: ${error.message || "Could not parse JSON file."}`);
+        }
+      };
+
+      reader.onerror = (e) => {
+        console.error("Error reading file:", e);
+        toast.error("Failed to read the selected file.");
+      };
+
+      reader.readAsText(file);
+    };
+
+    input.click();
+  }, [template, createInitialSeed]);
+  // --- End Import/Export Logic ---
+
   // Memoize the pagination indicators to prevent unnecessary recalculations
   const renderPaginationIndicators = useMemo(() => {
     if (seedList.length <= 1) return null;
@@ -529,7 +654,30 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             
             <div className="flex items-center space-x-1">
               {renderPaginationIndicators}
-              
+
+              {/* Import Button */}
+              <button
+                type="button"
+                onClick={handleImportSeeds}
+                disabled={isGenerating || isParaphrasing}
+                className="px-2 py-1 text-xs bg-purple-100 text-purple-700 border border-purple-300 rounded hover:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors duration-150"
+                title="Import seeds from JSON file"
+                aria-label="Import seeds from JSON file"
+              >
+                <Icon name="upload" className="w-3 h-3" />
+              </button>
+              {/* Export Button */}
+              <button
+                type="button"
+                onClick={handleExportSeeds}
+                disabled={isGenerating || isParaphrasing || seedList.length === 0}
+                className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-300 rounded hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors duration-150"
+                title="Export current seeds to JSON file"
+                aria-label="Export current seeds to JSON file"
+              >
+                <Icon name="download" className="w-3 h-3" />
+              </button>
+
               <button
                 type="button"
                 onClick={addSeed}

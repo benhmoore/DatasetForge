@@ -31,6 +31,7 @@ import {
   AdjustmentsHorizontalIcon,
   EllipsisVerticalIcon,
   SparklesIcon,
+  ArrowUpTrayIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 
@@ -49,6 +50,7 @@ const icons = {
   archive: { outline: ArchiveBoxIcon },
   unarchive: { outline: ArchiveBoxXMarkIcon },
   download: { outline: ArrowDownTrayIcon },
+  upload: { outline: ArrowUpTrayIcon },
   chevronLeft: { outline: ChevronLeftIcon },
   chevronRight: { outline: ChevronRightIcon },
   folderPlus: { outline: FolderPlusIcon },
