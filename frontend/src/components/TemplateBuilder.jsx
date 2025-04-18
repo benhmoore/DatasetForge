@@ -7,9 +7,9 @@ import ModelSelector from './ModelSelector'; // Import ModelSelector
 import ToggleSwitch from './ToggleSwitch'; // Assuming a ToggleSwitch component exists or will be created
 import ConfirmationModal from './ConfirmationModal'; // Import the new component
 import Icon from './Icons';
+import ToolParameterSchemaEditor from './ToolParameterSchemaEditor'; // Import the new schema editor
 
 const TemplateBuilder = ({ context }) => { // Accept context as prop
-  // Destructure selectedDataset from context
   const { selectedDataset } = context;
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -29,18 +29,17 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [toolDefinitions, setToolDefinitions] = useState([]);
   const [newToolName, setNewToolName] = useState('');
   const [newToolDescription, setNewToolDescription] = useState('');
-  const [newToolParameters, setNewToolParameters] = useState('');
+  const [newToolSchema, setNewToolSchema] = useState({ type: 'object', properties: {}, required: [] }); // Replace newToolParameters state
   const [modelOverride, setModelOverride] = useState(''); // Add state for model override
-  const [parameterError, setParameterError] = useState(''); // State for JSON validation error
 
   // Fetch templates from API
   const fetchTemplates = async () => {
     setIsLoading(true);
-    
+
     try {
       const data = await api.getTemplates();
       setTemplates(data);
-      
+
       // Select the first template if none is selected
       if (!selectedTemplate && data.length > 0) {
         setSelectedTemplate(data[0]);
@@ -93,9 +92,23 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       toast.error('Please enter a template name');
       return;
     }
-    
+
+    // Add validation for tool definitions (ensure all parameters have names)
+    if (isToolCallingTemplate) {
+      for (const tool of toolDefinitions) {
+        if (tool.parameters?.properties) {
+          for (const paramName in tool.parameters.properties) {
+            if (!paramName) {
+              toast.error(`Tool "${tool.name}" has an unnamed parameter. Please fix it before saving.`);
+              return;
+            }
+          }
+        }
+      }
+    }
+
     setIsSaving(true);
-    
+
     try {
       const templateData = {
         name,
@@ -103,22 +116,28 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
         user_prompt: userPrompt,
         slots,
         is_tool_calling_template: isToolCallingTemplate,
-        tool_definitions: isToolCallingTemplate ? toolDefinitions : null,
+        tool_definitions: isToolCallingTemplate
+          ? toolDefinitions.map(tool => ({
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters || { type: 'object', properties: {}, required: [] } // Ensure parameters is always an object
+            }))
+          : null,
         model_override: modelOverride || null // Include model override (send null if empty)
       };
-      
+
       if (selectedTemplate) {
         // Update existing template with optimistic UI update
         const updatedTemplate = {
           ...selectedTemplate,
           ...templateData
         };
-        
+
         // Update local state immediately for responsive UI
-        setTemplates(templates.map(t => 
+        setTemplates(templates.map(t =>
           t.id === selectedTemplate.id ? updatedTemplate : t
         ));
-        
+
         // Update on server
         await api.updateTemplate(selectedTemplate.id, templateData);
         toast.success('Template updated successfully');
@@ -129,22 +148,22 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
           ...templateData,
           archived: false
         };
-        
+
         // Update local state immediately
         setTemplates([temporaryTemplate, ...templates]);
-        
+
         // Create on server
         const newTemplate = await api.createTemplate(templateData);
         setSelectedTemplate(newTemplate);
         toast.success('Template created successfully');
+
+        // Refresh templates to get the actual ID from the server
+        fetchTemplates(); // Refresh to sync IDs
       }
-      
-      // Refresh templates to sync with server
-      fetchTemplates();
     } catch (error) {
       console.error('Failed to save template:', error);
-      toast.error('Failed to save template');
-      
+      toast.error(`Failed to save template: ${error.message || 'Unknown error'}`);
+
       // Revert optimistic updates on error
       fetchTemplates();
     } finally {
@@ -188,13 +207,13 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       toast.error('Please enter a slot name');
       return;
     }
-    
+
     // Check for duplicates
     if (slots.includes(newSlot)) {
       toast.error('Slot already exists');
       return;
     }
-    
+
     setSlots([...slots, newSlot]);
     setNewSlot('');
   };
@@ -218,17 +237,17 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       toast.error('Please enter a template name');
       return;
     }
-    
+
     // Clear the current selection
     setSelectedTemplate(null);
-    
+
     // Set the form with the new name and default values
     setName(newTemplateName);
     setSystemPrompt('');
     setUserPrompt('');
     setSlots([]);
     setModelOverride(''); // Clear model override for new template
-    
+
     // Close the modal
     setIsModalOpen(false);
     setNewTemplateName('');
@@ -236,43 +255,28 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
 
   // Add tool definition
   const handleAddToolDefinition = () => {
-    setParameterError(''); // Clear previous errors
-    try {
-      // Basic validation: Check if it's potentially valid JSON before parsing
-      const trimmedParams = newToolParameters.trim();
-      if (!trimmedParams.startsWith('{') || !trimmedParams.endsWith('}')) {
-         throw new Error('Parameters must be a valid JSON object.');
-      }
-      const parameters = JSON.parse(trimmedParams);
-
-      if (!newToolName.trim()) {
-        toast.error('Please enter a tool name');
-        return;
-      }
-      if (!newToolDescription.trim()) {
-        toast.error('Please enter a tool description');
-        return;
-      }
-
-      const newTool = {
-        // Add a simple unique ID for list keys, backend should handle persistent IDs
-        id: `tool-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-        name: newToolName,
-        description: newToolDescription,
-        parameters
-      };
-
-      setToolDefinitions([...toolDefinitions, newTool]);
-      setNewToolName('');
-      setNewToolDescription('');
-      setNewToolParameters('{}');
-    } catch (e) {
-      console.error("Parameter JSON parsing error:", e);
-      setParameterError(e.message || 'Invalid JSON format for parameters.');
-      toast.error('Failed to add tool: Invalid JSON for parameters.');
+    if (!newToolName.trim()) {
+      toast.error('Please enter a tool name');
+      return;
     }
+    if (!newToolDescription.trim()) {
+      toast.error('Please enter a tool description');
+      return;
+    }
+
+    const newTool = {
+      id: `tool-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      name: newToolName,
+      description: newToolDescription,
+      parameters: newToolSchema // Use the schema state directly
+    };
+
+    setToolDefinitions([...toolDefinitions, newTool]);
+    setNewToolName('');
+    setNewToolDescription('');
+    setNewToolSchema({ type: 'object', properties: {}, required: [] }); // Reset schema editor state
   };
-  
+
   // Remove tool definition
   const handleRemoveToolDefinition = (index) => {
     const newTools = [...toolDefinitions];
@@ -283,12 +287,12 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   // Generate a preview with sample values for slots
   const generatePreview = () => {
     let preview = userPrompt;
-    
+
     slots.forEach(slot => {
       const placeholder = `Sample ${slot}`;
       preview = preview.replace(new RegExp(`{${slot}}`, 'g'), placeholder);
     });
-    
+
     return preview;
   };
 
@@ -306,7 +310,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
             <Icon name="plus" className="h-5 w-5" />
           </button>
         </div>
-        
+
         {isLoading ? (
           <div className="text-center py-4">Loading...</div>
         ) : templates.length === 0 ? (
@@ -338,14 +342,14 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
           </ul>
         )}
       </div>
-      
+
       {/* Template Editor */}
       <div className="col-span-3 p-4 rounded-lg border border-gray-200">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">
             {selectedTemplate ? 'Edit Template' : 'New Template'}
           </h2>
-          
+
           <div className="space-x-2">
             {selectedTemplate && (
               <button
@@ -356,7 +360,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                 Archive
               </button>
             )}
-            
+
             <button
               className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700"
               onClick={handleSaveTemplate}
@@ -366,7 +370,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
             </button>
           </div>
         </div>
-        
+
         {/* Template Form */}
         <div className="space-y-4">
           <div>
@@ -394,7 +398,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
             />
             <p className="text-xs text-gray-500 mt-1">If set, this model will be used instead of your default generation model.</p>
           </div>
-          
+
           <div>
             <SystemPromptEditor
               value={systemPrompt}
@@ -402,7 +406,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               templateId={selectedTemplate?.id}
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               User Prompt Template
@@ -415,7 +419,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               placeholder="Enter user prompt with {slot} placeholders"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Slots
@@ -435,7 +439,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                 Add
               </button>
             </div>
-            
+
             <div className="mt-2 flex flex-wrap gap-2">
               {slots.map(slot => (
                 <div
@@ -495,7 +499,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                       <details className="mt-2 text-xs">
                         <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Parameters Schema</summary>
                         <pre className="mt-1 p-2 bg-gray-100 rounded text-gray-700 overflow-x-auto">
-                          {JSON.stringify(tool.parameters, null, 2)}
+                          {JSON.stringify(tool.parameters || {}, null, 2)}
                         </pre>
                       </details>
                     </div>
@@ -505,7 +509,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                       title="Remove tool"
                       disabled={!isToolCallingTemplate} // Also disable button explicitly
                     >
-                      &times; {/* More standard 'remove' icon */}
+                      &times;
                     </button>
                   </div>
                 ))}
@@ -513,53 +517,46 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
 
               {/* Add New Tool Form */}
               <div className="pt-4 border-t border-gray-200">
-                 <h4 className="text-sm font-semibold text-gray-700 mb-2">Add New Tool</h4>
-                 <div className="space-y-3">
-                   <div>
-                     <label className="block text-xs font-medium text-gray-600 mb-1">Tool Name</label>
-                     <input
-                       type="text"
-                       placeholder="e.g., getWeather"
-                       value={newToolName}
-                       onChange={(e) => setNewToolName(e.target.value)}
-                       className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                       disabled={!isToolCallingTemplate}
-                     />
-                   </div>
-                   <div>
-                     <label className="block text-xs font-medium text-gray-600 mb-1">Tool Description</label>
-                     <input
-                       type="text"
-                       placeholder="e.g., Gets the current weather for a location"
-                       value={newToolDescription}
-                       onChange={(e) => setNewToolDescription(e.target.value)}
-                       className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                       disabled={!isToolCallingTemplate}
-                     />
-                   </div>
-                   <div>
-                     <label className="block text-xs font-medium text-gray-600 mb-1">Parameters (JSON Schema)</label>
-                     <textarea
-                       placeholder='e.g., { "type": "object", "properties": { "location": { "type": "string", "description": "City name" } }, "required": ["location"] }, or {} for no parameters'
-                       value={newToolParameters}
-                       onChange={(e) => {
-                         setNewToolParameters(e.target.value);
-                         setParameterError(''); // Clear error on change
-                       }}
-                       className={`w-full p-2 border rounded-md h-28 font-mono text-sm ${parameterError ? 'border-red-500' : 'border-gray-300'}`}
-                       disabled={!isToolCallingTemplate}
-                     />
-                     {parameterError && <p className="text-xs text-red-600 mt-1">{parameterError}</p>}
-                     {!parameterError && <p className="text-xs text-gray-500 mt-1">Define the input parameters for the tool using JSON Schema.</p>}
-                   </div>
-                   <button
-                     onClick={handleAddToolDefinition}
-                     className="px-4 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm disabled:opacity-50"
-                     disabled={!isToolCallingTemplate}
-                   >
-                     Add Tool Definition
-                   </button>
-                 </div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">Add New Tool</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Tool Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., getWeather"
+                      value={newToolName}
+                      onChange={(e) => setNewToolName(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                      disabled={!isToolCallingTemplate}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Tool Description</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Gets the current weather for a location"
+                      value={newToolDescription}
+                      onChange={(e) => setNewToolDescription(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                      disabled={!isToolCallingTemplate}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Parameters</label>
+                    <ToolParameterSchemaEditor
+                      value={newToolSchema}
+                      onChange={setNewToolSchema}
+                      disabled={!isToolCallingTemplate}
+                    />
+                  </div>
+                  <button
+                    onClick={handleAddToolDefinition}
+                    className="px-4 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm disabled:opacity-50"
+                    disabled={!isToolCallingTemplate}
+                  >
+                    Add Tool Definition
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -574,13 +571,13 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
           </div>
         </div>
       </div>
-      
+
       {/* New Template Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
             <h3 className="text-lg font-medium mb-4">Create New Template</h3>
-            
+
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Template Name
@@ -593,7 +590,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                 placeholder="Enter template name"
               />
             </div>
-            
+
             <div className="flex justify-end space-x-2">
               <button
                 className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"

@@ -338,28 +338,29 @@ async def generate_outputs(
                             normalized_tools.append(normalized_tool)
                         
                         payload["tools"] = normalized_tools
-                        # Ensure system prompt includes tool instructions (might be redundant if instruction added above)
-                        tool_instruction_text = '\n\nIMPORTANT: You must use the tools provided when appropriate. When using tools, format your response using a JSON object with \'function_call\' containing \'name\' and \'arguments\'. For example: {"function_call": {"name": "ls", "arguments": "{}"}}. Do not explain how you would use the tool, actually call the tool.'
-                        if tool_instruction_text not in system_prompt:
-                             system_prompt += tool_instruction_text
-                        payload["system"] = system_prompt
+                        # Convert normalized tools to a JSON string for the system prompt
+                        tools_json_string = json.dumps(normalized_tools, indent=2)
+
+                        # Ensure system prompt includes tool definitions and instructions
+                        tool_instruction_header = "\n\nAVAILABLE TOOLS:"
+                        tool_instruction_footer = "\n\nIMPORTANT: You must use the tools provided when appropriate. When using tools, format your response using a JSON object with 'function_call' containing 'name' and 'arguments'. For example: {\"function_call\": {\"name\": \"ls\", \"arguments\": \"{}\"}}. Do not explain how you would use the tool, actually call the tool."
+
+                        # Construct the full tool instruction block
+                        full_tool_instructions = f"{tool_instruction_header}\n{tools_json_string}{tool_instruction_footer}"
+
+                        # Add the full instructions to the system prompt if not already present
+                        # (Check specifically for the header to avoid duplicate additions)
+                        if tool_instruction_header not in system_prompt:
+                             system_prompt += full_tool_instructions
+                        payload["system"] = system_prompt # Assign the final system prompt to the payload
 
                     # Log the request being sent (truncated for readability)
-                    system_prompt_truncated = (
-                        payload["system"][:100] + "..."
-                        if len(payload["system"]) > 100
-                        else payload["system"]
-                    )
-                    user_prompt_truncated = (
-                        payload["prompt"][:100] + "..."
-                        if len(payload["prompt"]) > 100
-                        else payload["prompt"]
-                    )
-
                     logger.info(f"Sending request to Ollama API for {variation_label}:")
                     logger.info(f"Model: {payload['model']}")
-                    logger.info(f"System prompt: {system_prompt_truncated}")
-                    logger.info(f"User prompt: {user_prompt_truncated}")
+                    # Log the full system prompt instead of the truncated version
+                    logger.info(f"System prompt: {payload['system']}")
+                    # Use the full user prompt variable
+                    logger.info(f"User prompt: {user_prompt}")
 
                     # Call Ollama API
                     async with httpx.AsyncClient() as client:

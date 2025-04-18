@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient'; // Correct: Import the default export 'api'
 import AiSeedModal from './AiSeedModal'; // Import the new modal component
@@ -49,17 +49,22 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
   const [variationsPerSeed, setVariationsPerSeed] = useState(3);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
 
+  // Create a memoized initial seed object when template changes
+  const createInitialSeed = useCallback((templateSlots) => {
+    if (!templateSlots || !Array.isArray(templateSlots)) return {};
+    
+    return templateSlots.reduce((acc, slot) => {
+      if (typeof slot === 'string') {
+        acc[slot] = '';
+      }
+      return acc;
+    }, {});
+  }, []);
+
+  // Reset state when template changes
   useEffect(() => {
-    console.log('Template in SeedForm:', template);
-    if (template && template.slots && Array.isArray(template.slots)) {
-      const initialSlots = template.slots.reduce((acc, slot) => {
-        if (typeof slot === 'string') {
-          acc[slot] = '';
-        } else {
-          console.warn('Invalid slot format:', slot);
-        }
-        return acc;
-      }, {});
+    if (template?.slots && Array.isArray(template.slots)) {
+      const initialSlots = createInitialSeed(template.slots);
       setSeedList([initialSlots]);
       setCurrentSeedIndex(0);
     } else {
@@ -67,52 +72,65 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       setSeedList([{}]);
       setCurrentSeedIndex(0);
     }
-  }, [template]);
+  }, [template, createInitialSeed]);
 
-  const currentSeed = seedList[currentSeedIndex] || {};
+  // Memoize the current seed to prevent unnecessary re-renders
+  const currentSeed = useMemo(() => 
+    seedList[currentSeedIndex] || {}, 
+    [seedList, currentSeedIndex]
+  );
 
-  const promptPreview = template && template.user_prompt && currentSeed
-    ? generatePromptPreview(template.user_prompt, currentSeed)
-    : '';
+  // Memoize the prompt preview calculation
+  const promptPreview = useMemo(() => 
+    template?.user_prompt && currentSeed
+      ? generatePromptPreview(template.user_prompt, currentSeed)
+      : '',
+    [template, currentSeed]
+  );
 
-  console.log('Rendering SeedForm:');
-  console.log('  Template:', template);
-  console.log('  Current Seed:', currentSeed);
-  console.log('  Prompt Preview:', promptPreview);
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  // Memoized validation function
+  const validateSeeds = useCallback((seeds) => {
+    if (!template?.slots) return { valid: false, validated: [] };
     
     let allValid = true;
-    const validatedSeeds = seedList.map((seed, index) => {
-      const currentSeedSlots = template?.slots || [];
-      const missingSlots = currentSeedSlots.filter(slot => !seed[slot]?.trim());
+    const validatedSeeds = seeds.map((seed, index) => {
+      const missingSlots = template.slots.filter(slot => !seed[slot]?.trim());
+      
       if (missingSlots.length > 0) {
         toast.error(`Seed ${index + 1} is missing values for: ${missingSlots.join(', ')}`);
         allValid = false;
       }
-      const validatedSeedData = currentSeedSlots.reduce((acc, slot) => {
-        acc[slot] = seed[slot] || '';
-        return acc;
-      }, {});
-      return { slots: validatedSeedData };
+      
+      return { 
+        slots: template.slots.reduce((acc, slot) => {
+          acc[slot] = seed[slot] || '';
+          return acc;
+        }, {})
+      };
     });
-
-    if (!allValid) return;
     
-    if (!template || template.id === undefined) {
+    return { valid: allValid, validated: validatedSeeds };
+  }, [template]);
+
+  const handleSubmit = useCallback((e) => {
+    e.preventDefault();
+    
+    const { valid, validated } = validateSeeds(seedList);
+    if (!valid) return;
+    
+    if (!template?.id) {
       toast.error('No template selected. Please select a template first.');
       return;
     }
     
     onGenerate({
       template_id: template.id,
-      seeds: validatedSeeds,
+      seeds: validated,
       count: variationsPerSeed
     });
-  };
+  }, [seedList, template, variationsPerSeed, onGenerate, validateSeeds]);
   
-  const handleSlotChange = (slot, value) => {
+  const handleSlotChange = useCallback((slot, value) => {
     setSeedList(prevList => {
       const newList = [...prevList];
       newList[currentSeedIndex] = {
@@ -121,44 +139,32 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       };
       return newList;
     });
-  };
+  }, [currentSeedIndex]);
 
   // Add a new seed (blank)
-  const addSeed = () => {
+  const addSeed = useCallback(() => {
     setSeedList(prevList => {
-      const templateSlots = template?.slots || [];
-      // Create a new blank seed object based on template slots
-      const blankSeed = templateSlots.reduce((acc, slot) => {
-        acc[slot] = ''; // Initialize each slot with an empty string
-        return acc;
-      }, {});
-
-      const newList = [
-        ...prevList,
-        blankSeed // Add the new blank seed
-      ];
-      
-      // Set the index to the newly added blank seed
+      const blankSeed = createInitialSeed(template?.slots);
+      const newList = [...prevList, blankSeed];
       setCurrentSeedIndex(newList.length - 1);
-      
-      // Return the list with the new blank seed added
-      return newList; 
+      return newList;
     });
-  };
+  }, [template, createInitialSeed]);
 
-  const removeSeed = () => {
+  const removeSeed = useCallback(() => {
     if (seedList.length <= 1) {
       toast.info("Cannot remove the last seed.");
       return;
     }
+    
     setSeedList(prevList => {
       const newList = prevList.filter((_, index) => index !== currentSeedIndex);
       setCurrentSeedIndex(prevIndex => Math.min(prevIndex, newList.length - 1));
       return newList;
     });
-  };
+  }, [seedList.length, currentSeedIndex]);
 
-  const navigateSeeds = (direction) => {
+  const navigateSeeds = useCallback((direction) => {
     setCurrentSeedIndex(prevIndex => {
       const newIndex = prevIndex + direction;
       if (newIndex >= 0 && newIndex < seedList.length) {
@@ -166,23 +172,24 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
       }
       return prevIndex;
     });
-  };
+  }, [seedList.length]);
   
   // Navigate to first seed
-  const navigateToFirstSeed = () => {
+  const navigateToFirstSeed = useCallback(() => {
     setCurrentSeedIndex(0);
-  };
+  }, []);
   
   // Navigate to last seed
-  const navigateToLastSeed = () => {
+  const navigateToLastSeed = useCallback(() => {
     setCurrentSeedIndex(seedList.length - 1);
-  };
+  }, [seedList.length]);
 
-  const handleParaphraseSeeds = async (count, instructions) => {
-    if (!template || !template.id) {
+  const handleParaphraseSeeds = useCallback(async (count, instructions) => {
+    if (!template?.id) {
       toast.error('Cannot paraphrase without a selected template.');
       return;
     }
+    
     if (seedList.length < 1) { 
       toast.info('Need at least one seed to generate more via paraphrasing.');
       return;
@@ -190,6 +197,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
 
     setIsAiModalOpen(false);
     setIsParaphrasing(true);
+    
     try {
       const payload = {
         template_id: template.id,
@@ -197,10 +205,10 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
         count: count,
         instructions: instructions
       };
-      console.log('Sending data for paraphrasing:', payload);
+      
       const response = await api.paraphraseSeeds(payload);
       
-      if (response && Array.isArray(response.generated_seeds)) {
+      if (response?.generated_seeds?.length) {
         const templateSlots = template.slots || [];
         const newSeeds = response.generated_seeds.map(newSeedData => {
           const seedSlots = newSeedData.slots || {};
@@ -216,6 +224,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
           setCurrentSeedIndex(prevIndex => Math.min(prevIndex, cleanedList.length - 1));
           return cleanedList;
         });
+        
         toast.success(`Added ${newSeeds.length} new seeds using paraphrasing.`);
       } else {
         console.error('Unexpected response format:', response);
@@ -228,8 +237,119 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     } finally {
       setIsParaphrasing(false);
     }
-  };
-  
+  }, [template, seedList, setIsParaphrasing]);
+
+  // Memoize the pagination indicators to prevent unnecessary recalculations
+  const renderPaginationIndicators = useMemo(() => {
+    if (seedList.length <= 1) return null;
+    
+    return (
+      <div className="flex items-center justify-center mx-2 relative">
+        {/* Left edge indicator when there are more seeds to the left */}
+        {seedList.length > 5 && currentSeedIndex > 0 && (
+          <div 
+            className="absolute left-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center z-20 cursor-pointer"
+            onClick={navigateToFirstSeed}
+            title="Go to first seed"
+            aria-label="Go to first seed"
+            role="button"
+            tabIndex={isGenerating || isParaphrasing ? -1 : 0}
+            onKeyDown={(e) => e.key === 'Enter' && navigateToFirstSeed()}
+          >
+            <div className="w-1 h-full bg-gray-400"></div>
+            <div className="absolute left-1 top-0 bottom-0 w-4 bg-gradient-to-r from-gray-100 to-transparent"></div>
+          </div>
+        )}
+        
+        <div className="flex items-center space-x-1 relative z-0 px-2">
+            {/* Always show exactly 5 indicators regardless of seed count */}
+            {Array.from({ length: 5 }, (_, i) => {
+              if (seedList.length <= 5) {
+                // For 5 or fewer seeds, each dot represents one seed
+                // Hide dots that don't correspond to actual seeds
+                return i < seedList.length ? (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setCurrentSeedIndex(i)}
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      currentSeedIndex === i
+                        ? 'bg-primary-600'
+                        : 'bg-gray-300'
+                    } transition-colors duration-150`}
+                    title={`Go to seed ${i + 1}`}
+                    aria-label={`Go to seed ${i + 1}`}
+                    disabled={isGenerating || isParaphrasing}
+                  />
+                ) : null;
+              } else {
+                // For more than 5 seeds, divide into segments
+                const segmentSize = seedList.length / 5;
+                const segmentStart = Math.floor(i * segmentSize);
+                const segmentEnd = Math.floor((i + 1) * segmentSize) - 1;
+                
+                // Check if current seed index falls within this segment
+                const isActive = currentSeedIndex >= segmentStart && currentSeedIndex <= segmentEnd;
+                
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setCurrentSeedIndex(segmentStart)}
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isActive ? 'bg-primary-600' : 'bg-gray-300'
+                    } transition-colors duration-150`}
+                    title={`Go to seeds ${segmentStart + 1}-${segmentEnd + 1}`}
+                    aria-label={`Go to seeds ${segmentStart + 1}-${segmentEnd + 1}`}
+                    disabled={isGenerating || isParaphrasing}
+                  />
+                );
+              }
+            })}
+          </div>
+        
+        {/* Right edge indicator when there are more seeds to the right */}
+        {seedList.length > 5 && currentSeedIndex < seedList.length - 1 && (
+          <div 
+            className="absolute right-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center justify-end z-20 cursor-pointer"
+            onClick={navigateToLastSeed}
+            title="Go to last seed"
+            aria-label="Go to last seed"
+            role="button"
+            tabIndex={isGenerating || isParaphrasing ? -1 : 0}
+            onKeyDown={(e) => e.key === 'Enter' && navigateToLastSeed()}
+          >
+            <div className="w-1 h-full bg-gray-400"></div>
+            <div className="absolute right-1 top-0 bottom-0 w-4 bg-gradient-to-l from-gray-100 to-transparent"></div>
+          </div>
+        )}
+      </div>
+    );
+  }, [seedList.length, currentSeedIndex, navigateToFirstSeed, navigateToLastSeed, isGenerating, isParaphrasing]);
+
+  // Memoize the seed form fields
+  const renderSeedFields = useMemo(() => {
+    if (!template?.slots) return null;
+    
+    return template.slots.map(slot => (
+      <div key={slot} className="mb-3">
+        <label htmlFor={`seed-${currentSeedIndex}-${slot}`} className="block text-sm font-medium text-gray-700 mb-1">
+          {slot.charAt(0).toUpperCase() + slot.slice(1)}
+        </label>
+        <input
+          id={`seed-${currentSeedIndex}-${slot}`}
+          type="text"
+          value={currentSeed[slot] || ''}
+          onChange={(e) => handleSlotChange(slot, e.target.value)}
+          className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
+          placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
+          disabled={isGenerating || isParaphrasing}
+        />
+      </div>
+    ));
+  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isGenerating, isParaphrasing]);
+
+  // Render the form if template exists, otherwise show a message
   if (!template) {
     return (
       <div className="p-6 bg-gray-50 rounded-lg border border-gray-200">
@@ -257,85 +377,15 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
             </div>
             
             <div className="flex items-center space-x-1">
-              {seedList.length > 1 && (
-                <div className="flex items-center justify-center mx-2 relative">
-                  {/* Left edge indicator when there are more seeds to the left */}
-                  {seedList.length > 5 && currentSeedIndex > 0 && (
-                    <div 
-                      className="absolute left-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center z-20 cursor-pointer"
-                      onClick={navigateToFirstSeed}
-                      title="Go to first seed"
-                    >
-                      <div className="w-0.5 h-full bg-gray-400"></div>
-                      <div className="absolute left-0.5 top-0 bottom-0 w-4 bg-gradient-to-r from-gray-100 to-transparent"></div>
-                    </div>
-                  )}
-                  
-                  <div className="flex items-center space-x-1 relative z-0 px-2">
-                    {/* Always show exactly 5 indicators regardless of seed count */}
-                    {Array.from({ length: 5 }, (_, i) => {
-                      if (seedList.length <= 5) {
-                        // For 5 or fewer seeds, each dot represents one seed
-                        // Hide dots that don't correspond to actual seeds
-                        return i < seedList.length ? (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => setCurrentSeedIndex(i)}
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              currentSeedIndex === i
-                                ? 'bg-primary-600'
-                                : 'bg-gray-300'
-                            }`}
-                            title={`Go to seed ${i + 1}`}
-                            disabled={isGenerating || isParaphrasing}
-                          />
-                        ) : null;
-                      } else {
-                        // For more than 5 seeds, divide into segments
-                        const segmentSize = seedList.length / 5;
-                        const segmentStart = Math.floor(i * segmentSize);
-                        const segmentEnd = Math.floor((i + 1) * segmentSize) - 1;
-                        
-                        // Check if current seed index falls within this segment
-                        const isActive = currentSeedIndex >= segmentStart && currentSeedIndex <= segmentEnd;
-                        
-                        return (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => setCurrentSeedIndex(segmentStart)}
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              isActive ? 'bg-primary-600' : 'bg-gray-300'
-                            }`}
-                            title={`Go to seeds ${segmentStart + 1}-${segmentEnd + 1}`}
-                            disabled={isGenerating || isParaphrasing}
-                          />
-                        );
-                      }
-                    })}
-                  </div>
-                  
-                  {/* Right edge indicator when there are more seeds to the right */}
-                  {seedList.length > 5 && currentSeedIndex < seedList.length - 1 && (
-                    <div 
-                      className="absolute right-0 top-1/2 transform -translate-y-1/2 h-2 flex items-center justify-end z-20 cursor-pointer"
-                      onClick={navigateToLastSeed}
-                      title="Go to last seed"
-                    >
-                      <div className="w-0.5 h-full bg-gray-400"></div>
-                      <div className="absolute right-0.5 top-0 bottom-0 w-4 bg-gradient-to-l from-gray-100 to-transparent"></div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {renderPaginationIndicators}
               
               <button
                 type="button"
                 onClick={addSeed}
                 disabled={isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors duration-150"
                 title="Add new blank seed"
+                aria-label="Add new blank seed"
               >
                 <Icon name="plus" className="w-3 h-3" />
               </button>
@@ -343,25 +393,23 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                 type="button"
                 onClick={() => setIsAiModalOpen(true)}
                 disabled={seedList.length < 1 || isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors duration-150"
                 title="Generate more seeds using AI (requires >= 1 seed)"
+                aria-label="Generate more seeds using AI"
               >
                 {isParaphrasing ? (
-                  <>
-                    <Icon name="spinner" className="animate-spin h-3 w-3 text-blue-700" />
-                  </>
+                  <Icon name="spinner" className="animate-spin h-3 w-3 text-blue-700" />
                 ) : (
-                  <>
-                    <Icon name="sparkles" className="w-3 h-3" />
-                  </>
+                  <Icon name="sparkles" className="w-3 h-3" />
                 )}
               </button>
               <button
                 type="button"
                 onClick={removeSeed}
                 disabled={seedList.length <= 1 || isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded disabled:opacity-50 hover:bg-red-200 flex items-center space-x-1"
+                className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded disabled:opacity-50 hover:bg-red-200 flex items-center space-x-1 transition-colors duration-150"
                 title="Remove current seed"
+                aria-label="Remove current seed"
               >
                 <Icon name="trash" className="w-3 h-3" />
               </button>
@@ -370,8 +418,9 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                 type="button"
                 onClick={() => navigateSeeds(-1)}
                 disabled={currentSeedIndex === 0 || isGenerating || isParaphrasing}
-                className="p-1.5 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 flex items-center justify-center"
+                className="p-1.5 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 flex items-center justify-center transition-colors duration-150"
                 title="Previous Seed"
+                aria-label="Previous Seed"
               >
                 <Icon name="chevronLeft" className="w-4 h-4" />
               </button>
@@ -379,29 +428,16 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                 type="button"
                 onClick={() => navigateSeeds(1)}
                 disabled={currentSeedIndex === seedList.length - 1 || isGenerating || isParaphrasing}
-                className="p-1.5 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 flex items-center justify-center"
+                className="p-1.5 text-xs bg-white border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 flex items-center justify-center transition-colors duration-150"
                 title="Next Seed"
+                aria-label="Next Seed"
               >
                 <Icon name="chevronRight" className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {template.slots.map(slot => (
-            <div key={slot}>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {slot.charAt(0).toUpperCase() + slot.slice(1)}
-              </label>
-              <input
-                type="text"
-                value={currentSeed[slot] || ''}
-                onChange={(e) => handleSlotChange(slot, e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200"
-                placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
-                disabled={isGenerating || isParaphrasing}
-              />
-            </div>
-          ))}
+          {renderSeedFields}
 
           {promptPreview && (
             <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
@@ -411,10 +447,11 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
           )}
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="variations-slider" className="block text-sm font-medium text-gray-700 mb-1">
               Variations per Seed: {variationsPerSeed}
             </label>
             <input
+              id="variations-slider"
               type="range"
               min="1"
               max="10"
@@ -437,7 +474,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                   Generating ({seedList.length * variationsPerSeed} Examples)... 
                 </span>
               ) : isParaphrasing ? (
-                 <span className="flex items-center justify-center">
+                <span className="flex items-center justify-center">
                   <Icon name="spinner" className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" />
                   Generating Seeds...
                 </span>
@@ -448,6 +485,7 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                 type="button"
                 onClick={onCancel}
                 className="py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors duration-200"
+                aria-label="Cancel generation"
               >
                 Cancel
               </button>
