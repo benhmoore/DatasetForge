@@ -187,8 +187,8 @@ const api = {
     .then(response => response.data),
   
   // Datasets
-  getDatasets: (page = 1, size = 10) => apiClient.get('/datasets', {
-    params: { page, size }
+  getDatasets: (page = 1, size = 10, includeArchived = false) => apiClient.get('/datasets', {
+    params: { page, size, include_archived: includeArchived } // Pass include_archived param
   }).then(response => response.data),
   
   getDatasetById: (datasetId) => apiClient.get(`/datasets/${datasetId}`)
