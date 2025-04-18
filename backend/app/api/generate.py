@@ -430,6 +430,10 @@ async def generate_outputs(
                         slots=current_slots,
                         processed_prompt=user_prompt,
                         tool_calls=tool_calls if tool_calls else None,
+                        # Include template.system_prompt_mask and template.user_prompt_mask in result
+                        system_prompt=system_prompt,
+                        system_prompt_mask=template.system_prompt_mask,
+                        user_prompt_mask=template.user_prompt_mask,
                     )
 
                 except httpx.TimeoutException:
@@ -442,6 +446,9 @@ async def generate_outputs(
                         output=f"[{error_detail}]",
                         slots=current_slots,
                         processed_prompt=user_prompt,
+                        system_prompt=system_prompt,
+                        system_prompt_mask=template.system_prompt_mask,
+                        user_prompt_mask=template.user_prompt_mask,
                     )
 
                 except Exception as e:
@@ -454,6 +461,9 @@ async def generate_outputs(
                         output=f"[Error: {error_detail}]",
                         slots=current_slots,
                         processed_prompt=user_prompt,
+                        system_prompt=system_prompt,
+                        system_prompt_mask=template.system_prompt_mask,
+                        user_prompt_mask=template.user_prompt_mask,
                     )
 
                 # Yield the result as a JSON string followed by a newline

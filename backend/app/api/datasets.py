@@ -283,6 +283,8 @@ async def add_examples(
             dataset_id=dataset_id,
             system_prompt=example_data.system_prompt,
             user_prompt=example_data.user_prompt,  # Store the user prompt with slot values
+            system_prompt_mask=example_data.system_prompt_mask,
+            user_prompt_mask=example_data.user_prompt_mask,
             slots=example_data.slots,
             output=example_data.output,
             tool_calls=example_data.tool_calls,
@@ -334,6 +336,8 @@ async def update_example(
     # Update example fields
     example.system_prompt = example_data.system_prompt
     example.user_prompt = example_data.user_prompt  # Update user prompt field
+    example.system_prompt_mask = example_data.system_prompt_mask
+    example.user_prompt_mask = example_data.user_prompt_mask
     example.slots = example_data.slots
     example.output = example_data.output
     example.tool_calls = example_data.tool_calls
@@ -453,8 +457,9 @@ async def export_dataset(
                 try:
                     # Create context with all example fields and additional metadata
                     context = {
-                        "system_prompt": example.system_prompt,
-                        "user_prompt": example.user_prompt,  # Add user prompt to context
+                        # Use mask values if available, otherwise use actual prompts
+                        "system_prompt": example.system_prompt_mask if example.system_prompt_mask else example.system_prompt,
+                        "user_prompt": example.user_prompt_mask if example.user_prompt_mask else example.user_prompt,
                         "slots": example.slots,
                         "output": example.output,
                         "timestamp": example.timestamp.isoformat(),
@@ -482,8 +487,8 @@ async def export_dataset(
             else:
                 # Use default format
                 record = {
-                    "system_prompt": example.system_prompt,
-                    "user_prompt": example.user_prompt,  # Include the user prompt in export
+                    "system_prompt": example.system_prompt_mask if example.system_prompt_mask else example.system_prompt,
+                    "user_prompt": example.user_prompt_mask if example.user_prompt_mask else example.user_prompt,
                     "slots": example.slots,
                     "output": example.output,
                     "timestamp": example.timestamp.isoformat(),

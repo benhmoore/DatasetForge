@@ -18,6 +18,9 @@ class Template(SQLModel, table=True):
     name: str
     system_prompt: str
     user_prompt: str
+    # New mask fields
+    system_prompt_mask: Optional[str] = None
+    user_prompt_mask: Optional[str] = None
     slots: List[str] = Field(sa_column=Column(JSON))
     archived: bool = False
     tool_definitions: Optional[List[Dict[str, Any]]] = Field(
@@ -44,6 +47,9 @@ class Example(SQLModel, table=True):
     dataset_id: int = Field(foreign_key="dataset.id")
     system_prompt: str
     user_prompt: str  # Store user prompt with slot values replaced
+    # New mask fields for examples
+    system_prompt_mask: Optional[str] = None
+    user_prompt_mask: Optional[str] = None
     slots: Dict[str, str] = Field(sa_column=Column(JSON))
     output: str
     tool_calls: Optional[List[Dict[str, Any]]] = Field(

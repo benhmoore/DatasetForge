@@ -379,6 +379,8 @@ const Generate = ({ context }) => {
       return {
         system_prompt: selectedTemplate.system_prompt || "",
         user_prompt: variation.processed_prompt || "",
+        system_prompt_mask: selectedTemplate.system_prompt_mask || null,
+        user_prompt_mask: selectedTemplate.user_prompt_mask || null,
         slots: slotData,
         output: variation.output,
         tool_calls: variation.tool_calls || null

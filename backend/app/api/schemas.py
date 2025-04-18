@@ -31,6 +31,8 @@ class TemplateBase(BaseModel):
     name: str
     system_prompt: str
     user_prompt: str
+    system_prompt_mask: Optional[str] = None
+    user_prompt_mask: Optional[str] = None
     slots: List[str]
     tool_definitions: Optional[List[Dict[str, Any]]] = None
     is_tool_calling_template: bool = False
@@ -51,6 +53,8 @@ class TemplateUpdate(BaseModel):
     name: Optional[str] = None
     system_prompt: Optional[str] = None
     user_prompt: Optional[str] = None
+    system_prompt_mask: Optional[str] = None
+    user_prompt_mask: Optional[str] = None
     slots: Optional[List[str]] = None
     tool_definitions: Optional[List[Dict[str, Any]]] = None
     is_tool_calling_template: Optional[bool] = None
@@ -79,6 +83,8 @@ class DatasetPagination(BaseModel):
 class ExampleBase(BaseModel):
     system_prompt: str
     user_prompt: str  # Added user prompt with slot values replaced
+    system_prompt_mask: Optional[str] = None
+    user_prompt_mask: Optional[str] = None
     slots: Dict[str, str]
     output: str
     tool_calls: Optional[List[Dict[str, Any]]] = None
@@ -156,6 +162,9 @@ class GenerationResult(BaseModel):
     output: str
     slots: Dict[str, str]  # Slots used for this specific generation
     processed_prompt: str
+    system_prompt: Optional[str] = None
+    system_prompt_mask: Optional[str] = None
+    user_prompt_mask: Optional[str] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
