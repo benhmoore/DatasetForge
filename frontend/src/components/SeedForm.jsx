@@ -44,12 +44,56 @@ const cleanupSeedList = (list, slots) => {
   }
 };
 
+// --- Session Storage Persistence ---
+const SS_PREFIX = 'seedForm_';
+const SS_KEYS = {
+  TEMPLATE_ID: `${SS_PREFIX}templateId`,
+  SEED_LIST: `${SS_PREFIX}seedList`,
+  CURRENT_INDEX: `${SS_PREFIX}currentSeedIndex`,
+  VARIATIONS: `${SS_PREFIX}variationsPerSeed`,
+  VALIDATION_ERRORS: `${SS_PREFIX}validationErrors`,
+};
+
+const clearSessionStorage = () => {
+  Object.values(SS_KEYS).forEach(key => sessionStorage.removeItem(key));
+};
+
+const loadStateFromSessionStorage = (templateId) => {
+  const storedTemplateId = sessionStorage.getItem(SS_KEYS.TEMPLATE_ID);
+  if (storedTemplateId && templateId && storedTemplateId === templateId.toString()) {
+    try {
+      const storedSeedList = JSON.parse(sessionStorage.getItem(SS_KEYS.SEED_LIST) || '[{}]');
+      const storedIndex = parseInt(sessionStorage.getItem(SS_KEYS.CURRENT_INDEX) || '0', 10);
+      const storedVariations = parseInt(sessionStorage.getItem(SS_KEYS.VARIATIONS) || '3', 10);
+      const storedErrors = JSON.parse(sessionStorage.getItem(SS_KEYS.VALIDATION_ERRORS) || '{}');
+
+      // Basic validation on loaded data
+      if (Array.isArray(storedSeedList) && storedSeedList.length > 0 && !isNaN(storedIndex) && !isNaN(storedVariations) && typeof storedErrors === 'object') {
+         const validIndex = Math.min(Math.max(0, storedIndex), storedSeedList.length - 1);
+         return {
+            seedList: storedSeedList,
+            currentSeedIndex: validIndex,
+            variationsPerSeed: storedVariations,
+            validationErrors: storedErrors,
+            loaded: true
+         };
+      }
+    } catch (e) {
+      console.error("Failed to parse seed state from session storage:", e);
+      clearSessionStorage(); // Clear potentially corrupted storage
+    }
+  }
+  return { loaded: false }; // Indicate state wasn't loaded
+};
+// --- End Session Storage Persistence ---
+
 const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing, setIsParaphrasing }) => {
   const [seedList, setSeedList] = useState([{}]); 
   const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
   const [variationsPerSeed, setVariationsPerSeed] = useState(3);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState({}); // { seedIndex: { slotName: true } }
+  const [isInitialized, setIsInitialized] = useState(false); // Track if initial load/reset is done
 
   // Create a memoized initial seed object when template changes
   const createInitialSeed = useCallback((templateSlots) => {
@@ -63,20 +107,52 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     }, {});
   }, []);
 
-  // Reset state when template changes
+  // Effect to load/reset state when template prop becomes available or changes
   useEffect(() => {
-    if (template?.slots && Array.isArray(template.slots)) {
-      const initialSlots = createInitialSeed(template.slots);
-      setSeedList([initialSlots]);
-      setCurrentSeedIndex(0);
-      setValidationErrors({}); // Clear errors on template change
+    const templateId = template?.id;
+    const { loaded, ...loadedState } = loadStateFromSessionStorage(templateId);
+
+    if (loaded) {
+      // If loaded from storage for the *current* template, set the state
+      setSeedList(loadedState.seedList);
+      setCurrentSeedIndex(loadedState.currentSeedIndex);
+      setVariationsPerSeed(loadedState.variationsPerSeed);
+      setValidationErrors(loadedState.validationErrors);
     } else {
-      console.warn('Invalid template or slots:', template);
-      setSeedList([{}]);
+      // If not loaded (no storage, different template ID, or invalid data),
+      // reset to initial state based on the *new* template.
+      clearSessionStorage(); // Clear storage for the old/invalid template ID
+      if (template?.slots && Array.isArray(template.slots)) {
+        const initialSlots = createInitialSeed(template.slots);
+        setSeedList([initialSlots]);
+      } else {
+        // Handle case where template becomes invalid/null
+        setSeedList([{}]);
+      }
+      // Reset other state regardless of template validity if not loaded
       setCurrentSeedIndex(0);
-      setValidationErrors({}); // Clear errors
+      setVariationsPerSeed(3); // Reset variations to default
+      setValidationErrors({});
     }
-  }, [template, createInitialSeed]);
+    setIsInitialized(true); // Mark initialization complete for this template
+  }, [template, createInitialSeed]); // Rerun when template changes
+
+  // Effect to save state to session storage whenever it changes
+  useEffect(() => {
+    // Only save after the initial state load/reset is complete for the current template
+    // and if the template is valid
+    if (isInitialized && template?.id) {
+      try {
+        sessionStorage.setItem(SS_KEYS.TEMPLATE_ID, template.id.toString());
+        sessionStorage.setItem(SS_KEYS.SEED_LIST, JSON.stringify(seedList));
+        sessionStorage.setItem(SS_KEYS.CURRENT_INDEX, currentSeedIndex.toString());
+        sessionStorage.setItem(SS_KEYS.VARIATIONS, variationsPerSeed.toString());
+        sessionStorage.setItem(SS_KEYS.VALIDATION_ERRORS, JSON.stringify(validationErrors));
+      } catch (e) {
+        console.error("Failed to save seed state to session storage:", e);
+      }
+    }
+  }, [seedList, currentSeedIndex, variationsPerSeed, validationErrors, template?.id, isInitialized]);
 
   // Memoize the current seed to prevent unnecessary re-renders
   const currentSeed = useMemo(() => 
@@ -424,6 +500,15 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
     );
   }
   
+  // Render loading state until initialized to prevent flicker
+  if (!isInitialized) {
+     return (
+       <div className="p-6 bg-gray-50 rounded-lg border border-gray-200 flex justify-center items-center h-64">
+         <Icon name="spinner" className="animate-spin h-8 w-8 text-primary-600" />
+       </div>
+     );
+  }
+
   return (
     <div className="p-6 bg-white rounded-lg border border-gray-200">
       <form onSubmit={handleSubmit} noValidate>
