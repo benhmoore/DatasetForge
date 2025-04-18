@@ -223,11 +223,10 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
             </div>
             
             {/* Dataset List */}
-            <div className="flex-grow overflow-y-auto p-2">
+            <div className="flex-grow overflow-y-auto p-6">
               {isLoading ? (
-                <div className="p-4 text-center text-gray-500">
-                  <Icon name="spinner" className="animate-spin h-5 w-5 mb-2" aria-hidden="true" />
-                  Loading datasets...
+                <div className="flex justify-center items-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
                 </div>
               ) : filteredDatasets.length === 0 ? (
                 <div className="p-4 text-center text-gray-500">
@@ -238,43 +237,64 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
                   )}
                 </div>
               ) : (
-                <ul className="space-y-1">
+                <ul className="space-y-4">
                   {filteredDatasets.map(dataset => (
                     <li 
                       key={dataset.id}
                       onClick={() => handleSelectDataset(dataset)}
-                      className={`p-3 rounded-md cursor-pointer flex items-center justify-between group transition-colors duration-150 
-                        ${selectedDataset?.id === dataset.id ? 
-                          'bg-primary-100 hover:bg-primary-200' : 
-                          'hover:bg-gray-100'
-                        }
-                        ${dataset.archived ? 'text-gray-500' : 'text-gray-800'}
-                      `}
+                      className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                        selectedDataset?.id === dataset.id 
+                          ? 'border-primary-500 bg-primary-50 shadow-md' 
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
                     >
-                      <div className="flex items-center">
-                        <div className="text-lg font-medium">{dataset.name}</div>
-                        {dataset.archived && (
-                          <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-700">
-                            Archived
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                        <button
-                          className={`p-1.5 rounded-full ${dataset.archived ? 
-                            'text-green-600 hover:bg-green-50' : 
-                            'text-gray-600 hover:bg-gray-50'
-                          }`}
-                          onClick={(e) => handleArchiveToggle(dataset, e)}
-                          title={dataset.archived ? 'Unarchive dataset' : 'Archive dataset'}
-                        >
-                          {dataset.archived ? (
-                           <Icon name="unarchive" className="h-4 w-4" aria-hidden="true" />
-                          ) : (
-                            <Icon name="archive" className="h-4 w-4" aria-hidden="true" />
-                          )}
-                        </button>
+                      <div className="flex items-start">
+                        <div className="flex-1">
+                          <h3 className="font-medium text-gray-800 flex items-center">
+                            {dataset.name}
+                            {dataset.archived && (
+                              <span className="ml-2 px-2 py-0.5 bg-gray-100 text-gray-800 text-xs rounded-full">
+                                Archived
+                              </span>
+                            )}
+                          </h3>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              Dataset
+                            </span>
+                            {dataset.archived ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                Inactive
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center ml-4 space-x-2">
+                          <button
+                            className={`p-1.5 rounded-full ${dataset.archived ? 
+                              'text-green-600 hover:bg-green-50' : 
+                              'text-gray-600 hover:bg-gray-50'
+                            }`}
+                            onClick={(e) => handleArchiveToggle(dataset, e)}
+                            title={dataset.archived ? 'Unarchive dataset' : 'Archive dataset'}
+                          >
+                            {dataset.archived ? (
+                             <Icon name="unarchive" className="h-4 w-4" aria-hidden="true" />
+                            ) : (
+                              <Icon name="archive" className="h-4 w-4" aria-hidden="true" />
+                            )}
+                          </button>
+                          <input
+                            type="radio"
+                            checked={selectedDataset?.id === dataset.id}
+                            onChange={() => handleSelectDataset(dataset)}
+                            className="h-5 w-5 text-primary-600 focus:ring-primary-500 border-gray-300"
+                          />
+                        </div>
                       </div>
                     </li>
                   ))}

@@ -240,10 +240,90 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
           )}
 
           <div className="flex items-center justify-between p-2 bg-gray-100 rounded-md">
-            <span className="text-sm font-medium text-gray-700">
-              Seed {currentSeedIndex + 1} of {seedList.length}
-            </span>
+            <div className="flex items-center">
+              <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                Seed {currentSeedIndex + 1} of {seedList.length}
+              </span>
+            </div>
+            
             <div className="flex items-center space-x-1">
+              {seedList.length > 1 && (
+                <div className="flex items-center justify-center mx-2">
+                  <div className="flex items-center space-x-1">
+                    {seedList.length <= 7 ? (
+                      // Show all indicators if 7 or fewer seeds
+                      seedList.map((_, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => setCurrentSeedIndex(index)}
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            currentSeedIndex === index
+                              ? 'bg-primary-600'
+                              : 'bg-gray-300'
+                          }`}
+                          title={`Go to seed ${index + 1}`}
+                          disabled={isGenerating || isParaphrasing}
+                        />
+                      ))
+                    ) : (
+                      // For more than 7 seeds, just show 5 indicators with the current one highlighted
+                      Array.from({ length: 5 }, (_, i) => {
+                        const isActive = Math.floor((currentSeedIndex / seedList.length) * 5) === i;
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setCurrentSeedIndex(Math.floor((i / 5) * seedList.length))}
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isActive ? 'bg-primary-600' : 'bg-gray-300'
+                            }`}
+                            title={`Go to page ${i + 1}`}
+                            disabled={isGenerating || isParaphrasing}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              <button
+                type="button"
+                onClick={addSeed}
+                disabled={isGenerating || isParaphrasing}
+                className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                title="Add new blank seed"
+              >
+                <Icon name="plus" className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAiModalOpen(true)}
+                disabled={seedList.length < 1 || isGenerating || isParaphrasing}
+                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                title="Generate more seeds using AI (requires >= 1 seed)"
+              >
+                {isParaphrasing ? (
+                  <>
+                    <Icon name="spinner" className="animate-spin h-3 w-3 text-blue-700" />
+                  </>
+                ) : (
+                  <>
+                    <Icon name="sparkles" className="w-3 h-3" />
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={removeSeed}
+                disabled={seedList.length <= 1 || isGenerating || isParaphrasing}
+                className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded disabled:opacity-50 hover:bg-red-200 flex items-center space-x-1"
+                title="Remove current seed"
+              >
+                <Icon name="trash" className="w-3 h-3" />
+              </button>
+              <div className="w-px h-4 bg-gray-300 mx-3" />
               <button
                 type="button"
                 onClick={() => navigateSeeds(-1)}
@@ -261,45 +341,6 @@ const SeedForm = ({ template, onGenerate, isGenerating, onCancel, isParaphrasing
                 title="Next Seed"
               >
                 <Icon name="chevronRight" className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={addSeed}
-                disabled={isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-green-100 text-green-700 border border-green-300 rounded hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
-                title="Add new blank seed"
-              >
-                <Icon name="plus" className="w-3 h-3" />
-                <span>Add</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsAiModalOpen(true)}
-                disabled={seedList.length < 1 || isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
-                title="Generate more seeds using AI (requires >= 1 seed)"
-              >
-                {isParaphrasing ? (
-                  <>
-                    <Icon name="spinner" className="animate-spin -ml-0.5 mr-1 h-3 w-3 text-blue-700" />
-                    <span>AI...</span>
-                  </>
-                ) : (
-                  <>
-                    <Icon name="sparkles" className="w-3 h-3" />
-                    <span>AI</span>
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={removeSeed}
-                disabled={seedList.length <= 1 || isGenerating || isParaphrasing}
-                className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded disabled:opacity-50 hover:bg-red-200 flex items-center space-x-1"
-                title="Remove current seed"
-              >
-                <Icon name="trash" className="w-3 h-3" />
-                <span>Remove</span>
               </button>
             </div>
           </div>

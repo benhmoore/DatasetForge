@@ -145,10 +145,10 @@ const ExportDialog = ({ isOpen, onClose, datasetId, datasetName }) => {
               </p>
               <button
                 onClick={() => setIsTemplateManagerOpen(true)}
-                className="text-primary-600 hover:text-primary-800 text-sm flex items-center"
+                className="px-3 py-1.5 bg-primary-50 border border-primary-200 rounded-md text-primary-600 hover:bg-primary-100 hover:border-primary-300 transition-colors duration-150 text-sm font-medium flex items-center shadow-sm text-left"
                 title="Manage export templates"
               >
-                <Icon name="cog" className="w-4 h-4 mr-1" />
+                <Icon name="cog" className="w-6 h-6 mr-2" />
                 Manage Templates
               </button>
             </div>
