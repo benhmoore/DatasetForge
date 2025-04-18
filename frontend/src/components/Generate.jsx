@@ -675,6 +675,7 @@ const Generate = ({ context }) => {
                   onRegenerate={(instruction) => handleRegenerate(variation.id, instruction)}
                   onDismiss={() => handleDismiss(variation.id)}
                   onToolCallsChange={(newToolCalls) => handleToolCallsChange(variation.id, newToolCalls)} // Pass variation id
+                  template_id={variation.template_id || selectedTemplate?.id} // Pass template_id for paraphrasing
                 />
               ))}
             </div>

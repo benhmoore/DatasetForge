@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import ToolCallEditor from './ToolCallEditor';
 import Icon from './Icons';
+import api from '../api/apiClient';
 
 const VariationCard = ({ 
   id, // Added id prop
@@ -16,19 +17,26 @@ const VariationCard = ({
   error = null,
   tool_calls = null,
   processed_prompt = null,
-  onToolCallsChange
+  onToolCallsChange,
+  template_id = null // Added template_id for paraphrasing
 }) => {
   // State management
   const [editedOutput, setEditedOutput] = useState(output);
   const [isEditing, setIsEditing] = useState(false);
   const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false);
   const [regenerateInstruction, setRegenerateInstruction] = useState('');
+  const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
+  const [paraphraseInstruction, setParaphraseInstruction] = useState('');
+  const [paraphraseCount, setParaphraseCount] = useState(3);
+  const [isParaphrasing, setIsParaphrasing] = useState(false);
+  const [paraphrasedOutputs, setParaphrasedOutputs] = useState([]);
   const [showPrompt, setShowPrompt] = useState(false);
   const [isToolEditorOpen, setIsToolEditorOpen] = useState(false);
   const [textareaHeight, setTextareaHeight] = useState('8rem');
   
   // Refs
   const regenerateInputRef = useRef(null);
+  const paraphraseInputRef = useRef(null);
   const outputDisplayRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -58,6 +66,13 @@ const VariationCard = ({
     }
   }, [editedOutput, isEditing]);
 
+  // Focus the paraphrase input when the paraphrase modal opens
+  useEffect(() => {
+    if (isParaphraseModalOpen && paraphraseInputRef.current) {
+      paraphraseInputRef.current.focus();
+    }
+  }, [isParaphraseModalOpen]);
+
   // Handle escape key to exit modal or editing mode
   useEffect(() => {
     const handleEscape = (e) => {
@@ -65,6 +80,9 @@ const VariationCard = ({
         if (isRegenerateModalOpen) {
           setIsRegenerateModalOpen(false);
           setRegenerateInstruction('');
+        } else if (isParaphraseModalOpen) {
+          setIsParaphraseModalOpen(false);
+          setParaphraseInstruction('');
         } else if (isEditing) {
           // Cancel editing and revert to original output
           setEditedOutput(output);
@@ -77,7 +95,7 @@ const VariationCard = ({
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [isRegenerateModalOpen, isEditing, isToolEditorOpen, output]);
+  }, [isRegenerateModalOpen, isParaphraseModalOpen, isEditing, isToolEditorOpen, output]);
 
   // Memoized handler for starting edit mode
   const startEditing = useCallback((e) => {
@@ -288,6 +306,66 @@ const VariationCard = ({
     }
   }, [handleRegenerateWithInstruction]);
 
+  // Handler for paraphrase button
+  const handleParaphrase = useCallback(() => {
+    if (isGenerating || isParaphrasing) return;
+    setIsParaphraseModalOpen(true);
+  }, [isGenerating, isParaphrasing]);
+  
+  // Paraphrase with instruction
+  const handleParaphraseWithInstruction = useCallback(async () => {
+    if (!template_id) {
+      toast.error('Cannot paraphrase: No template ID provided.');
+      return;
+    }
+
+    try {
+      setIsParaphrasing(true);
+      setParaphrasedOutputs([]);
+      
+      // Create a seed structure with output as the content
+      const seeds = [{
+        slots: {
+          content: output
+        }
+      }];
+      
+      const response = await api.paraphraseSeeds({
+        template_id,
+        seeds,
+        count: paraphraseCount,
+        instructions: paraphraseInstruction || undefined
+      });
+      
+      if (response && response.generated_seeds && response.generated_seeds.length > 0) {
+        const paraphrased = response.generated_seeds.map(seed => seed.slots.content);
+        setParaphrasedOutputs(paraphrased);
+      } else {
+        toast.warning('No paraphrases were generated.');
+      }
+    } catch (error) {
+      console.error('Paraphrase error:', error);
+      toast.error(`Failed to generate paraphrases: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsParaphrasing(false);
+    }
+  }, [template_id, output, paraphraseCount, paraphraseInstruction]);
+  
+  // Handle selecting a paraphrased output
+  const handleSelectParaphrase = useCallback((text) => {
+    onEdit(text);
+    setIsParaphraseModalOpen(false);
+    setParaphraseInstruction('');
+    setParaphrasedOutputs([]);
+  }, [onEdit]);
+  
+  // Handle key press in paraphrase modal
+  const handleParaphraseKeyPress = useCallback((e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      handleParaphraseWithInstruction();
+    }
+  }, [handleParaphraseWithInstruction]);
+
   // Conditional rendering for loading state
   if (isGenerating) {
     return (
@@ -403,11 +481,25 @@ const VariationCard = ({
               className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
               title="Regenerate"
               aria-label="Regenerate output"
-              disabled={isGenerating}
+              disabled={isGenerating || isParaphrasing}
             >
               <Icon 
                 name="refresh" 
                 className="h-4 w-4 inline-block hover:rotate-180 transition-transform duration-500" 
+                aria-hidden="true" 
+              />
+            </button>
+            {/* Paraphrase Button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); handleParaphrase(); }} // Stop propagation
+              className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
+              title="Paraphrase"
+              aria-label="Paraphrase output"
+              disabled={isGenerating || isParaphrasing || !template_id}
+            >
+              <Icon 
+                name="language" 
+                className="h-4 w-4 inline-block hover:scale-110 transition-transform duration-200" 
                 aria-hidden="true" 
               />
             </button>
@@ -553,6 +645,125 @@ const VariationCard = ({
               <div className="mt-4 text-sm text-gray-500">
                 <p>Press Enter to regenerate or Escape to cancel.</p>
                 <p className="mt-1">Leave empty for standard regeneration.</p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {isParaphraseModalOpen && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsParaphraseModalOpen(false);
+                setParaphraseInstruction('');
+                setParaphrasedOutputs([]);
+              }
+            }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`paraphrase-modal-title-${id}`}
+          >
+            <div className="bg-white rounded-lg p-6 max-w-2xl w-full shadow-xl animate-fadeIn" onClick={e => e.stopPropagation()}>
+              <h3 id={`paraphrase-modal-title-${id}`} className="text-lg font-medium mb-4">Paraphrase Output</h3>
+              
+              <div className="mb-4">
+                <div className="flex flex-col space-y-2">
+                  <label htmlFor={`paraphrase-instruction-${id}`} className="text-sm font-medium text-gray-700">
+                    Additional Instructions (Optional)
+                  </label>
+                  <input
+                    id={`paraphrase-instruction-${id}`}
+                    ref={paraphraseInputRef}
+                    type="text"
+                    value={paraphraseInstruction}
+                    onChange={(e) => setParaphraseInstruction(e.target.value)}
+                    onKeyDown={handleParaphraseKeyPress}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="E.g., 'Change character names' or 'Make it more formal'"
+                    aria-label="Paraphrase instructions"
+                  />
+                </div>
+                
+                <div className="flex flex-col space-y-2 mt-4">
+                  <label htmlFor={`paraphrase-count-${id}`} className="text-sm font-medium text-gray-700">
+                    Number of Paraphrases to Generate
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      id={`paraphrase-count-${id}`}
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={paraphraseCount}
+                      onChange={(e) => setParaphraseCount(parseInt(e.target.value))}
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+                    />
+                    <span className="text-sm font-medium text-gray-700 min-w-[2rem] text-center">
+                      {paraphraseCount}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              {paraphrasedOutputs.length > 0 && (
+                <div className="mb-6 mt-6">
+                  <h4 className="text-md font-medium mb-3">Select a Paraphrase</h4>
+                  <div className="max-h-60 overflow-y-auto space-y-3 pr-2">
+                    {paraphrasedOutputs.map((text, index) => (
+                      <div 
+                        key={index} 
+                        className="p-3 bg-gray-50 rounded border border-gray-200 hover:border-primary-300 hover:shadow-sm cursor-pointer transition-all duration-200"
+                        onClick={() => handleSelectParaphrase(text)}
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs font-medium text-gray-500">Paraphrase {index + 1}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectParaphrase(text);
+                            }}
+                            className="text-xs text-primary-600 hover:text-primary-800"
+                          >
+                            Select
+                          </button>
+                        </div>
+                        <div className="text-sm whitespace-pre-wrap">{text}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex justify-end space-x-2">
+                <button
+                  onClick={() => {
+                    setIsParaphraseModalOpen(false);
+                    setParaphraseInstruction('');
+                    setParaphrasedOutputs([]);
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleParaphraseWithInstruction}
+                  disabled={isParaphrasing}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 disabled:bg-primary-400"
+                >
+                  {isParaphrasing ? (
+                    <span className="flex items-center">
+                      <Icon name="spinner" className="animate-spin h-4 w-4 mr-2" aria-hidden="true" />
+                      Paraphrasing...
+                    </span>
+                  ) : (
+                    "Generate Paraphrases"
+                  )}
+                </button>
+              </div>
+              <div className="mt-4 text-sm text-gray-500">
+                <p>Press Ctrl+Enter to generate paraphrases or Escape to cancel.</p>
+                <p className="mt-1">Click on a paraphrase to select it.</p>
               </div>
             </div>
           </div>

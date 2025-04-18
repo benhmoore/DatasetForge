@@ -31,7 +31,8 @@ import {
   AdjustmentsHorizontalIcon,
   EllipsisVerticalIcon,
   SparklesIcon,
-  ArrowUpTrayIcon
+  ArrowUpTrayIcon,
+  LanguageIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 
@@ -69,6 +70,7 @@ const icons = {
   settings: { outline: AdjustmentsHorizontalIcon },
   more: { outline: EllipsisVerticalIcon },
   sparkles: { outline: SparklesIcon },
+  language: { outline: LanguageIcon },
 };
 
 export default function Icon({ name, variant = 'outline', className = '', ...props }) {
