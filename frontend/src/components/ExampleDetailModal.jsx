@@ -10,6 +10,10 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
   const [editedExample, setEditedExample] = useState(null);
   const [activeTab, setActiveTab] = useState('content');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // Tool call editing state
+  const [editingToolCalls, setEditingToolCalls] = useState(false);
+  const [editedToolCalls, setEditedToolCalls] = useState('');
+  const [toolCallValidationError, setToolCallValidationError] = useState(null);
   
   // Refs - always in the same order
   const modalRef = useRef(null);
@@ -153,6 +157,36 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen, isEditing, onClose]);
+  
+  // Initialize editing state when needed
+  useEffect(() => {
+    if (editingToolCalls && example?.tool_calls) {
+      try {
+        setEditedToolCalls(JSON.stringify(example.tool_calls || [], null, 2));
+        setToolCallValidationError(null);
+      } catch (e) {
+        console.error("Error stringifying tool calls:", e);
+        setEditedToolCalls('[]');
+        setToolCallValidationError("Error formatting existing tool calls");
+      }
+    }
+  }, [editingToolCalls, example?.tool_calls]);
+  
+  // Validate JSON as user types
+  useEffect(() => {
+    if (!editingToolCalls) return;
+    
+    try {
+      const parsed = JSON.parse(editedToolCalls);
+      if (!Array.isArray(parsed)) {
+        setToolCallValidationError("Tool calls must be an array");
+      } else {
+        setToolCallValidationError(null);
+      }
+    } catch (e) {
+      setToolCallValidationError(`Invalid JSON: ${e.message}`);
+    }
+  }, [editedToolCalls, editingToolCalls]);
 
   // If modal is not open or no example is provided, don't render anything
   if (!isOpen || !example) return null;
@@ -380,99 +414,7 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
     );
   };
 
-  // State for tool call editing - moved to the top level to follow React hooks rules
-  const [editingToolCalls, setEditingToolCalls] = useState(false);
-  const [editedToolCalls, setEditedToolCalls] = useState('');
-  const [toolCallValidationError, setToolCallValidationError] = useState(null);
   
-  // Initialize editing state when needed
-  useEffect(() => {
-    if (editingToolCalls && example?.tool_calls) {
-      try {
-        setEditedToolCalls(JSON.stringify(example.tool_calls || [], null, 2));
-        setToolCallValidationError(null);
-      } catch (e) {
-        console.error("Error stringifying tool calls:", e);
-        setEditedToolCalls('[]');
-        setToolCallValidationError("Error formatting existing tool calls");
-      }
-    }
-  }, [editingToolCalls, example?.tool_calls]);
-  
-  // Validate JSON as user types
-  useEffect(() => {
-    if (!editingToolCalls) return;
-    
-    try {
-      const parsed = JSON.parse(editedToolCalls);
-      if (!Array.isArray(parsed)) {
-        setToolCallValidationError("Tool calls must be an array");
-      } else {
-        setToolCallValidationError(null);
-      }
-    } catch (e) {
-      setToolCallValidationError(`Invalid JSON: ${e.message}`);
-    }
-  }, [editedToolCalls, editingToolCalls]);
-  
-  // Save edited tool calls
-  const saveToolCalls = useCallback(async () => {
-    if (toolCallValidationError) {
-      toast.error(`Cannot save: ${toolCallValidationError}`);
-      return;
-    }
-    
-    try {
-      const parsed = JSON.parse(editedToolCalls);
-      
-      // Update the example with new tool calls
-      const updatedExample = {
-        ...editedExample,
-        tool_calls: parsed
-      };
-      
-      setIsSaving(true);
-      
-      try {
-        await api.updateExample(datasetId, example.id, updatedExample);
-        toast.success("Tool calls updated successfully");
-        
-        // Update local state
-        setEditedExample(updatedExample);
-        if (onExampleUpdated) {
-          onExampleUpdated(updatedExample);
-        }
-        
-        // Exit editing mode
-        setEditingToolCalls(false);
-      } catch (error) {
-        console.error("Failed to update tool calls:", error);
-        toast.error(error.message || "Failed to update tool calls");
-      } finally {
-        setIsSaving(false);
-      }
-    } catch (e) {
-      toast.error(`Failed to parse JSON: ${e.message}`);
-    }
-  }, [toolCallValidationError, editedToolCalls, editedExample, datasetId, example?.id, onExampleUpdated]);
-  
-  // Cancel tool call editing
-  const cancelToolCallsEdit = useCallback(() => {
-    setEditingToolCalls(false);
-    setEditedToolCalls('');
-    setToolCallValidationError(null);
-  }, []);
-  
-  // Format tool calls JSON
-  const formatToolCalls = useCallback(() => {
-    try {
-      const parsed = JSON.parse(editedToolCalls);
-      setEditedToolCalls(JSON.stringify(parsed, null, 2));
-      toast.success("JSON formatted successfully");
-    } catch (e) {
-      toast.error(`Cannot format invalid JSON: ${e.message}`);
-    }
-  }, [editedToolCalls]);
   
   // Render the tool calls tab with enhanced UI and editing capabilities
   const renderToolCallsTab = () => {
