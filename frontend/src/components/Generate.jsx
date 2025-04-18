@@ -279,6 +279,38 @@ const Generate = ({ context }) => {
       return updatedVariations;
     });
   };
+  
+  // Add multiple new variations (used for multi-select paraphrasing)
+  const handleAddVariations = (id, newOutputs) => {
+    if (!newOutputs || newOutputs.length === 0) return;
+    
+    setVariations(prevVariations => {
+      // Find the source variation to copy properties from
+      const sourceIndex = prevVariations.findIndex(v => v.id === id);
+      if (sourceIndex === -1) {
+        console.error('Cannot add variations: source variation not found with id', id);
+        return prevVariations;
+      }
+      
+      const sourceVariation = prevVariations[sourceIndex];
+      
+      // Create new variations based on the source, but with different outputs
+      const newVariations = newOutputs.map((output, index) => {
+        return {
+          ...sourceVariation,
+          id: Date.now() + index, // Generate unique IDs
+          output: output,
+          variation: `${sourceVariation.variation} (Paraphrase ${index + 1})`,
+          _source: 'paraphrase' // Track the source of this variation
+        };
+      });
+      
+      // Add the new variations to the list
+      return [...prevVariations, ...newVariations];
+    });
+    
+    toast.success(`Added ${newOutputs.length} new variation${newOutputs.length > 1 ? 's' : ''} from paraphrases.`);
+  };
 
   const handleRegenerate = useCallback(async (id, instruction = '') => {
     if (!selectedTemplate || isGenerating || isParaphrasing) return;
@@ -675,7 +707,8 @@ const Generate = ({ context }) => {
                   onRegenerate={(instruction) => handleRegenerate(variation.id, instruction)}
                   onDismiss={() => handleDismiss(variation.id)}
                   onToolCallsChange={(newToolCalls) => handleToolCallsChange(variation.id, newToolCalls)} // Pass variation id
-                  template_id={variation.template_id || selectedTemplate?.id} // Pass template_id for paraphrasing
+                  onAddVariations={(newOutputs) => handleAddVariations(variation.id, newOutputs)} // For multi-select paraphrasing
+                  template_id={variation.template_id || selectedTemplate?.id}
                 />
               ))}
             </div>

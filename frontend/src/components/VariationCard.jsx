@@ -12,13 +12,14 @@ const VariationCard = ({
   onEdit, 
   onRegenerate, 
   onDismiss, 
+  onAddVariations, // New prop for adding multiple variations from paraphrases
   isSelected = false, // Changed from isStarred
   isGenerating = false,
   error = null,
   tool_calls = null,
   processed_prompt = null,
   onToolCallsChange,
-  template_id = null // Added template_id for paraphrasing
+  template_id = null
 }) => {
   // State management
   const [editedOutput, setEditedOutput] = useState(output);
@@ -30,6 +31,7 @@ const VariationCard = ({
   const [paraphraseCount, setParaphraseCount] = useState(3);
   const [isParaphrasing, setIsParaphrasing] = useState(false);
   const [paraphrasedOutputs, setParaphrasedOutputs] = useState([]);
+  const [selectedParaphrases, setSelectedParaphrases] = useState([]);
   const [showPrompt, setShowPrompt] = useState(false);
   const [isToolEditorOpen, setIsToolEditorOpen] = useState(false);
   const [textareaHeight, setTextareaHeight] = useState('8rem');
@@ -337,13 +339,49 @@ const VariationCard = ({
     }
   }, [output, paraphraseCount, paraphraseInstruction]);
   
-  // Handle selecting a paraphrased output
-  const handleSelectParaphrase = useCallback((text) => {
-    onEdit(text);
+  // Toggle selection of a paraphrased output
+  const toggleParaphraseSelection = useCallback((text) => {
+    setSelectedParaphrases(prev => {
+      // If already selected, remove it
+      if (prev.includes(text)) {
+        return prev.filter(t => t !== text);
+      } 
+      // Otherwise add it
+      return [...prev, text];
+    });
+  }, []);
+  
+  // Handle saving the selected paraphrases
+  const handleSaveParaphrases = useCallback(() => {
+    // If none selected, show a warning
+    if (selectedParaphrases.length === 0) {
+      toast.warning("Please select at least one paraphrase to save.");
+      return;
+    }
+    
+    // If only one selected, replace the current variation
+    if (selectedParaphrases.length === 1) {
+      onEdit(selectedParaphrases[0]);
+    } else {
+      // For multiple selections, use the first one to replace current variation
+      onEdit(selectedParaphrases[0]);
+      
+      // Create additional variations for the rest of the selections
+      // The callback should be passed from the parent component
+      if (onAddVariations) {
+        onAddVariations(selectedParaphrases.slice(1));
+      } else {
+        // Fallback if onAddVariations not provided
+        toast.info(`Selected ${selectedParaphrases.length} paraphrases, but only the first one was saved.`);
+      }
+    }
+    
+    // Close the modal and reset states
     setIsParaphraseModalOpen(false);
     setParaphraseInstruction('');
     setParaphrasedOutputs([]);
-  }, [onEdit]);
+    setSelectedParaphrases([]);
+  }, [selectedParaphrases, onEdit, onAddVariations]);
   
   // Handle key press in paraphrase modal
   const handleParaphraseKeyPress = useCallback((e) => {
@@ -648,22 +686,23 @@ const VariationCard = ({
                 setIsParaphraseModalOpen(false);
                 setParaphraseInstruction('');
                 setParaphrasedOutputs([]);
+                setSelectedParaphrases([]);
               }
             }}
             role="dialog"
             aria-modal="true"
-            aria-labelledby={`paraphrase-modal-title-${id}`}
+            aria-labelledby="paraphrase-modal-title"
           >
-            <div className="bg-white rounded-lg p-6 max-w-2xl w-full shadow-xl animate-fadeIn" onClick={e => e.stopPropagation()}>
-              <h3 id={`paraphrase-modal-title-${id}`} className="text-lg font-medium mb-4">Paraphrase Output</h3>
+            <div className="bg-white rounded-lg p-6 max-w-3xl w-full mx-auto shadow-xl animate-fadeIn" onClick={e => e.stopPropagation()}>
+              <h3 id="paraphrase-modal-title" className="text-lg font-medium mb-4">Paraphrase Text</h3>
               
               <div className="mb-4">
                 <div className="flex flex-col space-y-2">
-                  <label htmlFor={`paraphrase-instruction-${id}`} className="text-sm font-medium text-gray-700">
+                  <label htmlFor="paraphrase-instruction" className="text-sm font-medium text-gray-700">
                     Additional Instructions (Optional)
                   </label>
                   <input
-                    id={`paraphrase-instruction-${id}`}
+                    id="paraphrase-instruction"
                     ref={paraphraseInputRef}
                     type="text"
                     value={paraphraseInstruction}
@@ -676,12 +715,12 @@ const VariationCard = ({
                 </div>
                 
                 <div className="flex flex-col space-y-2 mt-4">
-                  <label htmlFor={`paraphrase-count-${id}`} className="text-sm font-medium text-gray-700">
+                  <label htmlFor="paraphrase-count" className="text-sm font-medium text-gray-700">
                     Number of Paraphrases to Generate
                   </label>
                   <div className="flex items-center space-x-2">
                     <input
-                      id={`paraphrase-count-${id}`}
+                      id="paraphrase-count"
                       type="range"
                       min="1"
                       max="10"
@@ -696,64 +735,104 @@ const VariationCard = ({
                 </div>
               </div>
               
+              {/* Preview of original text */}
+              <div className="mb-6 rounded border border-gray-200 bg-gray-50 p-3">
+                <h4 className="text-xs font-medium text-gray-500 mb-1">Original Text</h4>
+                <div className="text-sm whitespace-pre-wrap text-gray-700">{output}</div>
+              </div>
+              
               {paraphrasedOutputs.length > 0 && (
-                <div className="mb-6 mt-6">
-                  <h4 className="text-md font-medium mb-3">Select a Paraphrase</h4>
-                  <div className="max-h-60 overflow-y-auto space-y-3 pr-2">
-                    {paraphrasedOutputs.map((text, index) => (
-                      <div 
-                        key={index} 
-                        className="p-3 bg-gray-50 rounded border border-gray-200 hover:border-primary-300 hover:shadow-sm cursor-pointer transition-all duration-200"
-                        onClick={() => handleSelectParaphrase(text)}
-                      >
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-xs font-medium text-gray-500">Paraphrase {index + 1}</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectParaphrase(text);
-                            }}
-                            className="text-xs text-primary-600 hover:text-primary-800"
-                          >
-                            Select
-                          </button>
+                <div className="mb-6">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="text-md font-medium">Select Paraphrases</h4>
+                    <span className="text-xs text-gray-500">
+                      {selectedParaphrases.length} selected
+                    </span>
+                  </div>
+                  
+                  <div className="text-xs text-gray-600 mb-2">
+                    Select one or more paraphrases. You can create multiple variations at once.
+                  </div>
+                  
+                  <div className="max-h-72 overflow-y-auto space-y-3 pr-2">
+                    {paraphrasedOutputs.map((text, index) => {
+                      const isSelected = selectedParaphrases.includes(text);
+                      return (
+                        <div 
+                          key={index} 
+                          className={`p-3 rounded border transition-all duration-200 cursor-pointer ${
+                            isSelected 
+                              ? 'bg-primary-50 border-primary-300 ring-1 ring-primary-200' 
+                              : 'bg-gray-50 border-gray-200 hover:border-primary-200 hover:bg-gray-100'
+                          }`}
+                          onClick={() => toggleParaphraseSelection(text)}
+                        >
+                          <div className="flex justify-between items-center mb-1">
+                            <div className="flex items-center">
+                              <div className={`flex-shrink-0 h-4 w-4 rounded border mr-2 flex items-center justify-center ${
+                                isSelected 
+                                  ? 'bg-primary-500 border-primary-600' 
+                                  : 'border-gray-300 bg-white'
+                              }`}>
+                                {isSelected && <Icon name="check" className="h-3 w-3 text-white" />}
+                              </div>
+                              <span className="text-xs font-medium text-gray-700">Paraphrase {index + 1}</span>
+                            </div>
+                          </div>
+                          <div className="text-sm whitespace-pre-wrap pl-6">{text}</div>
                         </div>
-                        <div className="text-sm whitespace-pre-wrap">{text}</div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
               
-              <div className="flex justify-end space-x-2">
-                <button
-                  onClick={() => {
-                    setIsParaphraseModalOpen(false);
-                    setParaphraseInstruction('');
-                    setParaphrasedOutputs([]);
-                  }}
-                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleParaphraseWithInstruction}
-                  disabled={isParaphrasing}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 disabled:bg-primary-400"
-                >
-                  {isParaphrasing ? (
-                    <span className="flex items-center">
-                      <Icon name="spinner" className="animate-spin h-4 w-4 mr-2" aria-hidden="true" />
-                      Paraphrasing...
-                    </span>
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-gray-500">
+                  {paraphrasedOutputs.length > 0 ? (
+                    <p>Select multiple paraphrases to create multiple variations.</p>
                   ) : (
-                    "Generate Paraphrases"
+                    <p>Press Ctrl+Enter to generate paraphrases.</p>
                   )}
-                </button>
-              </div>
-              <div className="mt-4 text-sm text-gray-500">
-                <p>Press Ctrl+Enter to generate paraphrases or Escape to cancel.</p>
-                <p className="mt-1">Click on a paraphrase to select it.</p>
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => {
+                      setIsParaphraseModalOpen(false);
+                      setParaphraseInstruction('');
+                      setParaphrasedOutputs([]);
+                      setSelectedParaphrases([]);
+                    }}
+                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  
+                  {paraphrasedOutputs.length > 0 ? (
+                    <button
+                      onClick={handleSaveParaphrases}
+                      disabled={selectedParaphrases.length === 0}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors focus:ring-2 focus:ring-green-300 focus:ring-offset-2 disabled:bg-green-300 disabled:cursor-not-allowed"
+                    >
+                      Save Selected ({selectedParaphrases.length})
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleParaphraseWithInstruction}
+                      disabled={isParaphrasing}
+                      className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 disabled:bg-primary-400"
+                    >
+                      {isParaphrasing ? (
+                        <span className="flex items-center">
+                          <Icon name="spinner" className="animate-spin h-4 w-4 mr-2" aria-hidden="true" />
+                          Paraphrasing...
+                        </span>
+                      ) : (
+                        "Generate Paraphrases"
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
