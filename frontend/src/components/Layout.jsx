@@ -22,7 +22,8 @@ const Layout = () => {
     <div className="min-h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+        {/* Reintroduce max-width, but use screen-xl for wider layout */}
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-4">
               <h1 className="text-xl font-bold text-primary-800">DatasetForge</h1>
@@ -85,7 +86,8 @@ const Layout = () => {
       
       {/* Main Content */}
       <main className="flex-grow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Reintroduce max-width, but use screen-xl for wider layout */}
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {/* Conditionally render TemplateBuilder */}
           <div className={activeTab === 'templates' ? '' : 'hidden'}>
             <TemplateBuilder context={outletContext} />

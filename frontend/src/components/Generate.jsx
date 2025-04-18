@@ -351,8 +351,9 @@ const Generate = ({ context }) => { // Accept context as prop
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-1 space-y-4">
+      {/* Changed grid layout from md:grid-cols-3 to md:grid-cols-2 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="md:col-span-1 space-y-4"> {/* SeedForm column */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Select Template
@@ -386,7 +387,7 @@ const Generate = ({ context }) => { // Accept context as prop
           )}
         </div>
 
-        <div className="md:col-span-2">
+        <div className="md:col-span-1"> {/* Variations column */}
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
 
           {variations.length === 0 && !isGenerating ? (
