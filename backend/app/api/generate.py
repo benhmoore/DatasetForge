@@ -1,5 +1,5 @@
-from typing import List, Dict, AsyncGenerator
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Dict, AsyncGenerator, Optional, Any
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 import httpx
@@ -13,7 +13,7 @@ from ..db import get_session
 from ..core.security import get_current_user
 from ..core.config import settings
 from ..api.models import User, Template
-from ..api.schemas import GenerationRequest, GenerationResult, SeedData
+from ..api.schemas import GenerationRequest, GenerationResult, SeedData, ModelParameters
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -196,6 +196,93 @@ def extract_tool_calls_from_text(text):
         return None
 
 
+async def call_ollama_generate(
+    model: str,
+    system_prompt: Optional[str],
+    user_prompt: str,
+    template_params: Optional[ModelParameters],  # Accept template params
+    user_prefs: Dict[str, Any],  # Accept user prefs (containing default model params)
+    is_tool_calling: bool = False,
+    tools: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Calls the Ollama API with merged parameters."""
+
+    # --- Parameter Merging Logic ---
+    final_options = {}
+
+    # Start with Ollama defaults (or your base defaults if any)
+    base_defaults = {
+        "temperature": 1.0,
+        "top_p": 1.0,
+    }
+    final_options.update(base_defaults)
+
+    # Layer 2: Template-specific parameters (highest priority if set)
+    if template_params:
+        if template_params.temperature is not None:
+            final_options["temperature"] = template_params.temperature
+        if template_params.top_p is not None:
+            final_options["top_p"] = template_params.top_p
+        if template_params.max_tokens is not None:
+            final_options["num_predict"] = template_params.max_tokens
+
+    # --- End Parameter Merging ---
+
+    payload = {
+        "model": model,
+        "prompt": user_prompt,
+        "stream": False,
+        "options": final_options,  # Use the merged options
+    }
+    if system_prompt:
+        payload["system"] = system_prompt
+
+    if is_tool_calling and tools:
+        payload["tools"] = tools
+
+    api_url = f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate"
+    logger.debug(f"Ollama Request Payload: {json.dumps(payload, indent=2)}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                api_url, json=payload, timeout=settings.OLLAMA_TIMEOUT
+            )
+            response.raise_for_status()
+            logger.debug(f"Ollama Raw Response: {response.text}")
+            return response.json()
+    except httpx.TimeoutException:
+        logger.error(f"Ollama API request timed out to {api_url}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Ollama API timed out during generation.",
+        )
+    except httpx.RequestError as e:
+        logger.error(f"Error requesting Ollama API: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not connect to Ollama API: {e}",
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Ollama API returned error {e.response.status_code}: {e.response.text}")
+        detail = f"Ollama API error: {e.response.status_code}"
+        try:
+            error_body = e.response.json()
+            detail += f" - {error_body.get('error', e.response.text)}"
+        except json.JSONDecodeError:
+            detail += f" - {e.response.text}"
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=detail,
+        )
+    except Exception as e:
+        logger.exception("Unexpected error calling Ollama API")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred while communicating with Ollama: {str(e)}",
+        )
+
+
 @router.get("/models", response_model=List[str])
 async def list_models(user: User = Depends(get_current_user)):
     """
@@ -277,6 +364,14 @@ async def generate_outputs(
             detail="No generation model specified. Set a default model in settings or override it in the template.",
         )
 
+    # Extract template-specific model parameters
+    template_model_params: Optional[ModelParameters] = None
+    if template.model_parameters:
+        try:
+            template_model_params = ModelParameters.parse_obj(template.model_parameters)
+        except Exception as e:
+            logger.warning(f"Failed to parse model_parameters for template {template.id}: {e}. Using defaults.")
+
     # Define the async generator function for streaming
     async def stream_results() -> AsyncGenerator[str, None]:
         # Iterate through each seed provided in the request
@@ -305,124 +400,37 @@ async def generate_outputs(
                     # Add global instruction to system prompt if provided
                     if instruction and instruction.strip():
                         clean_instruction = instruction.strip()
-                        # Check if instruction was already added (it shouldn't be, but safety first)
                         if "Additional instruction:" not in system_prompt:
                             logger.info(
                                 f"⚠️ Adding global instruction to system prompt for {variation_label}: '{clean_instruction}'"
                             )
                             system_prompt = f"{template.system_prompt}\n\nAdditional instruction: {clean_instruction}"
-                        # else: logger already logged adding instruction in previous iterations if applicable
-                    # else: logger already logged no instruction
 
-                    # Prepare API payload (mostly the same, but uses current seed's user_prompt)
-                    payload = {
-                        "model": generation_model,
-                        "prompt": user_prompt, # Use the user_prompt processed for this seed
-                        "system": system_prompt,
-                        "stream": False,
-                    }
+                    # Prepare API payload
+                    ollama_response = await call_ollama_generate(
+                        model=generation_model,
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        template_params=template_model_params,
+                        user_prefs={},  # Placeholder for user preferences
+                        is_tool_calling=template.is_tool_calling_template,
+                        tools=template.tool_definitions if template.is_tool_calling_template else None,
+                    )
 
-                    # Add tool definitions if this is a tool-calling template
-                    if getattr(template, "is_tool_calling_template", False) and getattr(
-                        template, "tool_definitions", None
-                    ):
-                        # Normalize the tool definition format to ensure compatibility
-                        normalized_tools = []
-                        for tool in template.tool_definitions:
-                            if "type" not in tool and "function" in tool:
-                                normalized_tool = {"type": "function", "function": tool["function"]}
-                            else:
-                                normalized_tool = tool.copy()
-                            if "function" in normalized_tool and "parameters" not in normalized_tool["function"]:
-                                normalized_tool["function"]["parameters"] = {"type": "object", "properties": {}}
-                            normalized_tools.append(normalized_tool)
-                        
-                        payload["tools"] = normalized_tools
-                        # Convert normalized tools to a JSON string for the system prompt
-                        tools_json_string = json.dumps(normalized_tools, indent=2)
+                    output = ollama_response.get("response", "").strip()
+                    tool_calls = None
+                    if template.is_tool_calling_template and ollama_response.get("tool_calls"):
+                        tool_calls = ollama_response["tool_calls"]
 
-                        # Ensure system prompt includes tool definitions and instructions
-                        tool_instruction_header = "\n\nAVAILABLE TOOLS:"
-                        tool_instruction_footer = "\n\nIMPORTANT: You must use the tools provided when appropriate. When using tools, format your response using a JSON object with 'function_call' containing 'name' and 'arguments'. For example: {\"function_call\": {\"name\": \"ls\", \"arguments\": \"{}\"}}. Do not explain how you would use the tool, actually call the tool."
-
-                        # Construct the full tool instruction block
-                        full_tool_instructions = f"{tool_instruction_header}\n{tools_json_string}{tool_instruction_footer}"
-
-                        # Add the full instructions to the system prompt if not already present
-                        # (Check specifically for the header to avoid duplicate additions)
-                        if tool_instruction_header not in system_prompt:
-                             system_prompt += full_tool_instructions
-                        payload["system"] = system_prompt # Assign the final system prompt to the payload
-
-                    # Log the request being sent (truncated for readability)
-                    logger.info(f"Sending request to Ollama API for {variation_label}:")
-                    logger.info(f"Model: {payload['model']}")
-                    # Log the full system prompt instead of the truncated version
-                    logger.info(f"System prompt: {payload['system']}")
-                    # Use the full user prompt variable
-                    logger.info(f"User prompt: {user_prompt}")
-
-                    # Call Ollama API
-                    async with httpx.AsyncClient() as client:
-                        response = await client.post(
-                            f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
-                            json=payload,
-                            timeout=settings.OLLAMA_TIMEOUT,
-                        )
-
-                        if response.status_code != 200:
-                            error_detail = f"Ollama API returned an error: {response.text}"
-                            logger.error(f"{variation_label}: {error_detail}")
-                            result = GenerationResult(
-                                seed_index=seed_index,
-                                variation_index=variation_index,
-                                variation=variation_label,
-                                output=f"[Error: {error_detail}]",
-                                slots=current_slots, # Use slots for this seed
-                                processed_prompt=user_prompt,
-                            )
-                        else:
-                            response_data = response.json()
-                            output = response_data.get("response", "")
-
-                            # Parse tool calls from Ollama response
-                            tool_calls = None
-                            if "tool_calls" in response_data:
-                                tool_calls = response_data.get("tool_calls")
-                            elif output and output.strip():
-                                tool_calls = extract_tool_calls_from_text(output)
-                                if tool_calls:
-                                    if "_original_json" in tool_calls[0]:
-                                        output = output.replace(tool_calls[0]["_original_json"], "").strip()
-                                        for call in tool_calls:
-                                            if "_original_json" in call: del call["_original_json"]
-                                # Check for mentions of tools if no structured tool calls found
-                                elif getattr(template, "is_tool_calling_template", False) and getattr(template, "tool_definitions", None):
-                                    for tool_def in template.tool_definitions:
-                                        if "function" in tool_def and "name" in tool_def["function"]:
-                                            tool_name = tool_def["function"]["name"]
-                                            if tool_name in output.lower() or f"`{tool_name}`" in output.lower():
-                                                tool_calls = [
-                                                    {
-                                                        "type": "function",
-                                                        "function": {
-                                                            "name": tool_name,
-                                                            "arguments": "{}",
-                                                        },
-                                                    }
-                                                ]
-                                                break
-
-                            # Create result with new indices and current slots
-                            result = GenerationResult(
-                                seed_index=seed_index,
-                                variation_index=variation_index,
-                                variation=variation_label,
-                                output=output,
-                                slots=current_slots, # Use slots for this seed
-                                processed_prompt=user_prompt,
-                                tool_calls=tool_calls if tool_calls else None,
-                            )
+                    result = GenerationResult(
+                        seed_index=seed_index,
+                        variation_index=variation_index,
+                        variation=variation_label,
+                        output=output,
+                        slots=current_slots,
+                        processed_prompt=user_prompt,
+                        tool_calls=tool_calls if tool_calls else None,
+                    )
 
                 except httpx.TimeoutException:
                     error_detail = "Ollama API timed out. Please try again."

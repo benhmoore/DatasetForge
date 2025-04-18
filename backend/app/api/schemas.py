@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 
@@ -15,6 +15,17 @@ class UserPreferencesUpdate(BaseModel):
     default_para_model: str
 
 
+# Model Parameters schema
+class ModelParameters(BaseModel):
+    temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    max_tokens: Optional[int] = Field(default=None, ge=1)
+
+    # Add validator to ensure at least one field is not None if the object is provided?
+    # Or handle defaults/merging logic in the endpoint/service layer.
+    # For now, allow all fields to be optional.
+
+
 # Template schemas
 class TemplateBase(BaseModel):
     name: str
@@ -24,6 +35,7 @@ class TemplateBase(BaseModel):
     tool_definitions: Optional[List[Dict[str, Any]]] = None
     is_tool_calling_template: bool = False
     model_override: Optional[str] = None
+    model_parameters: Optional[ModelParameters] = None  # Added model parameters
 
 
 class TemplateCreate(TemplateBase):
@@ -43,6 +55,7 @@ class TemplateUpdate(BaseModel):
     tool_definitions: Optional[List[Dict[str, Any]]] = None
     is_tool_calling_template: Optional[bool] = None
     model_override: Optional[str] = None
+    model_parameters: Optional[ModelParameters] = None  # Added model parameters
 
 
 # Dataset schemas

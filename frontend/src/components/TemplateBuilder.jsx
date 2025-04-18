@@ -10,6 +10,13 @@ import Icon from './Icons';
 import ToolParameterSchemaEditor from './ToolParameterSchemaEditor'; // Import the new schema editor
 import _ from 'lodash'; // Import lodash for deep comparison
 
+// Default model parameters
+const defaultModelParameters = {
+  temperature: 1.0,
+  top_p: 1.0,
+  max_tokens: null,
+};
+
 const TemplateBuilder = ({ context }) => { // Accept context as prop
   const { selectedDataset } = context;
   const [templates, setTemplates] = useState([]);
@@ -38,9 +45,19 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [newToolDescription, setNewToolDescription] = useState('');
   const [newToolSchema, setNewToolSchema] = useState({ type: 'object', properties: {}, required: [] }); // Replace newToolParameters state
   const [modelOverride, setModelOverride] = useState(''); // Add state for model override
+  const [modelParameters, setModelParameters] = useState(_.cloneDeep(defaultModelParameters)); // Add state for model parameters
 
   // Helper function to get current form state as an object
   const getCurrentFormData = useCallback(() => {
+    const parseNullableInt = (value) => {
+      const num = parseInt(value, 10);
+      return isNaN(num) ? null : num;
+    };
+    const parseNullableFloat = (value) => {
+      const num = parseFloat(value);
+      return isNaN(num) ? null : num;
+    };
+
     return {
       name,
       system_prompt: systemPrompt,
@@ -56,9 +73,15 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
             parameters: tool.parameters || { type: 'object', properties: {}, required: [] }
           })).sort((a, b) => a.name.localeCompare(b.name)) // Sort for consistent comparison
         : null,
-      model_override: modelOverride || null
+      model_override: modelOverride || null,
+      // Include model parameters, ensuring types are correct and nulls are handled
+      model_parameters: {
+        temperature: parseNullableFloat(modelParameters.temperature) ?? defaultModelParameters.temperature, // Default if null/NaN
+        top_p: parseNullableFloat(modelParameters.top_p) ?? defaultModelParameters.top_p, // Default if null/NaN
+        max_tokens: parseNullableInt(modelParameters.max_tokens), // Allow null
+      }
     };
-  }, [name, systemPrompt, userPrompt, slots, isToolCallingTemplate, toolDefinitions, modelOverride]);
+  }, [name, systemPrompt, userPrompt, slots, isToolCallingTemplate, toolDefinitions, modelOverride, modelParameters]); // Add modelParameters dependency
 
   // Fetch templates from API
   const fetchTemplates = async () => {
@@ -98,6 +121,11 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       // Deep clone tool definitions to avoid modifying original template data
       setToolDefinitions(_.cloneDeep(template.tool_definitions || []));
       setModelOverride(template.model_override || ''); // Populate model override
+      // Populate model parameters, merging with defaults for missing values
+      setModelParameters({
+        ..._.cloneDeep(defaultModelParameters), // Start with defaults
+        ...(template.model_parameters || {}) // Override with template values if they exist
+      });
       setHasUnsavedChanges(false); // Reset unsaved changes when loading a template
       setNameError(false); // Reset validation
       setNewToolNameError(false);
@@ -111,6 +139,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       setIsToolCallingTemplate(false);
       setToolDefinitions([]);
       setModelOverride(''); // Clear model override
+      setModelParameters(_.cloneDeep(defaultModelParameters)); // Reset model parameters
       setHasUnsavedChanges(false); // Reset unsaved changes when clearing form
       setNameError(false); // Reset validation
       setNewToolNameError(false);
@@ -140,10 +169,20 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               parameters: tool.parameters || { type: 'object', properties: {}, required: [] }
             })).sort((a, b) => a.name.localeCompare(b.name))
           : null,
-        model_override: selectedTemplate.model_override || null
+        model_override: selectedTemplate.model_override || null,
+        // Normalize original model parameters, merging with defaults
+        model_parameters: {
+          ..._.cloneDeep(defaultModelParameters),
+          ...(selectedTemplate.model_parameters || {})
+        }
       };
+      // Ensure numeric types match for comparison after potential parsing in getCurrentFormData
+      originalData.model_parameters.temperature = parseFloat(originalData.model_parameters.temperature);
+      originalData.model_parameters.top_p = parseFloat(originalData.model_parameters.top_p);
+      originalData.model_parameters.max_tokens = originalData.model_parameters.max_tokens === null ? null : parseInt(originalData.model_parameters.max_tokens, 10);
+
     } else {
-      // If no template is selected, compare against empty state
+      // If no template is selected, compare against empty state with default parameters
       originalData = {
         name: '', // Name is handled separately below for new templates
         system_prompt: '',
@@ -151,7 +190,8 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
         slots: [],
         is_tool_calling_template: false,
         tool_definitions: null,
-        model_override: null
+        model_override: null,
+        model_parameters: _.cloneDeep(defaultModelParameters) // Compare against defaults
       };
     }
 
@@ -160,12 +200,12 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
 
     // Special case: if no template is selected but a name exists, it's unsaved
     if (!selectedTemplate && name.trim()) {
-        setHasUnsavedChanges(true);
+      setHasUnsavedChanges(true);
     } else {
-        setHasUnsavedChanges(changed);
+      setHasUnsavedChanges(changed);
     }
 
-  }, [name, systemPrompt, userPrompt, slots, isToolCallingTemplate, toolDefinitions, modelOverride, selectedTemplate, isLoading, getCurrentFormData]);
+  }, [name, systemPrompt, userPrompt, slots, isToolCallingTemplate, toolDefinitions, modelOverride, modelParameters, selectedTemplate, isLoading, getCurrentFormData]); // Add modelParameters dependency
 
   // Handle template selection
   const handleSelectTemplate = (template) => {
@@ -196,8 +236,8 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
     if (isToolCallingTemplate) {
       for (const tool of toolDefinitions) {
         if (!tool.name || !tool.description) {
-           toast.error(`A tool definition is missing a name or description. Please fix it before saving.`);
-           return;
+          toast.error(`A tool definition is missing a name or description. Please fix it before saving.`);
+          return;
         }
         if (tool.parameters?.properties) {
           for (const paramName in tool.parameters.properties) {
@@ -223,17 +263,9 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
         ));
         setSelectedTemplate(updatedTemplate); // Update selected template with saved data
         toast.success('Template updated successfully');
-        setName(updatedTemplate.name);
-        setSystemPrompt(updatedTemplate.system_prompt);
-        setUserPrompt(updatedTemplate.user_prompt);
-        setSlots(updatedTemplate.slots || []);
-        setIsToolCallingTemplate(updatedTemplate.is_tool_calling_template || false);
-        setToolDefinitions(_.cloneDeep(updatedTemplate.tool_definitions || []));
-        setModelOverride(updatedTemplate.model_override || '');
+        // Repopulate form with the exact data returned from the server
+        populateForm(updatedTemplate); // Use populateForm to ensure consistency
         setHasUnsavedChanges(false); // Explicitly set to false after successful save
-        setNameError(false); // Reset validation on success
-        setNewToolNameError(false);
-        setNewToolDescriptionError(false);
 
       } else {
         // Create new template
@@ -241,18 +273,14 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
         setTemplates([newTemplate, ...templates]); // Add the actual new template
         setSelectedTemplate(newTemplate); // Select the newly created template
         toast.success('Template created successfully');
-        setName(newTemplate.name);
-        setSystemPrompt(newTemplate.system_prompt);
-        setUserPrompt(newTemplate.user_prompt);
-        setSlots(newTemplate.slots || []);
-        setIsToolCallingTemplate(newTemplate.is_tool_calling_template || false);
-        setToolDefinitions(_.cloneDeep(newTemplate.tool_definitions || []));
-        setModelOverride(newTemplate.model_override || '');
+        // Repopulate form with the exact data returned from the server
+        populateForm(newTemplate); // Use populateForm to ensure consistency
         setHasUnsavedChanges(false); // Explicitly set to false after successful creation
-        setNameError(false); // Reset validation on success
-        setNewToolNameError(false);
-        setNewToolDescriptionError(false);
       }
+      // Reset validation errors on success
+      setNameError(false);
+      setNewToolNameError(false);
+      setNewToolDescriptionError(false);
 
     } catch (error) {
       console.error('Failed to save template:', error);
@@ -348,6 +376,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
     setIsToolCallingTemplate(false);
     setToolDefinitions([]);
     setModelOverride(''); // Clear model override for new template
+    setModelParameters(_.cloneDeep(defaultModelParameters)); // Reset model parameters
     setHasUnsavedChanges(true); // New template starts with unsaved changes (due to name)
     setNameError(false); // Reset validation
     setNewToolNameError(false);
@@ -419,6 +448,11 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
     });
 
     return preview;
+  };
+
+  // Handle changes in model parameter inputs
+  const handleParameterChange = (param, value) => {
+    setModelParameters(prev => ({ ...prev, [param]: value }));
   };
 
   return (
@@ -546,6 +580,72 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               disabled={isLoading || isSaving}
             />
             <p className="text-xs text-gray-500 mt-1">If set, this model will be used instead of your default generation model.</p>
+          </div>
+
+          {/* Model Parameters Section */}
+          <div className="p-4 border border-gray-200 rounded-md space-y-3">
+            <h3 className="text-md font-semibold text-gray-800 mb-2">Model Parameters</h3>
+            <p className="text-xs text-gray-500 -mt-2 mb-3">Fine-tune model behavior. These override dataset defaults if set.</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Temperature */}
+              <div>
+                <label htmlFor="temperature" className="block text-sm font-medium text-gray-700 mb-1">
+                  Temperature
+                </label>
+                <input
+                  type="number"
+                  id="temperature"
+                  value={modelParameters.temperature ?? ''} // Use empty string if null/undefined for input control
+                  onChange={(e) => handleParameterChange('temperature', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200"
+                  placeholder="e.g., 0.7"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  disabled={isLoading || isSaving}
+                />
+                <p className="text-xs text-gray-500 mt-1">Controls randomness (0=deterministic, 2=max random). Default: 1.0</p>
+              </div>
+
+              {/* Top P */}
+              <div>
+                <label htmlFor="top_p" className="block text-sm font-medium text-gray-700 mb-1">
+                  Top P
+                </label>
+                <input
+                  type="number"
+                  id="top_p"
+                  value={modelParameters.top_p ?? ''} // Use empty string if null/undefined
+                  onChange={(e) => handleParameterChange('top_p', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200"
+                  placeholder="e.g., 0.9"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  disabled={isLoading || isSaving}
+                />
+                <p className="text-xs text-gray-500 mt-1">Nucleus sampling threshold. Default: 1.0</p>
+              </div>
+
+              {/* Max Tokens */}
+              <div>
+                <label htmlFor="max_tokens" className="block text-sm font-medium text-gray-700 mb-1">
+                  Max Tokens (Optional)
+                </label>
+                <input
+                  type="number"
+                  id="max_tokens"
+                  value={modelParameters.max_tokens ?? ''} // Use empty string if null
+                  onChange={(e) => handleParameterChange('max_tokens', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200"
+                  placeholder="e.g., 1024"
+                  min="1"
+                  step="1"
+                  disabled={isLoading || isSaving}
+                />
+                <p className="text-xs text-gray-500 mt-1">Max generation length. Leave blank for model default.</p>
+              </div>
+            </div>
           </div>
 
           <div>

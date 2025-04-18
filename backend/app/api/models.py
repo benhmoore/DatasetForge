@@ -25,6 +25,9 @@ class Template(SQLModel, table=True):
     )
     is_tool_calling_template: bool = Field(default=False)
     model_override: Optional[str] = Field(default=None)
+    model_parameters: Optional[Dict[str, Any]] = Field(
+        default=None, sa_column=Column(JSON)
+    )  # Added model parameters
 
 
 class Dataset(SQLModel, table=True):

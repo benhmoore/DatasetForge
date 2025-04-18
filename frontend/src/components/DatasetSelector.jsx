@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import Icon from './Icons';
 import ToggleSwitch from './ToggleSwitch';
+import ConfirmationModal from './ConfirmationModal';
 
 const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
   const [datasets, setDatasets] = useState([]);
@@ -12,6 +13,8 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
   const [showArchived, setShowArchived] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [datasetToArchive, setDatasetToArchive] = useState(null);
 
   // Fetch datasets from API
   const fetchDatasets = async () => {
@@ -41,29 +44,41 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
     fetchDatasets();
   }, [showArchived, selectedDataset]);
 
-  // Handle dataset archive toggle
-  const handleArchiveToggle = async (dataset, event) => {
-    // Stop event propagation to prevent selection
+  // Handle dataset archive toggle - now opens confirmation modal
+  const handleArchiveToggle = (dataset, event) => {
     if (event) {
       event.stopPropagation();
     }
-    
+    setDatasetToArchive(dataset);
+    setIsConfirmModalOpen(true);
+  };
+
+  // Function to actually perform the archive/unarchive after confirmation
+  const confirmArchive = async () => {
+    if (!datasetToArchive) return;
+
     try {
-      await api.archiveDataset(dataset.id);
-      
-      // If the archived dataset was selected, unselect it
-      if (selectedDataset && selectedDataset.id === dataset.id) {
+      await api.archiveDataset(datasetToArchive.id);
+
+      if (selectedDataset && selectedDataset.id === datasetToArchive.id) {
         onSelectDataset(null);
       }
-      
-      // Refresh the dataset list
+
       fetchDatasets();
-      
-      toast.success(`Dataset ${dataset.archived ? 'unarchived' : 'archived'} successfully`);
+      toast.success(`Dataset ${datasetToArchive.archived ? 'unarchived' : 'archived'} successfully`);
     } catch (error) {
       console.error('Failed to archive/unarchive dataset:', error);
       toast.error('Failed to update dataset');
+    } finally {
+      setIsConfirmModalOpen(false);
+      setDatasetToArchive(null);
     }
+  };
+
+  // Function to cancel the archive/unarchive action
+  const cancelArchive = () => {
+    setIsConfirmModalOpen(false);
+    setDatasetToArchive(null);
   };
 
   // Handle new dataset creation
@@ -78,10 +93,7 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
     try {
       const newDataset = await api.createDataset(newDatasetName);
       
-      // Select the new dataset
       onSelectDataset(newDataset);
-      
-      // Refresh the dataset list
       fetchDatasets();
       
       toast.success('Dataset created successfully');
@@ -103,10 +115,7 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
 
   // Filter datasets based on search term
   const filteredDatasets = datasets.filter(d => {
-    // Check if we should include archived datasets
     const archivedCheck = showArchived || !d.archived;
-    
-    // Check if name matches search term (case insensitive)
     const searchCheck = !searchTerm || 
       d.name.toLowerCase().includes(searchTerm.toLowerCase());
     
@@ -115,7 +124,6 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
 
   return (
     <div className="relative">
-      {/* Dataset button with selected dataset name or placeholder */}
       <button
         className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 min-w-[180px]"
         onClick={() => setIsModalOpen(true)}
@@ -133,11 +141,9 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
         <Icon name="chevronDown" className="h-5 w-5 text-gray-500" aria-hidden="true" />
       </button>
 
-      {/* Dataset Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white rounded-lg shadow-xl max-w-xl w-full max-h-[80vh] flex flex-col">
-            {/* Modal Header */}
             <div className="p-4 border-b border-gray-200 flex justify-between items-center">
               <h3 className="text-lg font-medium">Datasets</h3>
               <button
@@ -148,10 +154,8 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
               </button>
             </div>
             
-            {/* Search and Filter Controls */}
             <div className="p-4 border-b border-gray-200">
               <div className="flex flex-col space-y-3">
-                {/* Search Input */}
                 <div className="relative">
                   <input
                     type="text"
@@ -165,7 +169,6 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
                   </div>
                 </div>
                 
-                {/* New Dataset Form */}
                 <div className="flex space-x-2">
                   <input
                     type="text"
@@ -198,7 +201,6 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
                     </button>
                   </div>
                   
-                  {/* Show Archived Toggle Switch */}
                 <div className="flex items-center">
                   <ToggleSwitch
                     label="Show Archived Datasets"
@@ -209,7 +211,6 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
               </div>
             </div>
             
-            {/* Dataset List */}
             <div className="flex-grow overflow-y-auto p-6">
               {isLoading ? (
                 <div className="flex justify-center items-center py-8">
@@ -291,6 +292,17 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
           </div>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={isConfirmModalOpen}
+        onClose={cancelArchive}
+        onConfirm={confirmArchive}
+        title={datasetToArchive?.archived ? 'Unarchive Dataset' : 'Archive Dataset'}
+        message={`Are you sure you want to ${datasetToArchive?.archived ? 'unarchive' : 'archive'} the dataset "${datasetToArchive?.name}"?`}
+        confirmButtonText={datasetToArchive?.archived ? 'Unarchive' : 'Archive'}
+        confirmButtonVariant={datasetToArchive?.archived ? 'primary' : 'danger'}
+        cancelButtonText="Cancel"
+      />
     </div>
   );
 };
