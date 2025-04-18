@@ -155,8 +155,9 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
       toast.error('Cannot paraphrase without a selected template.');
       return;
     }
-    if (seedList.length < 2) {
-      toast.info('Need at least two seeds to generate more via paraphrasing.');
+    // Allow paraphrasing with just one seed
+    if (seedList.length < 1) { 
+      toast.info('Need at least one seed to generate more via paraphrasing.');
       return;
     }
 
@@ -266,9 +267,9 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
               <button
                 type="button"
                 onClick={() => setIsAiModalOpen(true)} // Open modal instead of direct call
-                disabled={seedList.length < 2 || isGenerating || isParaphrasing}
+                disabled={seedList.length < 1 || isGenerating || isParaphrasing} // Changed from < 2 to < 1
                 className="px-2 py-1 text-xs bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
-                title="Generate more seeds using AI (requires >= 2 seeds)"
+                title="Generate more seeds using AI (requires >= 1 seed)" // Updated title
               >
                 {isParaphrasing ? (
                   <>
@@ -282,9 +283,9 @@ const SeedForm = ({ template, onGenerate, isGenerating }) => {
                   <>
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-3 h-3">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 21v-1.5M15.75 3v1.5m0 15v1.5M12 4.5v-1.5m0 18v-1.5" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75h.008v.008H12V6.75Zm-.75.75h.008v.008H11.25v-.008Zm0 1.5h.008v.008H11.25V9Zm0 1.5h.008v.008H11.25v-.008Zm0 1.5h.008v.008H11.25V12Zm0 1.5h.008v.008H11.25v-.008Zm0 1.5h.008v.008H11.25V15Zm0 1.5h.008v.008H11.25v-.008Zm.75.75h.008v.008H12v-.008Zm.75-.75h.008v.008H12.75V15Zm0-1.5h.008v.008H12.75v-.008Zm0-1.5h.008v.008H12.75V12Zm0-1.5h.008v.008H12.75v-.008Zm0-1.5h.008v.008H12.75V9Zm0-1.5h.008v.008H12.75V7.5Zm-.75-.75h.008v.008H12V6.75Z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 7.5h-.008v.008H7.5V7.5Zm-.75.75h.008v.008H6.75v-.008Zm0 1.5h.008v.008H6.75V10.5Zm0 1.5h.008v.008H6.75V12Zm0 1.5h.008v.008H6.75v-.008Zm0 1.5h.008v.008H6.75V15Zm.75.75h.008v.008H7.5v-.008Zm.75-.75h.008v.008H8.25V15Zm0-1.5h.008v.008H8.25v-.008Zm0-1.5h.008v.008H8.25V12Zm0-1.5h.008v.008H8.25v-.008Zm0-1.5h.008v.008H8.25V9Zm0-1.5h.008v.008H8.25V7.5Zm-.75-.75h.008v.008H7.5V6.75Z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 7.5h.008v.008H16.5V7.5Zm-.75.75h.008v.008H15.75v-.008Zm0 1.5h.008v.008H15.75V10.5Zm0 1.5h.008v.008H15.75V12Zm0 1.5h.008v.008H15.75v-.008Zm0 1.5h.008v.008H15.75V15Zm.75.75h.008v.008H16.5v-.008Zm.75-.75h.008v.008H17.25V15Zm0-1.5h.008v.008H17.25v-.008Zm0-1.5h.008v.008H17.25V12Zm0-1.5h.008v.008H17.25v-.008Zm0-1.5h.008v.008H17.25V9Zm0-1.5h.008v.008H17.25V7.5Zm-.75-.75h.008v.008H16.5V6.75Z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75h.008v.008H12V6.75Zm-.75.75h.008v.008H11.25v-.008Zm0 1.5h.008v.008H11.25V9Zm0 1.5h.008v.008H11.25V10.5Zm0 1.5h.008v.008H11.25V12Zm0 1.5h.008v.008H11.25V13.5Zm0 1.5h.008v.008H11.25V15Zm0 1.5h.008v.008H11.25V16.5Zm.75.75h.008v.008H12v-.008Zm.75-.75h.008v.008H12.75V15Zm0-1.5h.008v.008H12.75V13.5Zm0-1.5h.008v.008H12.75V12Zm0-1.5h.008v.008H12.75V10.5Zm0-1.5h.008v.008H12.75V9Zm0-1.5h.008v.008H12.75V7.5Zm-.75-.75h.008v.008H12V6.75Z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 7.5h-.008v.008H7.5V7.5Zm-.75.75h.008v.008H6.75v-.008Zm0 1.5h.008v.008H6.75V10.5Zm0 1.5h.008v.008H6.75V12Zm0 1.5h.008v.008H6.75V13.5Zm0 1.5h.008v.008H6.75V15Zm.75.75h.008v.008H7.5v-.008Zm.75-.75h.008v.008H8.25V15Zm0-1.5h.008v.008H8.25V13.5Zm0-1.5h.008v.008H8.25V12Zm0-1.5h.008v.008H8.25V10.5Zm0-1.5h.008v.008H8.25V9Zm0-1.5h.008v.008H8.25V7.5Zm-.75-.75h.008v.008H7.5V6.75Z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 7.5h.008v.008H16.5V7.5Zm-.75.75h.008v.008H15.75v-.008Zm0 1.5h.008v.008H15.75V10.5Zm0 1.5h.008v.008H15.75V12Zm0 1.5h.008v.008H15.75V13.5Zm0 1.5h.008v.008H15.75V15Zm.75.75h.008v.008H16.5v-.008Zm.75-.75h.008v.008H17.25V15Zm0-1.5h.008v.008H17.25V13.5Zm0-1.5h.008v.008H17.25V12Zm0-1.5h.008v.008H17.25V10.5Zm0-1.5h.008v.008H17.25V9Zm0-1.5h.008v.008H17.25V7.5Zm-.75-.75h.008v.008H16.5V6.75Z" />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18.75a2.25 2.25 0 0 0 2.25 2.25h7.5a2.25 2.25 0 0 0 2.25-2.25v-7.5a2.25 2.25 0 0 0-2.25-2.25h-7.5a2.25 2.25 0 0 0-2.25 2.25v7.5Z" />
                     </svg>
                     <span>AI</span>
