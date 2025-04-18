@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Import useCallback
 import { toast } from 'react-toastify';
 // Removed useOutletContext
 import api from '../api/apiClient';
@@ -8,6 +8,7 @@ import ToggleSwitch from './ToggleSwitch'; // Assuming a ToggleSwitch component 
 import ConfirmationModal from './ConfirmationModal'; // Import the new component
 import Icon from './Icons';
 import ToolParameterSchemaEditor from './ToolParameterSchemaEditor'; // Import the new schema editor
+import _ from 'lodash'; // Import lodash for deep comparison
 
 const TemplateBuilder = ({ context }) => { // Accept context as prop
   const { selectedDataset } = context;
@@ -18,6 +19,12 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
   const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false); // State for archive confirmation modal
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false); // State for unsaved changes
+
+  // Validation state
+  const [nameError, setNameError] = useState(false);
+  const [newToolNameError, setNewToolNameError] = useState(false);
+  const [newToolDescriptionError, setNewToolDescriptionError] = useState(false);
 
   // Form fields
   const [name, setName] = useState('');
@@ -31,6 +38,27 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [newToolDescription, setNewToolDescription] = useState('');
   const [newToolSchema, setNewToolSchema] = useState({ type: 'object', properties: {}, required: [] }); // Replace newToolParameters state
   const [modelOverride, setModelOverride] = useState(''); // Add state for model override
+
+  // Helper function to get current form state as an object
+  const getCurrentFormData = useCallback(() => {
+    return {
+      name,
+      system_prompt: systemPrompt,
+      user_prompt: userPrompt,
+      slots: [...slots].sort(), // Sort for consistent comparison
+      is_tool_calling_template: isToolCallingTemplate,
+      // Deep copy and normalize tool definitions for comparison
+      tool_definitions: isToolCallingTemplate
+        ? _.cloneDeep(toolDefinitions).map(tool => ({
+            name: tool.name,
+            description: tool.description,
+            // Ensure parameters is always an object, even if null/undefined initially
+            parameters: tool.parameters || { type: 'object', properties: {}, required: [] }
+          })).sort((a, b) => a.name.localeCompare(b.name)) // Sort for consistent comparison
+        : null,
+      model_override: modelOverride || null
+    };
+  }, [name, systemPrompt, userPrompt, slots, isToolCallingTemplate, toolDefinitions, modelOverride]);
 
   // Fetch templates from API
   const fetchTemplates = async () => {
@@ -56,7 +84,8 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   // Load templates on initial render
   useEffect(() => {
     fetchTemplates();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Keep dependency array empty to run only once
 
   // Populate form with selected template
   const populateForm = (template) => {
@@ -64,10 +93,15 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       setName(template.name);
       setSystemPrompt(template.system_prompt);
       setUserPrompt(template.user_prompt);
-      setSlots(template.slots);
+      setSlots(template.slots || []); // Ensure slots is always an array
       setIsToolCallingTemplate(template.is_tool_calling_template || false);
-      setToolDefinitions(template.tool_definitions || []);
+      // Deep clone tool definitions to avoid modifying original template data
+      setToolDefinitions(_.cloneDeep(template.tool_definitions || []));
       setModelOverride(template.model_override || ''); // Populate model override
+      setHasUnsavedChanges(false); // Reset unsaved changes when loading a template
+      setNameError(false); // Reset validation
+      setNewToolNameError(false);
+      setNewToolDescriptionError(false);
     } else {
       // Clear form
       setName('');
@@ -77,95 +111,153 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       setIsToolCallingTemplate(false);
       setToolDefinitions([]);
       setModelOverride(''); // Clear model override
+      setHasUnsavedChanges(false); // Reset unsaved changes when clearing form
+      setNameError(false); // Reset validation
+      setNewToolNameError(false);
+      setNewToolDescriptionError(false);
     }
   };
 
+  // Check for unsaved changes whenever form fields change
+  useEffect(() => {
+    if (isLoading) return; // Don't check while loading
+
+    const currentData = getCurrentFormData();
+    let originalData;
+
+    if (selectedTemplate) {
+      // Normalize the selected template data for comparison
+      originalData = {
+        name: selectedTemplate.name,
+        system_prompt: selectedTemplate.system_prompt,
+        user_prompt: selectedTemplate.user_prompt,
+        slots: [...(selectedTemplate.slots || [])].sort(),
+        is_tool_calling_template: selectedTemplate.is_tool_calling_template || false,
+        tool_definitions: selectedTemplate.is_tool_calling_template
+          ? _.cloneDeep(selectedTemplate.tool_definitions || []).map(tool => ({
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters || { type: 'object', properties: {}, required: [] }
+            })).sort((a, b) => a.name.localeCompare(b.name))
+          : null,
+        model_override: selectedTemplate.model_override || null
+      };
+    } else {
+      // If no template is selected, compare against empty state
+      originalData = {
+        name: '', // Name is handled separately below for new templates
+        system_prompt: '',
+        user_prompt: '',
+        slots: [],
+        is_tool_calling_template: false,
+        tool_definitions: null,
+        model_override: null
+      };
+    }
+
+    // Use lodash's isEqual for deep comparison
+    const changed = !_.isEqual(currentData, originalData);
+
+    // Special case: if no template is selected but a name exists, it's unsaved
+    if (!selectedTemplate && name.trim()) {
+        setHasUnsavedChanges(true);
+    } else {
+        setHasUnsavedChanges(changed);
+    }
+
+  }, [name, systemPrompt, userPrompt, slots, isToolCallingTemplate, toolDefinitions, modelOverride, selectedTemplate, isLoading, getCurrentFormData]);
+
   // Handle template selection
   const handleSelectTemplate = (template) => {
+    // Check for unsaved changes before switching
+    if (hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to switch templates? Your changes will be lost.')) {
+        return; // Abort switching
+      }
+    }
     setSelectedTemplate(template);
     populateForm(template);
+    setNameError(false); // Reset validation on switch
+    setNewToolNameError(false);
+    setNewToolDescriptionError(false);
   };
 
   // Handle template save
   const handleSaveTemplate = async () => {
+    // Validate name
     if (!name.trim()) {
-      toast.error('Please enter a template name');
+      toast.error('Template Name cannot be empty.');
+      setNameError(true); // Set error state
       return;
     }
+    setNameError(false); // Clear error state if valid
 
     // Add validation for tool definitions (ensure all parameters have names)
     if (isToolCallingTemplate) {
       for (const tool of toolDefinitions) {
+        if (!tool.name || !tool.description) {
+           toast.error(`A tool definition is missing a name or description. Please fix it before saving.`);
+           return;
+        }
         if (tool.parameters?.properties) {
           for (const paramName in tool.parameters.properties) {
-            if (!paramName) {
-              toast.error(`Tool "${tool.name}" has an unnamed parameter. Please fix it before saving.`);
-              return;
-            }
+            // Allow empty param names during editing, but maybe validate here if needed
           }
         }
       }
     }
 
     setIsSaving(true);
+    setHasUnsavedChanges(false); // Assume save will succeed, reset flag optimistically
 
     try {
-      const templateData = {
-        name,
-        system_prompt: systemPrompt,
-        user_prompt: userPrompt,
-        slots,
-        is_tool_calling_template: isToolCallingTemplate,
-        tool_definitions: isToolCallingTemplate
-          ? toolDefinitions.map(tool => ({
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.parameters || { type: 'object', properties: {}, required: [] } // Ensure parameters is always an object
-            }))
-          : null,
-        model_override: modelOverride || null // Include model override (send null if empty)
-      };
+      const templateData = getCurrentFormData(); // Use the helper function
 
       if (selectedTemplate) {
-        // Update existing template with optimistic UI update
-        const updatedTemplate = {
-          ...selectedTemplate,
-          ...templateData
-        };
+        // Update existing template
+        const updatedTemplate = await api.updateTemplate(selectedTemplate.id, templateData);
 
-        // Update local state immediately for responsive UI
+        // Update local state with the response from the server
         setTemplates(templates.map(t =>
           t.id === selectedTemplate.id ? updatedTemplate : t
         ));
-
-        // Update on server
-        await api.updateTemplate(selectedTemplate.id, templateData);
+        setSelectedTemplate(updatedTemplate); // Update selected template with saved data
         toast.success('Template updated successfully');
+        setName(updatedTemplate.name);
+        setSystemPrompt(updatedTemplate.system_prompt);
+        setUserPrompt(updatedTemplate.user_prompt);
+        setSlots(updatedTemplate.slots || []);
+        setIsToolCallingTemplate(updatedTemplate.is_tool_calling_template || false);
+        setToolDefinitions(_.cloneDeep(updatedTemplate.tool_definitions || []));
+        setModelOverride(updatedTemplate.model_override || '');
+        setHasUnsavedChanges(false); // Explicitly set to false after successful save
+        setNameError(false); // Reset validation on success
+        setNewToolNameError(false);
+        setNewToolDescriptionError(false);
+
       } else {
-        // Create placeholder template with temporary ID for responsive UI
-        const temporaryTemplate = {
-          id: `temp-${Date.now()}`,
-          ...templateData,
-          archived: false
-        };
-
-        // Update local state immediately
-        setTemplates([temporaryTemplate, ...templates]);
-
-        // Create on server
+        // Create new template
         const newTemplate = await api.createTemplate(templateData);
-        setSelectedTemplate(newTemplate);
+        setTemplates([newTemplate, ...templates]); // Add the actual new template
+        setSelectedTemplate(newTemplate); // Select the newly created template
         toast.success('Template created successfully');
-
-        // Refresh templates to get the actual ID from the server
-        fetchTemplates(); // Refresh to sync IDs
+        setName(newTemplate.name);
+        setSystemPrompt(newTemplate.system_prompt);
+        setUserPrompt(newTemplate.user_prompt);
+        setSlots(newTemplate.slots || []);
+        setIsToolCallingTemplate(newTemplate.is_tool_calling_template || false);
+        setToolDefinitions(_.cloneDeep(newTemplate.tool_definitions || []));
+        setModelOverride(newTemplate.model_override || '');
+        setHasUnsavedChanges(false); // Explicitly set to false after successful creation
+        setNameError(false); // Reset validation on success
+        setNewToolNameError(false);
+        setNewToolDescriptionError(false);
       }
+
     } catch (error) {
       console.error('Failed to save template:', error);
       toast.error(`Failed to save template: ${error.message || 'Unknown error'}`);
-
-      // Revert optimistic updates on error
-      fetchTemplates();
+      setHasUnsavedChanges(true); // Re-set flag if save failed
     } finally {
       setIsSaving(false);
     }
@@ -238,6 +330,13 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       return;
     }
 
+    // Check for unsaved changes before creating
+    if (hasUnsavedChanges) {
+      if (!window.confirm('You have unsaved changes. Are you sure you want to create a new template? Your current changes will be lost.')) {
+        return; // Abort creation
+      }
+    }
+
     // Clear the current selection
     setSelectedTemplate(null);
 
@@ -246,7 +345,13 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
     setSystemPrompt('');
     setUserPrompt('');
     setSlots([]);
+    setIsToolCallingTemplate(false);
+    setToolDefinitions([]);
     setModelOverride(''); // Clear model override for new template
+    setHasUnsavedChanges(true); // New template starts with unsaved changes (due to name)
+    setNameError(false); // Reset validation
+    setNewToolNameError(false);
+    setNewToolDescriptionError(false);
 
     // Close the modal
     setIsModalOpen(false);
@@ -255,13 +360,27 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
 
   // Add tool definition
   const handleAddToolDefinition = () => {
+    let isValid = true;
+    // Validate tool name
     if (!newToolName.trim()) {
-      toast.error('Please enter a tool name');
-      return;
+      toast.error('Tool Name cannot be empty.');
+      setNewToolNameError(true);
+      isValid = false;
+    } else {
+      setNewToolNameError(false);
     }
+
+    // Validate tool description
     if (!newToolDescription.trim()) {
-      toast.error('Please enter a tool description');
-      return;
+      toast.error('Tool Description cannot be empty.');
+      setNewToolDescriptionError(true);
+      isValid = false;
+    } else {
+      setNewToolDescriptionError(false);
+    }
+
+    if (!isValid) {
+      return; // Stop if validation fails
     }
 
     const newTool = {
@@ -275,6 +394,8 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
     setNewToolName('');
     setNewToolDescription('');
     setNewToolSchema({ type: 'object', properties: {}, required: [] }); // Reset schema editor state
+    setNewToolNameError(false); // Clear errors on successful add
+    setNewToolDescriptionError(false);
   };
 
   // Remove tool definition
@@ -344,30 +465,39 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       </div>
 
       {/* Template Editor */}
-      <div className="col-span-3 p-4 rounded-lg border border-gray-200">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">
-            {selectedTemplate ? 'Edit Template' : 'New Template'}
-          </h2>
+      <div className="col-span-3 p-4 pt-0 rounded-lg border border-gray-200 relative overflow-y-auto h-full">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 pt-4 pb-3 mb-4 -mx-4 px-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold">
+              {selectedTemplate ? 'Edit Template' : 'New Template'}
+            </h2>
 
-          <div className="space-x-2">
-            {selectedTemplate && (
-              <button
-                className="px-3 py-1 text-red-600 hover:text-red-800 border border-red-200 rounded-md"
-                onClick={handleArchiveClick} // Changed to open confirmation modal
-                disabled={isSaving}
-              >
-                Archive
-              </button>
-            )}
-
-            <button
-              className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-              onClick={handleSaveTemplate}
-              disabled={isSaving}
-            >
-              {isSaving ? 'Saving...' : 'Save Template'}
-            </button>
+            <div className="space-x-2 flex items-center">
+              {hasUnsavedChanges && (
+                <>
+                  <span className="text-sm text-yellow-600 italic mr-2">Unsaved changes</span>
+                  <button
+                    className={`px-3 py-1 text-white rounded-md transition-colors duration-200 ${
+                      'bg-primary-600 hover:bg-primary-700 animate-pulse'
+                    } ${isSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    onClick={handleSaveTemplate}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? 'Saving...' : 'Save Template'}
+                  </button>
+                </>
+              )}
+              {selectedTemplate && (
+                <button
+                  className="px-3 py-1 text-red-600 hover:text-red-800 border border-red-200 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleArchiveClick}
+                  disabled={isSaving} // Disable while saving
+                >
+                  Archive
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -375,15 +505,29 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Template Name
+              Template Name <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md"
+              onChange={(e) => {
+                setName(e.target.value);
+                if (e.target.value.trim()) setNameError(false); // Clear error on change
+              }}
+              className={`w-full p-2 border rounded-md disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
+                nameError ? 'border-red-300 bg-red-50' : 'border-gray-300'
+              }`}
               placeholder="Enter template name"
+              disabled={isLoading || isSaving}
+              required
+              aria-invalid={nameError}
+              aria-describedby={nameError ? 'template-name-error' : undefined}
             />
+            {nameError && (
+              <p id="template-name-error" className="text-xs text-red-500 mt-1 font-medium">
+                Template name is required.
+              </p>
+            )}
           </div>
 
           {/* Model Override Selector */}
@@ -394,7 +538,8 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
             <ModelSelector
               selectedModel={modelOverride}
               onModelChange={setModelOverride}
-              allowNone={true} // Allow clearing the override
+              allowNone={true}
+              disabled={isLoading || isSaving}
             />
             <p className="text-xs text-gray-500 mt-1">If set, this model will be used instead of your default generation model.</p>
           </div>
@@ -404,6 +549,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               value={systemPrompt}
               onChange={setSystemPrompt}
               templateId={selectedTemplate?.id}
+              disabled={isLoading || isSaving}
             />
           </div>
 
@@ -415,8 +561,9 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               id="user-prompt"
               value={userPrompt}
               onChange={(e) => setUserPrompt(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md h-32"
+              className="w-full p-2 border border-gray-300 rounded-md h-32 disabled:bg-gray-100"
               placeholder="Enter user prompt with {slot} placeholders"
+              disabled={isLoading || isSaving}
             />
           </div>
 
@@ -429,12 +576,14 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                 type="text"
                 value={newSlot}
                 onChange={(e) => setNewSlot(e.target.value)}
-                className="flex-grow p-2 border border-gray-300 rounded-md"
+                className="flex-grow p-2 border border-gray-300 rounded-md disabled:bg-gray-100"
                 placeholder="New slot name"
+                disabled={isLoading || isSaving}
               />
               <button
-                className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+                className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
                 onClick={handleAddSlot}
+                disabled={isLoading || isSaving}
               >
                 Add
               </button>
@@ -448,16 +597,18 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                 >
                   <span className="mr-2">{slot}</span>
                   <button
-                    className="text-gray-500 hover:text-gray-700"
+                    className="text-gray-500 hover:text-gray-700 disabled:opacity-50"
                     onClick={() => handleRemoveSlot(slot)}
                     title="Remove slot"
+                    disabled={isLoading || isSaving}
                   >
                     ✕
                   </button>
                   <button
-                    className="ml-1 text-primary-600 hover:text-primary-800"
+                    className="ml-1 text-primary-600 hover:text-primary-800 disabled:opacity-50"
                     onClick={() => handleInsertSlot(slot)}
                     title="Insert slot in template"
+                    disabled={isLoading || isSaving}
                   >
                     ↩
                   </button>
@@ -477,16 +628,16 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               </div>
               <ToggleSwitch
                 id="toolCallingToggle"
-                checked={isToolCallingTemplate} // Changed 'enabled' to 'checked'
+                checked={isToolCallingTemplate}
                 onChange={setIsToolCallingTemplate}
+                disabled={isLoading || isSaving}
               />
             </div>
 
-            {/* Tool Definitions Section - always visible, but disabled visually */}
-            <div className={`space-y-4 transition-opacity duration-300 ${!isToolCallingTemplate ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+            {/* Tool Definitions Section */}
+            <div className={`space-y-4 transition-opacity duration-300 ${!isToolCallingTemplate || isLoading || isSaving ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
               <h3 className="text-md font-semibold text-gray-700 pt-2 border-t border-gray-200">Tool Definitions</h3>
 
-              {/* Display Existing Tools */}
               {toolDefinitions.length === 0 && isToolCallingTemplate && (
                 <p className="text-sm text-gray-500 italic">No tools defined yet. Add one below.</p>
               )}
@@ -505,9 +656,9 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                     </div>
                     <button
                       onClick={() => handleRemoveToolDefinition(index)}
-                      className="text-red-500 hover:text-red-700 text-xl font-light p-1"
+                      className="text-red-500 hover:text-red-700 text-xl font-light p-1 disabled:opacity-50"
                       title="Remove tool"
-                      disabled={!isToolCallingTemplate} // Also disable button explicitly
+                      disabled={!isToolCallingTemplate || isLoading || isSaving}
                     >
                       &times;
                     </button>
@@ -515,46 +666,73 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                 ))}
               </div>
 
-              {/* Add New Tool Form */}
-              <div className="pt-4 border-t border-gray-200">
-                <h4 className="text-sm font-semibold text-gray-700 mb-2">Add New Tool</h4>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Tool Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., getWeather"
-                      value={newToolName}
-                      onChange={(e) => setNewToolName(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                      disabled={!isToolCallingTemplate}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Tool Description</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Gets the current weather for a location"
-                      value={newToolDescription}
-                      onChange={(e) => setNewToolDescription(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                      disabled={!isToolCallingTemplate}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Parameters</label>
+              {/* Add New Tool Section - Wrapped in a bordered container */}
+              <div className="pt-4 border-t border-gray-200"> {/* Existing top border */}
+                <div className="p-4 border border-gray-200 rounded-md bg-white shadow-sm"> {/* New container */}
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Add New Tool</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Tool Name <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        placeholder="e.g., getWeather"
+                        value={newToolName}
+                        onChange={(e) => {
+                          setNewToolName(e.target.value);
+                          if (e.target.value.trim()) setNewToolNameError(false); // Clear error on change
+                        }}
+                        className={`w-full p-2 border rounded-md text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
+                          newToolNameError ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                        }`}
+                        disabled={!isToolCallingTemplate || isLoading || isSaving}
+                        required
+                        aria-invalid={newToolNameError}
+                        aria-describedby={newToolNameError ? 'new-tool-name-error' : undefined}
+                      />
+                      {newToolNameError && (
+                        <p id="new-tool-name-error" className="text-xs text-red-500 mt-1 font-medium">
+                          Tool name is required.
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Tool Description <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        placeholder="e.g., Gets the current weather for a location"
+                        value={newToolDescription}
+                        onChange={(e) => {
+                          setNewToolDescription(e.target.value);
+                          if (e.target.value.trim()) setNewToolDescriptionError(false); // Clear error on change
+                        }}
+                        className={`w-full p-2 border rounded-md text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
+                          newToolDescriptionError ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                        }`}
+                        disabled={!isToolCallingTemplate || isLoading || isSaving}
+                        required
+                        aria-invalid={newToolDescriptionError}
+                        aria-describedby={newToolDescriptionError ? 'new-tool-desc-error' : undefined}
+                      />
+                      {newToolDescriptionError && (
+                        <p id="new-tool-desc-error" className="text-xs text-red-500 mt-1 font-medium">
+                          Tool description is required.
+                        </p>
+                      )}
+                    </div>
                     <ToolParameterSchemaEditor
                       value={newToolSchema}
                       onChange={setNewToolSchema}
-                      disabled={!isToolCallingTemplate}
+                      disabled={!isToolCallingTemplate || isLoading || isSaving}
                     />
                   </div>
+                  {/* Horizontal border to separate from the button */}
+                  <div className="border-t border-gray-200 mt-4 pt-3"></div>
                   <button
                     onClick={handleAddToolDefinition}
-                    className="px-4 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm disabled:opacity-50"
-                    disabled={!isToolCallingTemplate}
+                    className="px-4 mt-1 py-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-700 text-sm disabled:opacity-50"
+                    disabled={!isToolCallingTemplate || isLoading || isSaving}
                   >
-                    Add Tool Definition
+                    Save Tool Definition
                   </button>
                 </div>
               </div>
@@ -565,7 +743,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Preview
             </label>
-            <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-md min-h-[50px]">
               {generatePreview()}
             </div>
           </div>

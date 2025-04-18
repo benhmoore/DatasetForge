@@ -131,19 +131,6 @@ const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
           )}
         </span>
         <Icon name="chevronDown" className="h-5 w-5 text-gray-500" aria-hidden="true" />
-        
-        {/* New Dataset Button */}
-        <button
-          className="ml-2 p-1 rounded-full bg-primary-50 text-primary-700 hover:bg-primary-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-          onClick={(e) => {
-            e.stopPropagation();
-            setNewDatasetName('');
-            setIsModalOpen(true);
-          }}
-          title="Create new dataset"
-        >
-          <Icon name="plus" className="h-5 w-5" aria-hidden="true" />
-        </button>
       </button>
 
       {/* Dataset Modal */}

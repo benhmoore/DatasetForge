@@ -127,16 +127,17 @@ const Layout = () => {
       </header>
       
       {/* Main Content */}
-      <main className="flex-grow">
-        {/* Remove max-width constraint to allow content to fill horizontal space */}
-        <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6"> {/* Removed max-w-screen-xl */}
-          {/* Conditionally render TemplateBuilder */}
-          <div className={activeTab === 'templates' ? '' : 'hidden'}>
+      {/* Make main flex column and flex-grow to push content down */}
+      <main className="flex-grow flex flex-col">
+        {/* Remove max-width, add flex-grow to this container */}
+        <div className="flex-grow mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full"> {/* Removed max-w-screen-xl, added flex-grow and w-full */}
+          {/* Conditionally render TemplateBuilder, ensure it fills height */}
+          <div className={`${activeTab === 'templates' ? 'h-full' : 'hidden'}`}> {/* Added h-full */}
             <TemplateBuilder context={outletContext} />
           </div>
 
-          {/* Conditionally render Generate or placeholder */}
-          <div className={activeTab === 'generate' ? '' : 'hidden'}>
+          {/* Conditionally render Generate or placeholder, ensure it fills height */}
+          <div className={`${activeTab === 'generate' ? 'h-full' : 'hidden'}`}> {/* Added h-full */}
             {selectedDataset ? (
               <Generate context={outletContext} />
             ) : (
