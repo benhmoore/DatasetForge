@@ -156,6 +156,7 @@ class GenerationRequest(BaseModel):
 
 
 class GenerationResult(BaseModel):
+    template_id: int # Add template_id
     seed_index: int  # Index of the seed in the request list
     variation_index: int  # Index of the variation for this seed (0 to count-1)
     variation: str  # Combined identifier (e.g., "Seed 1 / Variation 2")

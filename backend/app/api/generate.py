@@ -551,6 +551,7 @@ async def generate_outputs(
 
 
                     result = GenerationResult(
+                        template_id=request.template_id, # Add template_id
                         seed_index=seed_index,
                         variation_index=variation_index,
                         variation=variation_label,
@@ -568,6 +569,7 @@ async def generate_outputs(
                     error_detail = "Ollama API timed out. Please try again."
                     logger.error(f"{variation_label}: {error_detail}")
                     result = GenerationResult(
+                        template_id=request.template_id, # Add template_id
                         seed_index=seed_index,
                         variation_index=variation_index,
                         variation=variation_label,
@@ -583,6 +585,7 @@ async def generate_outputs(
                     error_detail = f"Error generating variation: {str(e)}"
                     logger.exception(f"{variation_label}: {error_detail}")
                     result = GenerationResult(
+                        template_id=request.template_id, # Add template_id
                         seed_index=seed_index,
                         variation_index=variation_index,
                         variation=variation_label,

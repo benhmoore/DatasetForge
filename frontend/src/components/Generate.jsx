@@ -115,8 +115,9 @@ const Generate = ({ context }) => {
     setSelectedTemplateId(templateId);
     const template = templates.find(t => t.id === templateId);
     setSelectedTemplate(template);
-    setVariations([]);
-    setSelectedVariations(new Set());
+    // Variations are no longer cleared when the template changes.
+    // setVariations([]);
+    // setSelectedVariations(new Set());
   };
 
   const handleCancelGeneration = () => {
@@ -147,6 +148,9 @@ const Generate = ({ context }) => {
     const totalVariations = data.seeds.length * data.count;
     const existingVariationsCount = variationsRef.current.length; // Get count before adding new ones
 
+    // Ensure template_id is set for all placeholder variations
+    const currentTemplateId = data.template_id; // Explicitly capture template_id here
+    
     const initialVariations = Array.from({ length: totalVariations }, (_, globalIndex) => {
       const seedIndex = Math.floor(globalIndex / data.count);
       const variationIndex = globalIndex % data.count;
@@ -163,11 +167,12 @@ const Generate = ({ context }) => {
         variation_index: variationIndex,
         isGenerating: true,
         error: null,
-        id: uniqueId // Use the new unique ID
+        id: uniqueId, // Use the new unique ID
+        template_id: currentTemplateId // Ensure template_id is set consistently
       };
     });
-    // Append new variations instead of replacing
-    setVariations(prevVariations => [...prevVariations, ...initialVariations]);
+    // Prepend new variations instead of appending
+    setVariations(prevVariations => [...initialVariations, ...prevVariations]);
     // Do not clear selected variations from previous generations
 
     try {
@@ -176,6 +181,10 @@ const Generate = ({ context }) => {
           console.log("Skipping update for aborted request.");
           return;
         }
+        
+        // Add debug logging to track template_id
+        console.log("Received result from backend with template_id:", result.template_id);
+        
         setVariations(prevVariations => {
           const updated = [...prevVariations];
           const targetIndex = updated.findIndex(v =>
@@ -185,11 +194,17 @@ const Generate = ({ context }) => {
           );
 
           if (targetIndex !== -1) {
+            // Ensure template_id is explicitly preserved and logged
+            const backendTemplateId = result.template_id || currentTemplateId;
+            console.log(`Updating variation at index ${targetIndex} with template_id:`, backendTemplateId);
+            
             updated[targetIndex] = {
               ...updated[targetIndex],
               ...result,
               isGenerating: false,
               error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
+              template_id: backendTemplateId, // Always ensure template_id is set
+              _source: 'stream' // Debug flag to track source
             };
           } else {
             console.error(`Could not find placeholder for seed ${result.seed_index}, variation ${result.variation_index}. It might have been dismissed.`);
@@ -318,6 +333,8 @@ const Generate = ({ context }) => {
               seed_index: result.seed_index ?? originalSeedIndex,
               variation_index: result.variation_index ?? originalVariationIndex,
               slots: result.slots ?? slotData,
+              system_prompt: result.system_prompt, // Store system_prompt from backend
+              template_id: result.template_id, // Properly update template_id from backend response
               isGenerating: false,
               error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
             };
@@ -363,11 +380,6 @@ const Generate = ({ context }) => {
       return;
     }
 
-    if (!selectedTemplate) {
-      toast.warning('Cannot save: Template not selected.');
-      return;
-    }
-
     if (selectedVariations.size === 0) {
       toast.warning('Please select at least one variation to save');
       return;
@@ -379,23 +391,46 @@ const Generate = ({ context }) => {
 
     const examplesToSave = variationsToSave.map(variation => {
       let slotData = variation.slots || {};
+      
+      // Ensure template_id exists, fall back to current template if missing
+      const templateId = variation.template_id || selectedTemplate?.id;
+      
+      if (!templateId) {
+        console.error(`Missing template_id for variation ${variation.id}. Cannot save.`);
+        toast.error(`Error saving variation ${variation.variation}: No template associated.`);
+        return null; // Skip this variation
+      }
+      
+      // Find the original template used for this variation
+      const originalTemplate = templates.find(t => t.id === templateId);
+
+      if (!originalTemplate) {
+        console.error(`Could not find template with ID ${templateId} for variation ${variation.id}. Skipping save.`);
+        toast.error(`Error saving variation ${variation.variation}: Original template not found.`);
+        return null; // Skip this variation
+      }
 
       return {
-        system_prompt: selectedTemplate.system_prompt || "",
+        system_prompt: originalTemplate.system_prompt || "", // Use original template's prompt
         user_prompt: variation.processed_prompt || "",
-        system_prompt_mask: selectedTemplate.system_prompt_mask || null,
-        user_prompt_mask: selectedTemplate.user_prompt_mask || null,
+        system_prompt_mask: originalTemplate.system_prompt_mask || null, // Use original template's mask
+        user_prompt_mask: originalTemplate.user_prompt_mask || null, // Use original template's mask
         slots: slotData,
         output: variation.output,
         tool_calls: variation.tool_calls || null
       };
-    });
+    }).filter(example => example !== null); // Filter out skipped variations
+
+    if (examplesToSave.length === 0) {
+      toast.warning('No valid variations could be prepared for saving.');
+      return;
+    }
 
     try {
       await api.saveExamples(selectedDataset.id, examplesToSave);
       toast.success(`${examplesToSave.length} example(s) saved to ${selectedDataset.name}`);
 
-      const savedIds = new Set(selectedVariations);
+      const savedIds = new Set(variationsToSave.map(v => v.id)); // Use the IDs from the successfully prepared variations
       setVariations(prevVariations =>
         prevVariations.filter(v => !savedIds.has(v.id))
       );
@@ -414,11 +449,6 @@ const Generate = ({ context }) => {
       return;
     }
 
-    if (!selectedTemplate) {
-      toast.warning('Cannot save: Template not selected.');
-      return;
-    }
-
     const validVariations = variationsRef.current.filter(v => !v.isGenerating && !v.error);
 
     if (validVariations.length === 0) {
@@ -428,22 +458,46 @@ const Generate = ({ context }) => {
 
     const examplesToSave = validVariations.map(variation => {
       let slotData = variation.slots || {};
+      
+      // Ensure template_id exists, fall back to current template if missing
+      const templateId = variation.template_id || selectedTemplate?.id;
+      
+      if (!templateId) {
+        console.error(`Missing template_id for variation ${variation.id}. Cannot save.`);
+        toast.error(`Error saving variation ${variation.variation}: No template associated.`);
+        return null; // Skip this variation
+      }
+      
+      // Find the original template used for this variation
+      const originalTemplate = templates.find(t => t.id === templateId);
+
+      if (!originalTemplate) {
+        console.error(`Could not find template with ID ${templateId} for variation ${variation.id}. Skipping save.`);
+        toast.error(`Error saving variation ${variation.variation}: Original template not found.`);
+        return null; // Skip this variation
+      }
+
       return {
-        system_prompt: selectedTemplate.system_prompt || "",
+        system_prompt: originalTemplate.system_prompt || "", // Use original template's prompt
         user_prompt: variation.processed_prompt || "",
-        system_prompt_mask: selectedTemplate.system_prompt_mask || null,
-        user_prompt_mask: selectedTemplate.user_prompt_mask || null,
+        system_prompt_mask: originalTemplate.system_prompt_mask || null, // Use original template's mask
+        user_prompt_mask: originalTemplate.user_prompt_mask || null, // Use original template's mask
         slots: slotData,
         output: variation.output,
         tool_calls: variation.tool_calls || null
       };
-    });
+    }).filter(example => example !== null); // Filter out skipped variations
+
+    if (examplesToSave.length === 0) {
+      toast.warning('No valid variations could be prepared for saving.');
+      return;
+    }
 
     try {
       await api.saveExamples(selectedDataset.id, examplesToSave);
       toast.success(`${examplesToSave.length} valid example(s) saved to ${selectedDataset.name}`);
 
-      const savedIds = new Set(validVariations.map(v => v.id));
+      const savedIds = new Set(validVariations.map(v => v.id)); // Use the IDs from the successfully prepared variations
       setVariations(prevVariations =>
         prevVariations.filter(v => !savedIds.has(v.id))
       );
