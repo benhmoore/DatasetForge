@@ -6,6 +6,7 @@ import SeedForm from './SeedForm';
 import VariationCard from './VariationCard';
 import ExampleTable from './ExampleTable';
 import SettingsModal from './SettingsModal';
+import ParaphraseModal from './ParaphraseModal';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons'; // Import Icon component
 
@@ -21,12 +22,18 @@ const Generate = ({ context }) => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isParaphrasing, setIsParaphrasing] = useState(false); // Add state for paraphrasing
+  const [isParaphrasing, setIsParaphrasing] = useState(false);
   const [variations, setVariations] = useState([]);
   const [selectedVariations, setSelectedVariations] = useState(new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [refreshExamplesTrigger, setRefreshExamplesTrigger] = useState(0);
   const [examples, setExamples] = useState([]);
+  
+  // State for ParaphraseModal
+  const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
+  const [paraphraseSourceText, setParaphraseSourceText] = useState('');
+  const [paraphraseSourceId, setParaphraseSourceId] = useState(null);
+  
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
 
@@ -591,6 +598,28 @@ const Generate = ({ context }) => {
       toast.info('All variations cleared.');
     }
   };
+  
+  // Handler to open the paraphrase modal
+  const handleOpenParaphraseModal = useCallback((variationId, text) => {
+    const variationIndex = variationsRef.current.findIndex(v => v.id === variationId);
+    if (variationIndex === -1) {
+      console.error('Cannot paraphrase: variation not found with id', variationId);
+      return;
+    }
+    
+    setParaphraseSourceId(variationId);
+    setParaphraseSourceText(text);
+    setIsParaphraseModalOpen(true);
+    setIsParaphrasing(true); // Set global paraphrasing flag to disable other controls
+  }, []);
+  
+  // Handler to close the paraphrase modal
+  const handleCloseParaphraseModal = useCallback(() => {
+    setIsParaphraseModalOpen(false);
+    setParaphraseSourceText('');
+    setParaphraseSourceId(null);
+    setIsParaphrasing(false); // Reset global paraphrasing flag
+  }, []);
 
   // Determine button text and action based on selected variations
   const saveButtonText = selectedCount > 0
@@ -615,6 +644,16 @@ const Generate = ({ context }) => {
 
   return (
     <div className="space-y-8 w-full">
+      {/* Paraphrase Modal - top level component */}
+      <ParaphraseModal
+        isOpen={isParaphraseModalOpen}
+        onClose={handleCloseParaphraseModal}
+        sourceText={paraphraseSourceText}
+        variationId={paraphraseSourceId}
+        onEdit={handleEdit}
+        onAddVariations={handleAddVariations}
+      />
+      
       <div className="grid grid-cols-1 md:grid-cols-[500px_1fr] gap-6">
         <div className="space-y-4">
           <div className="pl-4 pt-4">
@@ -701,14 +740,14 @@ const Generate = ({ context }) => {
                   processed_prompt={variation.processed_prompt}
                   isSelected={selectedVariations.has(variation.id)} // Use selected state
                   isGenerating={variation.isGenerating || false}
+                  isParaphrasing={isParaphrasing}
                   error={variation.error || null}
                   onSelect={() => handleSelect(variation.id)} // Use select handler
                   onEdit={(output) => handleEdit(variation.id, output)}
                   onRegenerate={(instruction) => handleRegenerate(variation.id, instruction)}
                   onDismiss={() => handleDismiss(variation.id)}
                   onToolCallsChange={(newToolCalls) => handleToolCallsChange(variation.id, newToolCalls)} // Pass variation id
-                  onAddVariations={(newOutputs) => handleAddVariations(variation.id, newOutputs)} // For multi-select paraphrasing
-                  template_id={variation.template_id || selectedTemplate?.id}
+                  onOpenParaphraseModal={(id, text) => handleOpenParaphraseModal(id, text)} // For opening paraphrase modal
                 />
               ))}
             </div>

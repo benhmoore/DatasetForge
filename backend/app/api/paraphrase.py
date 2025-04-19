@@ -110,6 +110,7 @@ async def paraphrase_seeds(
                     f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
                     json={
                         "model": user.default_para_model,
+                        "temperature": 0.5,
                         "prompt": user_prompt, # Use the dynamically generated user prompt
                         "system": system_prompt,
                         "stream": False,
@@ -199,7 +200,7 @@ async def paraphrase_text(
     system_prompt = (
         "You are an AI assistant that specializes in paraphrasing text. "
         "Your task is to produce HIGH-QUALITY, CREATIVE paraphrases of the given text. "
-        "Each paraphrase should convey the same meaning but use different wording and structure. "
+        "Each paraphrase should convey the same meaning but use significantly different wording and structure. "
         "Make the paraphrases diverse in style, vocabulary, and sentence structure. "
         "Your output should be ONLY the paraphrased text without any explanations or formatting."
     )
@@ -219,6 +220,7 @@ async def paraphrase_text(
                     f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
                     json={
                         "model": user.default_para_model,
+                        "temperature": 0.9,
                         "prompt": user_prompt,
                         "system": system_prompt,
                         "stream": False,
@@ -242,6 +244,7 @@ async def paraphrase_text(
                 if result_text:
                     generated_paraphrases.append(result_text)
                     print(f"Successfully generated paraphrase {i+1}.")
+                    print(f"Paraphrase {i+1}: {result_text}")
                     
             except httpx.TimeoutException:
                 print(f"Ollama API timed out while generating paraphrase {i+1}. Skipping.")
