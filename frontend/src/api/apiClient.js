@@ -281,7 +281,61 @@ const api = {
     .then(response => response.data),
   
   deleteSeedBank: (seedBankId) => apiClient.delete(`/seed_banks/${seedBankId}`)
-    .then(response => response.data)
+    .then(response => response.data),
+    
+  // Workflow API endpoints
+  executeWorkflow: (workflow, seedData, debugMode = false) => apiClient.post('/workflow/execute', {
+    workflow,
+    seed_data: seedData,
+    debug_mode: debugMode
+  }).then(response => response.data),
+  
+  executeWorkflowStep: (nodeConfig, inputs) => apiClient.post('/workflow/execute_step', {
+    node_config: nodeConfig,
+    inputs
+  }).then(response => response.data),
+  
+  // Streaming workflow execution (similar to generate)
+  executeWorkflowWithStream: async (workflow, seedData, onData, signal, debugMode = false) => {
+    console.log('Sending workflow execution request:', {
+      workflow: workflow.id || 'unnamed-workflow',
+      nodes: Object.keys(workflow.nodes).length,
+      connections: workflow.connections.length,
+    });
+    
+    // Use fetch API for streaming
+    const response = await fetch('/api/workflow/execute', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
+      },
+      body: JSON.stringify({
+        workflow,
+        seed_data: seedData,
+        debug_mode: debugMode
+      }),
+      signal: signal // Pass the signal to fetch
+    });
+
+    if (!response.ok) {
+      // Handle non-2xx responses including AbortError
+      if (signal?.aborted) {
+        console.log('Workflow execution request aborted.');
+        throw new DOMException('Aborted', 'AbortError'); 
+      }
+      const errorText = await response.text();
+      console.error('Workflow execution request failed:', response.status, errorText);
+      throw new Error(`Workflow execution failed: ${response.status} ${errorText || response.statusText}`);
+    }
+
+    // For now, return the entire result at once (will implement streaming in future)
+    const result = await response.json();
+    if (onData) {
+      onData(result);
+    }
+    return result;
+  }
 };
 
 export default api;

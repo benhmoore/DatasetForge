@@ -50,8 +50,8 @@
 - [ ] Update `VariationCard` component
   - [ ] Add visual indicators for processed steps
   - [ ] Show processing history if available
-- [ ] Extend API client
-  - [ ] Add methods to call workflow endpoints
+- [x] Extend API client
+  - [x] Add methods to call workflow endpoints
   - [ ] Support streaming and error reporting
 
 ## Technical Considerations
