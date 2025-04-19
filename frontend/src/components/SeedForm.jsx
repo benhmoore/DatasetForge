@@ -509,6 +509,67 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
   }, [template, createInitialSeed, isDisabled]);
   // --- End Import/Export Logic ---
 
+  // Handler for importing a file's content into a specific seed slot
+  const handleImportFileToSlot = useCallback((slot) => {
+    if (isDisabled) return;
+    
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.md,.txt,.json,.csv,.text,.markdown,.html';
+    
+    input.onchange = (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      
+      // Check if file is text-based by MIME type
+      const validTextTypes = [
+        'text/plain', 
+        'text/markdown', 
+        'text/csv', 
+        'text/html', 
+        'application/json',
+        'application/x-md',
+        'application/markdown'
+      ];
+      
+      // Also allow any type with no specified MIME type but valid extension
+      const validExtensions = ['.md', '.txt', '.text', '.markdown', '.csv', '.json', '.html'];
+      const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      
+      if (!validTextTypes.includes(file.type) && !validExtensions.includes(fileExtension)) {
+        toast.error(`Unsupported file type. Please select a text file (markdown, plaintext, etc).`);
+        return;
+      }
+      
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        try {
+          const content = e.target?.result;
+          if (typeof content !== 'string') {
+            throw new Error("Failed to read file content.");
+          }
+          
+          // Update the slot with the file content
+          handleSlotChange(slot, content);
+          toast.success(`Successfully imported content from ${file.name} into ${slot}.`);
+        } catch (error) {
+          console.error("Error importing file content:", error);
+          toast.error(`Failed to import file: ${error.message || "Unknown error"}`);
+        }
+      };
+      
+      reader.onerror = (e) => {
+        console.error("Error reading file:", e);
+        toast.error("Failed to read the selected file.");
+      };
+      
+      reader.readAsText(file);
+    };
+    
+    input.click();
+  }, [handleSlotChange, isDisabled]);
+
   // Memoize the pagination indicators to prevent unnecessary recalculations
   const renderPaginationIndicators = useMemo(() => {
     if (seedList.length <= 1) return null;
@@ -603,32 +664,62 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
 
       return (
         <div key={slot} className="mb-3">
-          <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 mb-1">
-            {slot.charAt(0).toUpperCase() + slot.slice(1)}
+          <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
+            <span>{slot.charAt(0).toUpperCase() + slot.slice(1)}</span>
             {hasError && <span className="text-red-500 ml-1">*</span>}
+            <button
+              type="button"
+              onClick={() => handleImportFileToSlot(slot)}
+              disabled={isDisabled}
+              className="text-xs text-purple-600 hover:text-purple-800 disabled:text-purple-300 disabled:cursor-not-allowed flex items-center transition-colors duration-150"
+              title={`Import file content into ${slot}`}
+              aria-label={`Import file content into ${slot}`}
+            >
+              <Icon name="document" className="w-3 h-3 mr-1" />
+              <span>Import file</span>
+            </button>
           </label>
-          <input
-            id={inputId}
-            type="text"
-            value={currentSeed[slot] || ''}
-            onChange={(e) => handleSlotChange(slot, e.target.value)}
-            className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200
-                        ${hasError ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}
-                        ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-            placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
-            disabled={isDisabled}
-            aria-invalid={hasError}
-            aria-describedby={hasError ? errorId : undefined}
-          />
+          <div className="relative">
+            <input
+              id={inputId}
+              type="text"
+              value={currentSeed[slot] || ''}
+              onChange={(e) => handleSlotChange(slot, e.target.value)}
+              className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200
+                          ${hasError ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}
+                          ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+              placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
+              disabled={isDisabled}
+              aria-invalid={hasError}
+              aria-describedby={hasError ? errorId : undefined}
+            />
+            <div className="absolute inset-y-0 right-0 pr-2 flex items-center">
+              <button
+                type="button"
+                onClick={() => handleImportFileToSlot(slot)}
+                disabled={isDisabled}
+                className="p-1 text-gray-400 hover:text-purple-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-full hover:bg-gray-100 transition-colors"
+                title={`Import content from text file into ${slot}`}
+                aria-label={`Import content from text file into ${slot}`}
+              >
+                <Icon name="upload" className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
           {hasError && (
             <p id={errorId} className="mt-1 text-xs text-red-600 font-medium">
               This field is required for Seed {currentSeedIndex + 1}.
             </p>
           )}
+          {currentSeed[slot] && currentSeed[slot].length > 100 && (
+            <p className="mt-1 text-xs text-gray-500">
+              {currentSeed[slot].length.toLocaleString()} characters
+            </p>
+          )}
         </div>
       );
     });
-  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isDisabled, validationErrors]);
+  }, [template, currentSeed, currentSeedIndex, handleSlotChange, handleImportFileToSlot, isDisabled, validationErrors]);
 
   // Calculate total error count across all seeds
   const totalErrorCount = useMemo(() => {

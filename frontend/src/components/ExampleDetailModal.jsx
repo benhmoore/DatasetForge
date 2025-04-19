@@ -283,15 +283,12 @@ const ExampleDetailModal = ({
   
   // Check if there are tool calls
   const hasToolCalls = example.tool_calls && example.tool_calls.length > 0;
-
-  // Determine which tab should contain slots based on content length
-  const shouldShowSlotsInSeparateTab = slotKeys.length > 4;
-
+  
   // Render Tab Navigation 
   const renderTabs = () => {
     const tabs = [
       { id: 'content', label: 'Content', icon: 'document' },
-      ...(shouldShowSlotsInSeparateTab && slotKeys.length > 0 ? [{ id: 'slots', label: 'Slots', icon: 'tag', badge: slotKeys.length }] : []),
+      ...(slotKeys.length > 0 ? [{ id: 'slots', label: 'Slots', icon: 'tag', badge: slotKeys.length }] : []),
       ...(hasToolCalls ? [{ id: 'tools', label: 'Tool Calls', icon: 'tool', badge: example.tool_calls.length }] : []),
       { id: 'metadata', label: 'Metadata', icon: 'info' }
     ];
@@ -397,41 +394,6 @@ const ExampleDetailModal = ({
         )}
       </div>
 
-      {/* Slots (only if there are a small number of slots) */}
-      {!shouldShowSlotsInSeparateTab && slotKeys.length > 0 && (
-        <div>
-          <h3 className="text-md font-medium text-gray-700 mb-2 flex items-center">
-            <Icon name="tag" className="h-4 w-4 mr-1 text-gray-500" />
-            Slots
-            <span className="ml-2 bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full text-xs">
-              {slotKeys.length}
-            </span>
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {slotKeys.map((slot) => (
-              <div key={slot} className="relative group">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {slot}
-                </label>
-                {isEditing ? (
-                  <input
-                    type="text"
-                    value={editedExample.slots[slot] || ''}
-                    onChange={(e) => handleSlotChange(slot, e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors"
-                    placeholder={`Enter value for ${slot}...`}
-                  />
-                ) : (
-                  <div className="p-3 bg-gray-50 rounded-md border border-gray-100 group-hover:border-gray-200 transition-colors">
-                    {example.slots[slot] || <span className="text-gray-400 italic">Empty</span>}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Output */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -454,9 +416,13 @@ const ExampleDetailModal = ({
     </div>
   );
 
-  // Render the slots tab (only when there are many slots)
+  // Render the slots tab (now shown for all slots)
   const renderSlotsTab = () => {
-    if (!shouldShowSlotsInSeparateTab || slotKeys.length === 0) return null;
+    if (slotKeys.length === 0) return (
+      <div className="flex justify-center items-center h-40 text-gray-500">
+        No slots available for this example
+      </div>
+    );
 
     return (
       <div className="space-y-4">
@@ -918,7 +884,7 @@ const ExampleDetailModal = ({
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto p-4"
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[500] overflow-y-auto p-4"
       aria-labelledby="example-detail-title"
       role="dialog"
       aria-modal="true"

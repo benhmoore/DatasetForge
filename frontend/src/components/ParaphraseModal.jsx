@@ -20,6 +20,22 @@ const ParaphraseModal = ({
   
   // Refs
   const paraphraseInputRef = useRef(null);
+  const modalRef = useRef(null);
+
+  // Clear all state when closing modal
+  const handleClose = useCallback((e) => {
+    // Make sure event doesn't bubble up to parent elements
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+    
+    setParaphraseInstruction('');
+    setParaphrasedOutputs([]);
+    setSelectedParaphrases([]);
+    
+    // Call the parent's onClose callback
+    if (onClose) onClose(e);
+  }, [onClose]);
 
   // Focus the input when modal opens
   useEffect(() => {
@@ -38,26 +54,22 @@ const ParaphraseModal = ({
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape' && isOpen) {
+        // Stop propagation to prevent parent modals from also closing
+        e.stopPropagation();
+        if (e.preventDefault) e.preventDefault();
+        
+        // Close this modal
         handleClose();
+        
+        // Very important: don't let this event reach the parent modal
+        return false;
       }
     };
 
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen]);
-  
-  // Clear all state when closing modal
-  const handleClose = useCallback((e) => {
-    // Make sure event doesn't bubble up to parent elements
-    if (e && e.stopPropagation) {
-      e.stopPropagation();
-    }
-    
-    setParaphraseInstruction('');
-    setParaphrasedOutputs([]);
-    setSelectedParaphrases([]);
-    onClose(e);
-  }, [onClose]);
+    // Use capture phase to intercept events before they reach other handlers
+    document.addEventListener('keydown', handleEscape, true);
+    return () => document.removeEventListener('keydown', handleEscape, true);
+  }, [isOpen, handleClose]);
   
   // Generate paraphrases
   const handleParaphraseWithInstruction = useCallback(async () => {
@@ -133,19 +145,30 @@ const ParaphraseModal = ({
   
   if (!isOpen) return null;
 
+  // Use a very high z-index to ensure this is above all other modals
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
+      ref={modalRef}
+      className="fixed inset-0 bg-black bg-opacity-50 z-[1000] flex items-center justify-center"
       onClick={(e) => {
+        // It's very important to stop propagation here to prevent bubbling to parent modals
+        e.stopPropagation();
         if (e.target === e.currentTarget) {
-          handleClose();
+          handleClose(e);
         }
       }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="paraphrase-modal-title"
     >
-      <div className="bg-white rounded-lg p-6 max-w-3xl w-full mx-auto shadow-xl animate-fadeIn" onClick={e => e.stopPropagation()}>
+      <div 
+        className="bg-white rounded-lg p-6 max-w-3xl w-full mx-auto shadow-2xl animate-fadeIn relative z-[1001]" 
+        onClick={(e) => {
+          // Make absolutely sure the click doesn't propagate up
+          e.stopPropagation();
+          if (e.nativeEvent) e.nativeEvent.stopImmediatePropagation();
+        }}
+      >
         <h3 id="paraphrase-modal-title" className="text-lg font-medium mb-4">Paraphrase Text</h3>
         
         <div className="mb-4">
@@ -217,7 +240,10 @@ const ParaphraseModal = ({
                         ? 'bg-primary-50 border-primary-300 ring-1 ring-primary-200' 
                         : 'bg-gray-50 border-gray-200 hover:border-primary-200 hover:bg-gray-100'
                     }`}
-                    onClick={() => toggleParaphraseSelection(text)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleParaphraseSelection(text);
+                    }}
                   >
                     <div className="flex justify-between items-center mb-1">
                       <div className="flex items-center">
