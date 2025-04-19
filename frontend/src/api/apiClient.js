@@ -28,8 +28,12 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle session expiry (401 errors)
-    if (error.response && error.response.status === 401) {
+    // Handle session expiry (401 errors), but NOT the specific 'no_users_exist' error
+    if (
+      error.response &&
+      error.response.status === 401 &&
+      error.response.headers?.['x-error-code'] !== 'no_users_exist' // <-- Add this check
+    ) {
       // Clear auth and redirect to login if not already there
       if (window.location.pathname !== '/login') {
         sessionStorage.removeItem('auth');
@@ -37,13 +41,17 @@ apiClient.interceptors.response.use(
         window.location.href = '/login';
       }
     }
-    
+
     return Promise.reject(error);
   }
 );
 
 // API functions
 const api = {
+  // New function to check setup status
+  getSetupStatus: () => apiClient.get('/setup/status')
+    .then(response => response.data), // Returns { users_exist: boolean, needs_setup: boolean }
+
   // Auth
   login: (username, password) => {
     const auth = btoa(`${username}:${password}`);
