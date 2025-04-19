@@ -9,6 +9,7 @@ import SettingsModal from './SettingsModal';
 import ParaphraseModal from './ParaphraseModal';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons'; // Import Icon component
+import WorkflowManager from './WorkflowManager'; // Import WorkflowManager component
 
 const Generate = ({ context }) => {
   const { selectedDataset } = context;
@@ -33,6 +34,11 @@ const Generate = ({ context }) => {
   const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
   const [paraphraseSourceText, setParaphraseSourceText] = useState('');
   const [paraphraseSourceId, setParaphraseSourceId] = useState(null);
+  
+  // Workflow related state
+  const [workflowEnabled, setWorkflowEnabled] = useState(false);
+  const [currentWorkflow, setCurrentWorkflow] = useState(null);
+  const [isExecutingWorkflow, setIsExecutingWorkflow] = useState(false);
   
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
@@ -118,6 +124,40 @@ const Generate = ({ context }) => {
     }
   }, [selectedTemplateId]);
 
+  // Load workflow from localStorage
+  useEffect(() => {
+    try {
+      const savedWorkflow = localStorage.getItem('datasetforge_currentWorkflow');
+      if (savedWorkflow) {
+        setCurrentWorkflow(JSON.parse(savedWorkflow));
+      }
+      
+      const workflowEnabledSetting = localStorage.getItem('datasetforge_workflowEnabled');
+      if (workflowEnabledSetting) {
+        setWorkflowEnabled(workflowEnabledSetting === 'true');
+      }
+    } catch (error) {
+      console.error('Failed to load workflow from localStorage:', error);
+      // Clear potentially corrupted data
+      localStorage.removeItem('datasetforge_currentWorkflow');
+      localStorage.removeItem('datasetforge_workflowEnabled');
+    }
+  }, []);
+  
+  // Save workflow to localStorage when it changes
+  useEffect(() => {
+    if (currentWorkflow) {
+      localStorage.setItem('datasetforge_currentWorkflow', JSON.stringify(currentWorkflow));
+    } else {
+      localStorage.removeItem('datasetforge_currentWorkflow');
+    }
+  }, [currentWorkflow]);
+  
+  // Save workflow enabled setting to localStorage
+  useEffect(() => {
+    localStorage.setItem('datasetforge_workflowEnabled', workflowEnabled.toString());
+  }, [workflowEnabled]);
+
   const handleTemplateChange = (templateId) => {
     setSelectedTemplateId(templateId);
     const template = templates.find(t => t.id === templateId);
@@ -183,42 +223,48 @@ const Generate = ({ context }) => {
     // Do not clear selected variations from previous generations
 
     try {
-      await api.generate(data, (result) => {
-        if (signal.aborted) {
-          console.log("Skipping update for aborted request.");
-          return;
-        }
-        
-        // Add debug logging to track template_id
-        console.log("Received result from backend with template_id:", result.template_id);
-        
-        setVariations(prevVariations => {
-          const updated = [...prevVariations];
-          const targetIndex = updated.findIndex(v =>
-            v.seed_index === result.seed_index &&
-            v.variation_index === result.variation_index &&
-            v.isGenerating && v.id.startsWith('temp-') // Ensure we update the correct placeholder
-          );
-
-          if (targetIndex !== -1) {
-            // Ensure template_id is explicitly preserved and logged
-            const backendTemplateId = result.template_id || currentTemplateId;
-            console.log(`Updating variation at index ${targetIndex} with template_id:`, backendTemplateId);
-            
-            updated[targetIndex] = {
-              ...updated[targetIndex],
-              ...result,
-              isGenerating: false,
-              error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
-              template_id: backendTemplateId, // Always ensure template_id is set
-              _source: 'stream' // Debug flag to track source
-            };
-          } else {
-            console.error(`Could not find placeholder for seed ${result.seed_index}, variation ${result.variation_index}. It might have been dismissed.`);
+      if (workflowEnabled && currentWorkflow) {
+        // Execute using workflow
+        await handleExecuteWorkflow(data, initialVariations, signal);
+      } else {
+        // Standard generation
+        await api.generate(data, (result) => {
+          if (signal.aborted) {
+            console.log("Skipping update for aborted request.");
+            return;
           }
-          return updated;
-        });
-      }, signal);
+          
+          // Add debug logging to track template_id
+          console.log("Received result from backend with template_id:", result.template_id);
+          
+          setVariations(prevVariations => {
+            const updated = [...prevVariations];
+            const targetIndex = updated.findIndex(v =>
+              v.seed_index === result.seed_index &&
+              v.variation_index === result.variation_index &&
+              v.isGenerating && v.id.startsWith('temp-') // Ensure we update the correct placeholder
+            );
+
+            if (targetIndex !== -1) {
+              // Ensure template_id is explicitly preserved and logged
+              const backendTemplateId = result.template_id || currentTemplateId;
+              console.log(`Updating variation at index ${targetIndex} with template_id:`, backendTemplateId);
+              
+              updated[targetIndex] = {
+                ...updated[targetIndex],
+                ...result,
+                isGenerating: false,
+                error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
+                template_id: backendTemplateId, // Always ensure template_id is set
+                _source: 'stream' // Debug flag to track source
+              };
+            } else {
+              console.error(`Could not find placeholder for seed ${result.seed_index}, variation ${result.variation_index}. It might have been dismissed.`);
+            }
+            return updated;
+          });
+        }, signal);
+      }
 
       if (!signal.aborted) {
         toast.info('Generation stream finished.');
@@ -235,10 +281,92 @@ const Generate = ({ context }) => {
     } finally {
       if (!signal?.aborted) {
         setIsGenerating(false);
+        setIsExecutingWorkflow(false);
       }
       abortControllerRef.current = null;
     }
-  }, [selectedDataset, selectedTemplate]);
+  }, [selectedDataset, selectedTemplate, workflowEnabled, currentWorkflow]);
+  
+  // Function to execute a workflow
+  const handleExecuteWorkflow = async (data, initialVariations, signal) => {
+    setIsExecutingWorkflow(true);
+    
+    // Process each seed through the workflow
+    for (let seedIndex = 0; seedIndex < data.seeds.length; seedIndex++) {
+      const seedData = data.seeds[seedIndex];
+      
+      // Process each variation for this seed
+      for (let variationIndex = 0; variationIndex < data.count; variationIndex++) {
+        if (signal.aborted) {
+          console.log("Skipping workflow execution for aborted request.");
+          return;
+        }
+        
+        try {
+          // Execute workflow for this seed/variation
+          const result = await api.executeWorkflow(
+            currentWorkflow,
+            seedData,
+            data.debug_mode || false
+          );
+          
+          // Update the variation with workflow results
+          setVariations(prevVariations => {
+            const updated = [...prevVariations];
+            const targetIndex = updated.findIndex(v =>
+              v.seed_index === seedIndex &&
+              v.variation_index === variationIndex &&
+              v.isGenerating && v.id.startsWith('temp-')
+            );
+
+            if (targetIndex !== -1) {
+              // Extract the final output from workflow result
+              const workflowOutput = result.final_output?.output || "No output from workflow";
+              
+              updated[targetIndex] = {
+                ...updated[targetIndex],
+                output: workflowOutput,
+                processed_prompt: data.instruction || "",
+                isGenerating: false,
+                error: null,
+                template_id: data.template_id,
+                _source: 'workflow',
+                workflow_results: result  // Store the full workflow results for reference
+              };
+            }
+            return updated;
+          });
+          
+        } catch (error) {
+          console.error(`Workflow execution failed for seed ${seedIndex}, variation ${variationIndex}:`, error);
+          
+          // Update the variation with error
+          setVariations(prevVariations => {
+            const updated = [...prevVariations];
+            const targetIndex = updated.findIndex(v =>
+              v.seed_index === seedIndex &&
+              v.variation_index === variationIndex &&
+              v.isGenerating && v.id.startsWith('temp-')
+            );
+
+            if (targetIndex !== -1) {
+              updated[targetIndex] = {
+                ...updated[targetIndex],
+                output: `[Error: Workflow execution failed - ${error.message}]`,
+                isGenerating: false,
+                error: `Workflow execution failed: ${error.message}`,
+                template_id: data.template_id,
+                _source: 'workflow_error'
+              };
+            }
+            return updated;
+          });
+        }
+      }
+    }
+    
+    setIsExecutingWorkflow(false);
+  };
 
   const handleSelect = (id) => {
     const variationIndex = variationsRef.current.findIndex(v => v.id === id);
@@ -357,43 +485,103 @@ const Generate = ({ context }) => {
       const originalSeedIndex = currentVariation.seed_index;
       const originalVariationIndex = currentVariation.variation_index;
 
-      await api.generate(regenParams, (result) => {
-        setVariations(prevVariations => {
-          const updated = [...prevVariations];
-          const targetIndex = updated.findIndex(v => v.id === id);
+      // Use workflow if enabled
+      if (workflowEnabled && currentWorkflow) {
+        try {
+          const result = await api.executeWorkflow(
+            currentWorkflow,
+            { slots: slotData },
+            false
+          );
+          
+          // Update the variation with workflow results
+          setVariations(prevVariations => {
+            const updated = [...prevVariations];
+            const targetIndex = updated.findIndex(v => v.id === id);
 
-          if (targetIndex !== -1) {
-            updated[targetIndex] = {
-              ...updated[targetIndex],
-              variation: result.variation,
-              output: result.output,
-              tool_calls: result.tool_calls,
-              processed_prompt: result.processed_prompt,
-              seed_index: result.seed_index ?? originalSeedIndex,
-              variation_index: result.variation_index ?? originalVariationIndex,
-              slots: result.slots ?? slotData,
-              system_prompt: result.system_prompt, // Store system_prompt from backend
-              template_id: result.template_id, // Properly update template_id from backend response
-              isGenerating: false,
-              error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
-            };
-
-            // Deselect item if it was selected, as it has been regenerated
-            if (selectedVariations.has(id)) {
-              setSelectedVariations(prevSelected => {
-                const newSelected = new Set(prevSelected);
-                newSelected.delete(id);
-                return newSelected;
-              });
-              toast.info("Deselected item due to regeneration.");
+            if (targetIndex !== -1) {
+              // Extract the final output from workflow result
+              const workflowOutput = result.final_output?.output || "No output from workflow";
+              
+              updated[targetIndex] = {
+                ...updated[targetIndex],
+                output: workflowOutput,
+                processed_prompt: instruction || "",
+                isGenerating: false,
+                error: null,
+                template_id: selectedTemplate.id,
+                _source: 'workflow_regen',
+                workflow_results: result  // Store the full workflow results for reference
+              };
+              
+              // Deselect item if it was selected, as it has been regenerated
+              if (selectedVariations.has(id)) {
+                setSelectedVariations(prevSelected => {
+                  const newSelected = new Set(prevSelected);
+                  newSelected.delete(id);
+                  return newSelected;
+                });
+                toast.info("Deselected item due to regeneration.");
+              }
             }
+            return updated;
+          });
+        } catch (error) {
+          console.error('Workflow regeneration failed:', error);
+          setVariations(prevVariations => {
+            const updated = [...prevVariations];
+            const index = updated.findIndex(v => v.id === id);
+            if (index !== -1) {
+              updated[index] = {
+                ...updated[index],
+                isGenerating: false,
+                error: `Workflow execution failed: ${error.message}`,
+                _source: 'workflow_regen_error'
+              };
+            }
+            return updated;
+          });
+        }
+      } else {
+        // Standard regeneration without workflow
+        await api.generate(regenParams, (result) => {
+          setVariations(prevVariations => {
+            const updated = [...prevVariations];
+            const targetIndex = updated.findIndex(v => v.id === id);
 
-          } else {
-            console.error(`Could not find variation with id ${id} to update after regeneration.`);
-          }
-          return updated;
+            if (targetIndex !== -1) {
+              updated[targetIndex] = {
+                ...updated[targetIndex],
+                variation: result.variation,
+                output: result.output,
+                tool_calls: result.tool_calls,
+                processed_prompt: result.processed_prompt,
+                seed_index: result.seed_index ?? originalSeedIndex,
+                variation_index: result.variation_index ?? originalVariationIndex,
+                slots: result.slots ?? slotData,
+                system_prompt: result.system_prompt, // Store system_prompt from backend
+                template_id: result.template_id, // Properly update template_id from backend response
+                isGenerating: false,
+                error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
+              };
+
+              // Deselect item if it was selected, as it has been regenerated
+              if (selectedVariations.has(id)) {
+                setSelectedVariations(prevSelected => {
+                  const newSelected = new Set(prevSelected);
+                  newSelected.delete(id);
+                  return newSelected;
+                });
+                toast.info("Deselected item due to regeneration.");
+              }
+
+            } else {
+              console.error(`Could not find variation with id ${id} to update after regeneration.`);
+            }
+            return updated;
+          });
         });
-      });
+      }
 
     } catch (error) {
       console.error('Regeneration failed:', error);
@@ -411,7 +599,7 @@ const Generate = ({ context }) => {
         return updated;
       });
     }
-  }, [selectedTemplate, isGenerating, isParaphrasing, selectedVariations]);
+  }, [selectedTemplate, isGenerating, isParaphrasing, selectedVariations, workflowEnabled, currentWorkflow]);
 
   const handleSaveSelectedToDataset = async () => {
     if (!selectedDataset) {
@@ -620,6 +808,21 @@ const Generate = ({ context }) => {
     setParaphraseSourceId(null);
     setIsParaphrasing(false); // Reset global paraphrasing flag
   }, []);
+  
+  // Handler for toggling workflow mode
+  const handleToggleWorkflow = () => {
+    setWorkflowEnabled(!workflowEnabled);
+  };
+
+  // Handler for workflow import/export
+  const handleWorkflowImport = (workflow) => {
+    setCurrentWorkflow(workflow);
+    toast.success(`Workflow "${workflow.name}" imported`);
+  };
+
+  const handleWorkflowExport = () => {
+    toast.success('Workflow exported');
+  };
 
   // Determine button text and action based on selected variations
   const saveButtonText = selectedCount > 0
@@ -668,6 +871,36 @@ const Generate = ({ context }) => {
               isLoading={isLoading}
               disabled={isLoading || isGenerating || templates.length === 0 || selectedDataset?.archived} // Disable if archived
             />
+            
+            {/* Workflow Toggle */}
+            <div className="mt-3 flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">
+                Workflow Mode
+              </label>
+              <div className="relative inline-block w-10 align-middle select-none">
+                <input
+                  type="checkbox"
+                  name="workflow-toggle"
+                  id="workflow-toggle"
+                  className="opacity-0 absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
+                  checked={workflowEnabled}
+                  onChange={handleToggleWorkflow}
+                  disabled={isGenerating || isParaphrasing}
+                />
+                <label
+                  htmlFor="workflow-toggle"
+                  className={`block overflow-hidden h-6 rounded-full cursor-pointer ${
+                    workflowEnabled ? 'bg-blue-500' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out ${
+                      workflowEnabled ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  ></span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <div className="pl-4">
@@ -742,6 +975,7 @@ const Generate = ({ context }) => {
                   isGenerating={variation.isGenerating || false}
                   isParaphrasing={isParaphrasing}
                   error={variation.error || null}
+                  workflow_results={variation.workflow_results} // Pass workflow results if available
                   onSelect={() => handleSelect(variation.id)} // Use select handler
                   onEdit={(output) => handleEdit(variation.id, output)}
                   onRegenerate={(instruction) => handleRegenerate(variation.id, instruction)}
@@ -754,6 +988,20 @@ const Generate = ({ context }) => {
           )}
         </div>
       </div>
+      
+      {/* Workflow Manager */}
+      {workflowEnabled && (
+        <div className="border-t pt-6 w-full">
+          <WorkflowManager
+            visible={workflowEnabled}
+            workflow={currentWorkflow}
+            setWorkflow={setCurrentWorkflow}
+            onImport={handleWorkflowImport}
+            onExport={handleWorkflowExport}
+            disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+          />
+        </div>
+      )}
 
       {selectedDataset && (
         <div className="border-t pt-6 w-full">

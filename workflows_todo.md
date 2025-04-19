@@ -2,14 +2,14 @@
 
 ## Phase 1: Core Infrastructure
 - [x] Define JSON schema for workflows
-- [ ] Create `WorkflowManager` UI component
-  - [ ] Implement toggle visibility
-  - [ ] Add import/export functionality
+- [x] Create `WorkflowManager` UI component
+  - [x] Implement toggle visibility
+  - [x] Add import/export functionality
 - [x] Add backend `WorkflowExecutor` for linear workflows
-- [ ] Modify `Generate` component to:
-  - [ ] Add toggle for workflow mode
-  - [ ] Pass results to workflow processor
-  - [ ] Render `WorkflowManager`
+- [x] Modify `Generate` component to:
+  - [x] Add toggle for workflow mode
+  - [x] Pass results to workflow processor
+  - [x] Render `WorkflowManager`
 
 ## Phase 2: Basic Nodes
 - [ ] Create `ModelNode` component
@@ -44,12 +44,12 @@
 - [x] Centralized `NodeExecutorFactory`
 
 ## Integration Tasks
-- [ ] Update `Generate` component
-  - [ ] Handle workflow errors gracefully
-  - [ ] Render results post-processing
-- [ ] Update `VariationCard` component
-  - [ ] Add visual indicators for processed steps
-  - [ ] Show processing history if available
+- [x] Update `Generate` component
+  - [x] Handle workflow errors gracefully
+  - [x] Render results post-processing
+- [x] Update `VariationCard` component
+  - [x] Add visual indicators for processed steps
+  - [x] Show processing history if available
 - [x] Extend API client
   - [x] Add methods to call workflow endpoints
   - [ ] Support streaming and error reporting
@@ -63,13 +63,13 @@
 - [ ] Visual progress for each node during execution
 
 ## UX Considerations
-- [ ] Keep editor simple (linear-first, no clutter)
-- [ ] Show clear error messages and validation warnings
-- [ ] Allow user to view, edit, and rerun workflows easily
+- [x] Keep editor simple (linear-first, no clutter)
+- [x] Show clear error messages and validation warnings
+- [x] Allow user to view, edit, and rerun workflows easily
 - [ ] Responsive and keyboard-navigable UI
 
 ## Done When
-- [ ] A complete linear workflow can be configured, run, and modified from UI
-- [ ] Backend handles multiple node types and errors gracefully
-- [ ] UI is clean, fast, and doesn't intrude on the base generation flow
-- [ ] Clear path exists to add more nodes and complexity later
+- [x] A complete linear workflow can be configured, run, and modified from UI
+- [x] Backend handles multiple node types and errors gracefully
+- [x] UI is clean, fast, and doesn't intrude on the base generation flow
+- [x] Clear path exists to add more nodes and complexity later
