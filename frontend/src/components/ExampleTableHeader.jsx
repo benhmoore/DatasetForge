@@ -4,6 +4,7 @@ import Icon from './Icons';
 const ExampleTableHeader = forwardRef(({ 
   selectedExamples,
   handleDeleteSelected,
+  handleParaphraseSelected,
   handleExport,
   getSearchTerm,
   setSearchTerm,
@@ -71,23 +72,49 @@ const ExampleTableHeader = forwardRef(({
       
       <div className="flex space-x-2">
         {selectedExamples.size > 0 && (
-          <button
-            onClick={handleDeleteSelected}
-            className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm transition-all duration-200 transform hover:shadow active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-            disabled={isProcessing}
-          >
-            {isProcessing ? (
-              <>
-                <Icon name="spinner" className="animate-spin h-4 w-4 mr-1" />
-                Processing...
-              </>
-            ) : (
-              <>
-                <Icon name="trash" className="w-4 h-4 mr-1" />
-                Delete Selected
-              </>
-            )}
-          </button>
+          <>
+            <button
+              onClick={handleDeleteSelected}
+              className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm transition-all duration-200 transform hover:shadow active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <>
+                  <Icon name="spinner" className="animate-spin h-4 w-4 mr-1" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Icon name="trash" className="w-4 h-4 mr-1" />
+                  Delete Selected
+                </>
+              )}
+            </button>
+            
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (handleParaphraseSelected) {
+                  handleParaphraseSelected();
+                }
+              }}
+              className="px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-sm transition-all duration-200 transform hover:shadow active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+              disabled={isProcessing}
+              title="Create paraphrased versions of selected examples"
+            >
+              {isProcessing ? (
+                <>
+                  <Icon name="spinner" className="animate-spin h-4 w-4 mr-1" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Icon name="language" className="w-4 h-4 mr-1" />
+                  Paraphrase Selected
+                </>
+              )}
+            </button>
+          </>
         )}
         
         <button

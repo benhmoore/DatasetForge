@@ -4,6 +4,7 @@ import api from '../api/apiClient';
 import ExampleDetailModal from './ExampleDetailModal';
 import ExportDialog from './ExportDialog';
 import ConfirmationModal from './ConfirmationModal'; // Import ConfirmationModal
+import BulkParaphraseModal from './BulkParaphraseModal'; // Import BulkParaphraseModal
 import Icon from './Icons';
 import ExampleTableHeader from './ExampleTableHeader';
 
@@ -29,6 +30,9 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   
   // For export dialog
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  
+  // For bulk paraphrase modal
+  const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
   
   // For search - useRef to maintain stable references
   const searchStateRef = useRef({
@@ -351,6 +355,22 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     setIsExportDialogOpen(true);
   };
   
+  // Handle paraphrasing selected examples
+  const handleParaphraseSelected = () => {
+    if (selectedExamples.size === 0) return;
+    
+    // Get the selected examples
+    const selectedExamplesList = examples.filter(ex => selectedExamples.has(ex.id));
+    
+    if (selectedExamplesList.length === 0) {
+      toast.warning('No valid examples selected for paraphrasing');
+      return;
+    }
+    
+    // Open the paraphrase modal
+    setIsParaphraseModalOpen(true);
+  };
+  
   // Handle row click to open detail modal
   const handleRowClick = (example) => {
     // Don't open modal if user is selecting examples or editing a cell
@@ -533,6 +553,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
         ref={headerComponentRef}
         selectedExamples={selectedExamples}
         handleDeleteSelected={handleDeleteSelected}
+        handleParaphraseSelected={handleParaphraseSelected}
         handleExport={handleExport}
         getSearchTerm={getSearchTerm}
         setSearchTerm={setSearchTerm}
@@ -1044,6 +1065,18 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
         }
         confirmButtonText="Confirm Delete"
         confirmButtonVariant="danger"
+      />
+      
+      {/* Bulk Paraphrase Modal */}
+      <BulkParaphraseModal
+        isOpen={isParaphraseModalOpen}
+        onClose={() => setIsParaphraseModalOpen(false)}
+        examples={examples.filter(ex => selectedExamples.has(ex.id))}
+        datasetId={datasetId}
+        onSuccess={() => {
+          setSelectedExamples(new Set()); // Clear selection
+          fetchExamples(); // Refresh the list
+        }}
       />
     </div>
   );

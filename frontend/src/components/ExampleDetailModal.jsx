@@ -2,8 +2,17 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import Icon from './Icons';
+import ParaphraseModal from './ParaphraseModal';
 
-const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpdated }) => {
+const ExampleDetailModal = ({ 
+  isOpen, 
+  example, 
+  datasetId, 
+  onClose, 
+  onExampleUpdated,
+  renderExtraButtons,
+  onTabChange
+}) => {
   // State declarations - always in the same order
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -14,6 +23,8 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
   const [editingToolCalls, setEditingToolCalls] = useState(false);
   const [editedToolCalls, setEditedToolCalls] = useState('');
   const [toolCallValidationError, setToolCallValidationError] = useState(null);
+  // Paraphrase state
+  const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
   
   // Refs - always in the same order
   const modalRef = useRef(null);
@@ -45,6 +56,23 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
   const handleEdit = useCallback(() => {
     setIsEditing(true);
   }, []);
+  
+  // Open paraphrase modal
+  const handleOpenParaphraseModal = useCallback(() => {
+    if (!example || !example.output) {
+      toast.error('Cannot paraphrase: No output content available');
+      return;
+    }
+    setIsParaphraseModalOpen(true);
+  }, [example]);
+  
+  // Handle paraphrase success
+  const handleParaphraseSuccess = useCallback(() => {
+    // If onExampleUpdated is provided, call it to refresh the parent component
+    if (onExampleUpdated) {
+      onExampleUpdated(example);
+    }
+  }, [example, onExampleUpdated]);
 
   // Cancel editing and reset to original values
   const handleCancel = useCallback(() => {
@@ -974,4 +1002,77 @@ const ExampleDetailModal = ({ isOpen, example, datasetId, onClose, onExampleUpda
   );
 };
 
-export default ExampleDetailModal;
+// Create a wrapper component that adds paraphrase functionality
+const ExampleDetailModalWithParaphrase = (props) => {
+  const { isOpen, example, datasetId, onClose, onExampleUpdated } = props;
+  
+  // States for paraphrase functionality
+  const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('content');
+  
+  // Handle tab changes to sync with the inner ExampleDetailModal
+  // We need this to know when to show the paraphrase button
+  const handleTabChange = useCallback((tab) => {
+    setActiveTab(tab);
+  }, []);
+  
+  // Success handler for paraphrasing
+  const handleParaphraseSuccess = useCallback(() => {
+    if (onExampleUpdated && example) {
+      onExampleUpdated(example);
+    }
+  }, [example, onExampleUpdated]);
+  
+  // Handler for opening the paraphrase modal
+  const handleOpenParaphraseModal = useCallback(() => {
+    if (!example || !example.output) {
+      return;
+    }
+    setIsParaphraseModalOpen(true);
+  }, [example]);
+  
+  // Modified props to pass to the original component
+  const modifiedProps = {
+    ...props,
+    // Add custom render functions for buttons
+    renderExtraButtons: () => {
+      if (activeTab !== 'content') return null;
+      
+      return (
+        <button
+          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2"
+          onClick={handleOpenParaphraseModal}
+        >
+          <Icon name="language" className="h-5 w-5 mr-2" />
+          Paraphrase
+        </button>
+      );
+    },
+    onTabChange: handleTabChange
+  };
+
+  return (
+    <>
+      <ExampleDetailModal {...modifiedProps} />
+      
+      {example && (
+        <ParaphraseModal
+          isOpen={isParaphraseModalOpen}
+          onClose={() => setIsParaphraseModalOpen(false)}
+          sourceText={example.output || ''}
+          variationId={example.id}
+          onEdit={(id, newOutput) => {
+            // The onEdit handler will create new examples rather than editing the current one
+            // This is just to maintain the API compatibility with the modal
+          }}
+          onAddVariations={() => {
+            // After adding variations, we'll update/refresh the view
+            handleParaphraseSuccess();
+          }}
+        />
+      )}
+    </>
+  );
+};
+
+export default ExampleDetailModalWithParaphrase;
