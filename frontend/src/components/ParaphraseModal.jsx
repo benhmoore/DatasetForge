@@ -47,11 +47,16 @@ const ParaphraseModal = ({
   }, [isOpen]);
   
   // Clear all state when closing modal
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback((e) => {
+    // Make sure event doesn't bubble up to parent elements
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+    
     setParaphraseInstruction('');
     setParaphrasedOutputs([]);
     setSelectedParaphrases([]);
-    onClose();
+    onClose(e);
   }, [onClose]);
   
   // Generate paraphrases
@@ -93,7 +98,12 @@ const ParaphraseModal = ({
   }, []);
   
   // Handle saving the selected paraphrases
-  const handleSaveParaphrases = useCallback(() => {
+  const handleSaveParaphrases = useCallback((e) => {
+    // Prevent event bubbling
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+    
     // If none selected, show a warning
     if (selectedParaphrases.length === 0) {
       toast.warning("Please select at least one paraphrase to save.");
@@ -111,7 +121,7 @@ const ParaphraseModal = ({
     }
     
     // Close the modal and reset states
-    handleClose();
+    handleClose(e);
   }, [selectedParaphrases, variationId, onAddVariations, handleClose]);
   
   // Handle key press
@@ -239,7 +249,10 @@ const ParaphraseModal = ({
           </div>
           <div className="flex space-x-2">
             <button
-              onClick={handleClose}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClose(e);
+              }}
               className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
             >
               Cancel
@@ -247,7 +260,10 @@ const ParaphraseModal = ({
             
             {paraphrasedOutputs.length > 0 ? (
               <button
-                onClick={handleSaveParaphrases}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSaveParaphrases(e);
+                }}
                 disabled={selectedParaphrases.length === 0}
                 className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors focus:ring-2 focus:ring-green-300 focus:ring-offset-2 disabled:bg-green-300 disabled:cursor-not-allowed"
               >
@@ -255,7 +271,10 @@ const ParaphraseModal = ({
               </button>
             ) : (
               <button
-                onClick={handleParaphraseWithInstruction}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleParaphraseWithInstruction();
+                }}
                 disabled={isParaphrasing}
                 className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 disabled:bg-primary-400"
               >

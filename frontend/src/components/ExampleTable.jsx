@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
-import ExampleDetailModal from './ExampleDetailModal';
+import ExampleDetailModalWithParaphrase from './ExampleDetailModalWithParaphrase';
 import ExportDialog from './ExportDialog';
 import ConfirmationModal from './ConfirmationModal'; // Import ConfirmationModal
 import BulkParaphraseModal from './BulkParaphraseModal'; // Import BulkParaphraseModal
@@ -1031,8 +1031,8 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
         </>
       )}
       
-      {/* Detail Modal */}
-      <ExampleDetailModal
+      {/* Detail Modal with Paraphrase */}
+      <ExampleDetailModalWithParaphrase
         isOpen={isDetailModalOpen}
         example={selectedExample}
         datasetId={datasetId}

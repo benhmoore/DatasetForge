@@ -261,8 +261,12 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
   const addSeed = useCallback(() => {
     if (isDisabled) return; // Prevent changes if disabled
     setSeedList(prevList => {
+      // Create a new blank seed
       const blankSeed = createInitialSeed(template?.slots);
+      // Important: We need to create a new array to avoid React state mutation issues 
+      // but we must use the spread operator to preserve ALL existing seeds
       const newList = [...prevList, blankSeed];
+      // Navigate to the newly added seed
       setCurrentSeedIndex(newList.length - 1);
       setValidationErrors({}); // Clear errors when adding/navigating
       return newList;

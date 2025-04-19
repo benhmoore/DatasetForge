@@ -138,13 +138,24 @@ const SeedBankModal = ({
       }, {});
     };
     
-    setSeedList(prevList => {
-      const blankSeed = createInitialSeed(template?.slots);
-      return [...prevList, blankSeed];
-    });
+    // Create a blank seed with a unique ID
+    const blankSeed = createInitialSeed(template?.slots);
+    const newSeedId = `seed-new-${Date.now()}`;
+    blankSeed._id = newSeedId;
+    
+    // Only update the local state - changes will be synced to parent when closing
+    setLocalSeedList(prevList => [...prevList, blankSeed]);
+    
+    // Scroll to bottom of table after a short delay to show the new seed
+    setTimeout(() => {
+      const tableContainer = document.querySelector('.overflow-y-auto');
+      if (tableContainer) {
+        tableContainer.scrollTop = tableContainer.scrollHeight;
+      }
+    }, 100);
     
     toast.success('New seed added');
-  }, [template, setSeedList, isDisabled]);
+  }, [template, isDisabled]);
 
   // Delete selected seeds
   const deleteSelectedSeeds = useCallback(() => {

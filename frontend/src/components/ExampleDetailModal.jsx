@@ -891,6 +891,15 @@ const ExampleDetailModal = ({
     );
   };
 
+  // Effect for tab changes (always used, though might be a no-op if onTabChange is not provided)
+  useEffect(() => {
+    // We always call this effect, even if onTabChange is undefined
+    // This ensures consistent hooks ordering
+    if (onTabChange) {
+      onTabChange(activeTab);
+    }
+  }, [activeTab, onTabChange]);
+
   // Render the active tab content
   const renderTabContent = () => {
     switch (activeTab) {
@@ -981,6 +990,9 @@ const ExampleDetailModal = ({
             </>
           ) : (
             <>
+              {/* Render extra buttons if provided (used by the wrapper component) */}
+              {renderExtraButtons && renderExtraButtons()}
+              
               <button
                 className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
                 onClick={onClose}
@@ -1002,77 +1014,4 @@ const ExampleDetailModal = ({
   );
 };
 
-// Create a wrapper component that adds paraphrase functionality
-const ExampleDetailModalWithParaphrase = (props) => {
-  const { isOpen, example, datasetId, onClose, onExampleUpdated } = props;
-  
-  // States for paraphrase functionality
-  const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('content');
-  
-  // Handle tab changes to sync with the inner ExampleDetailModal
-  // We need this to know when to show the paraphrase button
-  const handleTabChange = useCallback((tab) => {
-    setActiveTab(tab);
-  }, []);
-  
-  // Success handler for paraphrasing
-  const handleParaphraseSuccess = useCallback(() => {
-    if (onExampleUpdated && example) {
-      onExampleUpdated(example);
-    }
-  }, [example, onExampleUpdated]);
-  
-  // Handler for opening the paraphrase modal
-  const handleOpenParaphraseModal = useCallback(() => {
-    if (!example || !example.output) {
-      return;
-    }
-    setIsParaphraseModalOpen(true);
-  }, [example]);
-  
-  // Modified props to pass to the original component
-  const modifiedProps = {
-    ...props,
-    // Add custom render functions for buttons
-    renderExtraButtons: () => {
-      if (activeTab !== 'content') return null;
-      
-      return (
-        <button
-          className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors flex items-center focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2"
-          onClick={handleOpenParaphraseModal}
-        >
-          <Icon name="language" className="h-5 w-5 mr-2" />
-          Paraphrase
-        </button>
-      );
-    },
-    onTabChange: handleTabChange
-  };
-
-  return (
-    <>
-      <ExampleDetailModal {...modifiedProps} />
-      
-      {example && (
-        <ParaphraseModal
-          isOpen={isParaphraseModalOpen}
-          onClose={() => setIsParaphraseModalOpen(false)}
-          sourceText={example.output || ''}
-          variationId={example.id}
-          onEdit={(id, newOutput) => {
-            // The onEdit handler will create new examples rather than editing the current one
-            // This is just to maintain the API compatibility with the modal
-          }}
-          onAddVariations={() => {
-            // After adding variations, we'll update/refresh the view
-            handleParaphraseSuccess();
-          }}
-        />
-      )}
-    </>
-  );
-};
-
-export default ExampleDetailModalWithParaphrase;
+export default ExampleDetailModal;
