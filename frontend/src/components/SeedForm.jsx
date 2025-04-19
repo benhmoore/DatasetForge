@@ -5,6 +5,7 @@ import AiSeedModal from './AiSeedModal'; // Import the new modal component
 import SeedBankModal from './SeedBankModal'; // Import the seed bank modal
 import Icon from './Icons'; // Import the Icon component
 import CustomSlider from './CustomSlider'; // Import the new CustomSlider component
+import FileImportButton from './FileImportButton'; // Import the new FileImportButton component
 
 // Define the helper function to generate the prompt preview
 const generatePromptPreview = (promptTemplate, slotValues) => {
@@ -667,17 +668,11 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
           <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
             <span>{slot.charAt(0).toUpperCase() + slot.slice(1)}</span>
             {hasError && <span className="text-red-500 ml-1">*</span>}
-            <button
-              type="button"
-              onClick={() => handleImportFileToSlot(slot)}
-              disabled={isDisabled}
-              className="text-xs text-purple-600 hover:text-purple-800 disabled:text-purple-300 disabled:cursor-not-allowed flex items-center transition-colors duration-150"
-              title={`Import file content into ${slot}`}
-              aria-label={`Import file content into ${slot}`}
-            >
-              <Icon name="document" className="w-3 h-3 mr-1" />
-              <span>Import file</span>
-            </button>
+            <FileImportButton
+              slot={slot}
+              onImport={handleImportFileToSlot}
+              isDisabled={isDisabled}
+            />
           </label>
           <div className="relative">
             <input

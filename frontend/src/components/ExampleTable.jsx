@@ -34,43 +34,37 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   // For bulk paraphrase modal
   const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
   
-  // For search - useRef to maintain stable references
-  const searchStateRef = useRef({
-    searchTerm: '',
-    debouncedSearchTerm: '',
-    isSearching: false,
-    timer: null
-  });
+  // Modern search implementation with state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const searchInputRef = useRef(null);
   
-  // Create memoized accessor functions that don't change on re-renders
-  const getSearchTerm = useCallback(() => searchStateRef.current.searchTerm, []);
-  const getDebouncedSearchTerm = useCallback(() => searchStateRef.current.debouncedSearchTerm, []);
-  const getIsSearching = useCallback(() => searchStateRef.current.isSearching, []);
+  // Use useEffect for debouncing search
+  useEffect(() => {
+    // Skip initial render
+    if (searchTerm === debouncedSearchTerm) return;
+    
+    const timerId = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      if (searchTerm) {
+        setPage(1); // Reset to first page when search changes
+      }
+    }, 500); // 500ms debounce delay
+    
+    // Cleanup timer on every searchTerm change
+    return () => clearTimeout(timerId);
+  }, [searchTerm]);
   
-  // Create memoized setter functions that don't change on re-renders
-  const setSearchTerm = useCallback((value) => {
-    searchStateRef.current.searchTerm = value;
-    // Force re-render of only the header component
-    if (headerComponentRef.current?.forceUpdate) {
-      headerComponentRef.current.forceUpdate();
+  // Handle clearing search
+  const handleClearSearch = useCallback(() => {
+    setSearchTerm('');
+    setDebouncedSearchTerm('');
+    // Only trigger a search fetch if we actually had a previous search term
+    if (debouncedSearchTerm) {
+      setPage(1);
     }
-  }, []);
-  
-  const setDebouncedSearchTerm = useCallback((value) => {
-    searchStateRef.current.debouncedSearchTerm = value;
-  }, []);
-  
-  const setIsSearching = useCallback((value) => {
-    searchStateRef.current.isSearching = value;
-    // Force re-render of only the header component
-    if (headerComponentRef.current?.forceUpdate) {
-      headerComponentRef.current.forceUpdate();
-    }
-  }, []);
-  
-  // Ref to access header component
-  const headerComponentRef = useRef(null);
+  }, [debouncedSearchTerm]);
   
   // For sorting
   const [sortField, setSortField] = useState('id'); // Default sort by ID
@@ -87,10 +81,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const fetchExamples = async () => {
     if (!datasetId) return;
     
-    // Track active element before the fetch starts
-    const activeElementBeforeFetch = document.activeElement;
-    const wasSearchFocused = activeElementBeforeFetch === searchInputRef.current;
-    
+    // Show appropriate loading states
     if (page !== 1) {
       setIsPaginationLoading(true);
     } else {
@@ -98,8 +89,8 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     }
     
     try {
-      const debouncedTerm = getDebouncedSearchTerm();
-      const searchParam = debouncedTerm.trim() || null;
+      const searchParam = debouncedSearchTerm.trim() || null;
+      
       if (searchParam) {
         setIsSearching(true);
       }
@@ -110,7 +101,6 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       // Calculate total pages
       const total = response.total;
       setTotalPages(Math.ceil(total / pageSize));
-      console.log(`Fetched ${response.items.length} examples, total: ${total}`);
       
       if (searchParam) {
         setIsSearching(false);
@@ -122,88 +112,36 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     } finally {
       setIsLoading(false);
       setIsPaginationLoading(false);
-      
-      // Restore focus after all state updates
-      // Use requestAnimationFrame to ensure DOM has updated
-      if (wasSearchFocused && searchInputRef.current) {
-        requestAnimationFrame(() => {
-          searchInputRef.current?.focus();
-        });
-      }
     }
   };
   
-  // Fetch examples when datasetId, page, or refreshTrigger changes
+  // Add keyboard event handler for search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Handle Enter key for search submission
+      if (e.key === 'Enter' && document.activeElement === searchInputRef.current) {
+        e.preventDefault();
+        setDebouncedSearchTerm(searchTerm);
+        setPage(1);
+      }
+      
+      // Handle Escape key to clear search
+      if (e.key === 'Escape' && searchTerm && document.activeElement === searchInputRef.current) {
+        e.preventDefault();
+        handleClearSearch();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchTerm, handleClearSearch]);
+  
+  // Fetch examples when these dependencies change
   useEffect(() => {
     fetchExamples();
     // Clear selections when changing pages or refreshing
     setSelectedExamples(new Set());
-  }, [datasetId, page, refreshTrigger, sortField, sortDirection]);
-  
-  // Separate effect for debounced search term changes to prevent table re-renders
-  useEffect(() => {
-    const debouncedTerm = getDebouncedSearchTerm();
-    if (debouncedTerm !== '') {
-      fetchExamples();
-    }
-  }, [getDebouncedSearchTerm]);
-  
-  // Custom debounce implementation that doesn't rely on re-renders
-  useEffect(() => {
-    // Setup debounce timer to update search
-    const handleSearchDebounce = () => {
-      const currentSearchTerm = getSearchTerm();
-      const currentDebouncedTerm = getDebouncedSearchTerm();
-      
-      // Record current focus state before the debounce timeout
-      const isInputFocused = document.activeElement === searchInputRef.current;
-      
-      // Create a debounce timer
-      const timer = setTimeout(() => {
-        // Only update if the search term actually changed
-        if (currentSearchTerm !== currentDebouncedTerm) {
-          setDebouncedSearchTerm(currentSearchTerm);
-          // Reset to page 1 when search changes
-          setPage(1);
-        }
-        
-        // If input was focused before the timeout, restore focus after state updates
-        if (isInputFocused && searchInputRef.current) {
-          requestAnimationFrame(() => {
-            searchInputRef.current?.focus();
-          });
-        }
-      }, 500); // 500ms delay
-      
-      return timer;
-    };
-    
-    // Start a listener for search input changes
-    const searchListener = () => {
-      // Clear previous timer if exists
-      if (searchStateRef.current.timer) {
-        clearTimeout(searchStateRef.current.timer);
-      }
-      
-      // Set new timer
-      searchStateRef.current.timer = handleSearchDebounce();
-    };
-    
-    // Add event listener to the search input
-    if (searchInputRef.current) {
-      searchInputRef.current.addEventListener('input', searchListener);
-    }
-    
-    // Cleanup function
-    return () => {
-      if (searchInputRef.current) {
-        searchInputRef.current.removeEventListener('input', searchListener);
-      }
-      if (searchStateRef.current.timer) {
-        clearTimeout(searchStateRef.current.timer);
-      }
-    };
-  }, []); // Only run once on component mount
+  }, [datasetId, page, refreshTrigger, sortField, sortDirection, debouncedSearchTerm]);
   
   // Handle pagination
   const handlePageChange = (newPage) => {
@@ -550,30 +488,29 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     <div className="space-y-4 w-full">
       {/* Header with actions */}
       <ExampleTableHeader 
-        ref={headerComponentRef}
         selectedExamples={selectedExamples}
         handleDeleteSelected={handleDeleteSelected}
         handleParaphraseSelected={handleParaphraseSelected}
         handleExport={handleExport}
-        getSearchTerm={getSearchTerm}
-        setSearchTerm={setSearchTerm}
-        getIsSearching={getIsSearching}
+        searchValue={searchTerm}
+        onSearchChange={setSearchTerm}
+        isSearching={isSearching}
         isProcessing={isProcessing}
         hasExamples={examples.length > 0}
-        searchInputRef={searchInputRef}
+        onClearSearch={handleClearSearch}
       />
       
       {examples.length === 0 ? (
         <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full mx-4 sm:mx-6 lg:mx-8">
-          {getDebouncedSearchTerm() ? (
+          {debouncedSearchTerm ? (
             <div className="py-8">
               <Icon name="search" className="mx-auto h-12 w-12 text-gray-400" />
               <p className="mt-4 text-gray-500 text-lg">
-                No examples found matching "<span className="font-medium text-primary-600">{getDebouncedSearchTerm()}</span>"
+                No examples found matching "<span className="font-medium text-primary-600">{debouncedSearchTerm}</span>"
               </p>
               <button 
-                className="mt-3 px-4 py-2 text-sm font-medium text-primary-600 hover:text-primary-800 hover:underline focus:outline-none focus:ring-2 focus:ring-primary-500"
-                onClick={() => setSearchTerm('')}
+                className="mt-4 px-4 py-2 text-sm font-medium bg-primary-50 text-primary-600 rounded-md hover:bg-primary-100 hover:text-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
+                onClick={handleClearSearch}
               >
                 Clear search
               </button>

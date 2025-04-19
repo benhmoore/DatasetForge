@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import Icon from './Icons';
 import api from '../api/apiClient';
+import FileImportButton from './FileImportButton';
 
 // Helper function to check if a seed is blank
 const isBlankSeed = (seed, slots) => {
@@ -352,6 +353,26 @@ const SeedBankModal = ({
     input.click();
   }, [template, setSeedList, isDisabled]);
 
+  // Handle importing content from a file into a specific slot
+  const handleImportFileToSlot = useCallback((seed, slot) => {
+    if (isDisabled) return;
+    
+    // Find the correct index in the local seed list
+    const localIndex = localSeedList.findIndex(s => s === seed);
+    if (localIndex === -1) return;
+    
+    return (content, file) => {
+      // Update the local list without modifying the parent state
+      const newLocalList = [...localSeedList];
+      newLocalList[localIndex] = {
+        ...newLocalList[localIndex],
+        [slot]: content
+      };
+      setLocalSeedList(newLocalList);
+      toast.success(`Successfully imported content from ${file.name} into ${slot}.`);
+    };
+  }, [localSeedList, isDisabled]);
+
   if (!isOpen || !template) return null;
 
   return (
@@ -557,78 +578,94 @@ const SeedBankModal = ({
                           {/* Slot values - Always editable */}
                           {template.slots.map((slot, slotIndex) => (
                             <td key={slot} className="px-3 py-4 text-sm">
-                              <input 
-                                type="text" 
-                                value={seed[slot] || ''} 
-                                onChange={(e) => {
-                                  if (isDisabled) return;
-                                  
-                                  // Find the correct index in the local seed list
-                                  const localIndex = localSeedList.findIndex(s => s === seed);
-                                  if (localIndex === -1) return;
-                                  
-                                  // Update the local list without modifying the parent state
-                                  const newLocalList = [...localSeedList];
-                                  newLocalList[localIndex] = {
-                                    ...newLocalList[localIndex],
-                                    [slot]: e.target.value
-                                  };
-                                  setLocalSeedList(newLocalList);
-                                }}
-                                onKeyDown={(e) => {
-                                  // Tab navigation with keyboard
-                                  const isLastSlot = slotIndex === template.slots.length - 1;
-                                  const isLastRow = displayIndex === filteredSeeds.length - 1;
-                                  
-                                  if (e.key === 'Enter') {
-                                    // Move to the next row, same column on Enter
-                                    if (!isLastRow) {
-                                      const nextRowIndex = displayIndex + 1;
-                                      
-                                      // Focus the same field in the next row
-                                      setTimeout(() => {
-                                        const nextInput = document.querySelector(`tr:nth-child(${nextRowIndex + 1}) td:nth-child(${slotIndex + 3}) input`);
-                                        if (nextInput) nextInput.focus();
-                                      }, 0);
+                              <div className="relative">
+                                <input 
+                                  type="text" 
+                                  value={seed[slot] || ''} 
+                                  onChange={(e) => {
+                                    if (isDisabled) return;
+                                    
+                                    // Find the correct index in the local seed list
+                                    const localIndex = localSeedList.findIndex(s => s === seed);
+                                    if (localIndex === -1) return;
+                                    
+                                    // Update the local list without modifying the parent state
+                                    const newLocalList = [...localSeedList];
+                                    newLocalList[localIndex] = {
+                                      ...newLocalList[localIndex],
+                                      [slot]: e.target.value
+                                    };
+                                    setLocalSeedList(newLocalList);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    // Tab navigation with keyboard
+                                    const isLastSlot = slotIndex === template.slots.length - 1;
+                                    const isLastRow = displayIndex === filteredSeeds.length - 1;
+                                    
+                                    if (e.key === 'Enter') {
+                                      // Move to the next row, same column on Enter
+                                      if (!isLastRow) {
+                                        const nextRowIndex = displayIndex + 1;
+                                        
+                                        // Focus the same field in the next row
+                                        setTimeout(() => {
+                                          const nextInput = document.querySelector(`tr:nth-child(${nextRowIndex + 1}) td:nth-child(${slotIndex + 3}) input`);
+                                          if (nextInput) nextInput.focus();
+                                        }, 0);
+                                      }
+                                    } else if (e.key === 'ArrowDown') {
+                                      // Move down a row
+                                      if (!isLastRow) {
+                                        const nextRowIndex = displayIndex + 1;
+                                        setTimeout(() => {
+                                          const nextInput = document.querySelector(`tr:nth-child(${nextRowIndex + 1}) td:nth-child(${slotIndex + 3}) input`);
+                                          if (nextInput) nextInput.focus();
+                                        }, 0);
+                                      }
+                                    } else if (e.key === 'ArrowUp') {
+                                      // Move up a row
+                                      if (displayIndex > 0) {
+                                        const prevRowIndex = displayIndex - 1;
+                                        setTimeout(() => {
+                                          const prevInput = document.querySelector(`tr:nth-child(${prevRowIndex + 1}) td:nth-child(${slotIndex + 3}) input`);
+                                          if (prevInput) prevInput.focus();
+                                        }, 0);
+                                      }
                                     }
-                                  } else if (e.key === 'ArrowDown') {
-                                    // Move down a row
-                                    if (!isLastRow) {
-                                      const nextRowIndex = displayIndex + 1;
-                                      setTimeout(() => {
-                                        const nextInput = document.querySelector(`tr:nth-child(${nextRowIndex + 1}) td:nth-child(${slotIndex + 3}) input`);
-                                        if (nextInput) nextInput.focus();
-                                      }, 0);
-                                    }
-                                  } else if (e.key === 'ArrowUp') {
-                                    // Move up a row
-                                    if (displayIndex > 0) {
-                                      const prevRowIndex = displayIndex - 1;
-                                      setTimeout(() => {
-                                        const prevInput = document.querySelector(`tr:nth-child(${prevRowIndex + 1}) td:nth-child(${slotIndex + 3}) input`);
-                                        if (prevInput) prevInput.focus();
-                                      }, 0);
-                                    }
-                                  }
-                                }}
-                                onDoubleClick={() => {
-                                  // On double click, select the current seed and close the modal
-                                  // First, sync the local changes to the parent state
-                                  setSeedList(localSeedList);
-                                  
-                                  // Find the original index in the parent seedList
-                                  const syncedIndex = seedList.findIndex(s => 
-                                    JSON.stringify(s) === JSON.stringify(seed)
-                                  );
-                                  const indexToUse = syncedIndex !== -1 ? syncedIndex : originalIndex;
-                                  
-                                  setCurrentSeedIndex(indexToUse);
-                                  onClose();
-                                }}
-                                className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-                                placeholder={`Enter ${slot}...`}
-                                disabled={isDisabled}
-                              />
+                                  }}
+                                  onDoubleClick={() => {
+                                    // On double click, select the current seed and close the modal
+                                    // First, sync the local changes to the parent state
+                                    setSeedList(localSeedList);
+                                    
+                                    // Find the original index in the parent seedList
+                                    const syncedIndex = seedList.findIndex(s => 
+                                      JSON.stringify(s) === JSON.stringify(seed)
+                                    );
+                                    const indexToUse = syncedIndex !== -1 ? syncedIndex : displayIndex;
+                                    
+                                    setCurrentSeedIndex(indexToUse);
+                                    onClose();
+                                  }}
+                                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                                  placeholder={`Enter ${slot}...`}
+                                  disabled={isDisabled}
+                                />
+                                <div className="absolute inset-y-0 right-0 flex items-center pr-2">
+                                  <FileImportButton 
+                                    onImport={handleImportFileToSlot(seed, slot)} 
+                                    slotName={slot}
+                                    disabled={isDisabled}
+                                    buttonType="icon"
+                                    position="absolute"
+                                  />
+                                </div>
+                              </div>
+                              {seed[slot] && seed[slot].length > 100 && (
+                                <p className="mt-1 text-xs text-gray-500">
+                                  {seed[slot].length.toLocaleString()} characters
+                                </p>
+                              )}
                             </td>
                           ))}
                         </tr>
