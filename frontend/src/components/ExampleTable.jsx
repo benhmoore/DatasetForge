@@ -38,7 +38,6 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const searchInputRef = useRef(null);
   
   // Use useEffect for debouncing search
   useEffect(() => {
@@ -115,26 +114,16 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     }
   };
   
-  // Add keyboard event handler for search
+  // Listen for search trigger events from ExampleTableHeader
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Handle Enter key for search submission
-      if (e.key === 'Enter' && document.activeElement === searchInputRef.current) {
-        e.preventDefault();
-        setDebouncedSearchTerm(searchTerm);
-        setPage(1);
-      }
-      
-      // Handle Escape key to clear search
-      if (e.key === 'Escape' && searchTerm && document.activeElement === searchInputRef.current) {
-        e.preventDefault();
-        handleClearSearch();
-      }
+    const handleTriggerSearch = (e) => {
+      setDebouncedSearchTerm(searchTerm);
+      setPage(1);
     };
     
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchTerm, handleClearSearch]);
+    window.addEventListener('triggerSearch', handleTriggerSearch);
+    return () => window.removeEventListener('triggerSearch', handleTriggerSearch);
+  }, [searchTerm]);
   
   // Fetch examples when these dependencies change
   useEffect(() => {
@@ -320,7 +309,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   
   // Handle example update from the modal
   const handleExampleUpdated = (updatedExample) => {
-    // Update the example in the local state
+    // Update the example in the local state if it exists
     const exampleIndex = examples.findIndex(ex => ex.id === updatedExample.id);
     if (exampleIndex !== -1) {
       const updatedExamples = [...examples];
@@ -330,6 +319,9 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       // Also update the selected example to ensure the modal displays the latest data
       setSelectedExample(updatedExample);
     }
+    
+    // Trigger a full refresh to show newly added examples (like paraphrases)
+    fetchExamples();
   };
   
   // Render tool calls
@@ -431,19 +423,24 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     setIsSearching(true);
   }, [setSearchTerm, setIsSearching]);
   
-  // Keyboard shortcut for search focus
+  // Keyboard shortcut for search focus managed in ExampleTableHeader component
+  // Using a custom event to communicate with the header component
+  const triggerSearchFocus = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('focusSearchInput'));
+  }, []);
+  
   useEffect(() => {
     const handleSearchShortcut = (e) => {
       // Ctrl+F or Cmd+F to focus search
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && searchInputRef.current) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
-        searchInputRef.current.focus();
+        triggerSearchFocus();
       }
     };
     
     window.addEventListener('keydown', handleSearchShortcut);
     return () => window.removeEventListener('keydown', handleSearchShortcut);
-  }, []);
+  }, [triggerSearchFocus]);
 
   // If no dataset is selected
   if (!datasetId) {

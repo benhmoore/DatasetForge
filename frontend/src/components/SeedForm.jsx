@@ -668,11 +668,6 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
           <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
             <span>{slot.charAt(0).toUpperCase() + slot.slice(1)}</span>
             {hasError && <span className="text-red-500 ml-1">*</span>}
-            <FileImportButton
-              slot={slot}
-              onImport={handleImportFileToSlot}
-              isDisabled={isDisabled}
-            />
           </label>
           <div className="relative">
             <input
@@ -688,18 +683,16 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
               aria-invalid={hasError}
               aria-describedby={hasError ? errorId : undefined}
             />
-            <div className="absolute inset-y-0 right-0 pr-2 flex items-center">
-              <button
-                type="button"
-                onClick={() => handleImportFileToSlot(slot)}
-                disabled={isDisabled}
-                className="p-1 text-gray-400 hover:text-purple-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-full hover:bg-gray-100 transition-colors"
-                title={`Import content from text file into ${slot}`}
-                aria-label={`Import content from text file into ${slot}`}
-              >
-                <Icon name="upload" className="w-4 h-4" />
-              </button>
-            </div>
+            <FileImportButton 
+              onImport={(content, file) => {
+                handleSlotChange(slot, content);
+                toast.success(`Successfully imported content from ${file.name} into ${slot}.`);
+              }} 
+              slotName={slot}
+              disabled={isDisabled}
+              buttonType="icon"
+              position="absolute"
+            />
           </div>
           {hasError && (
             <p id={errorId} className="mt-1 text-xs text-red-600 font-medium">
@@ -714,7 +707,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
         </div>
       );
     });
-  }, [template, currentSeed, currentSeedIndex, handleSlotChange, handleImportFileToSlot, isDisabled, validationErrors]);
+  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isDisabled, validationErrors]);
 
   // Calculate total error count across all seeds
   const totalErrorCount = useMemo(() => {

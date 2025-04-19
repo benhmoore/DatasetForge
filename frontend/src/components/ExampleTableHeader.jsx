@@ -16,17 +16,15 @@ const ExampleTableHeader = ({
   const searchInputRef = useRef(null);
   const [isFocused, setIsFocused] = useState(false);
 
-  // Focus the search input when pressing Ctrl+F or Command+F
+  // Focus the search input via custom event
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
+    const handleFocusSearch = () => {
+      searchInputRef.current?.focus();
     };
     
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // Listen for the custom event
+    window.addEventListener('focusSearchInput', handleFocusSearch);
+    return () => window.removeEventListener('focusSearchInput', handleFocusSearch);
   }, []);
 
   return (
@@ -64,6 +62,20 @@ const ExampleTableHeader = ({
             onChange={(e) => onSearchChange(e.target.value)}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                // Dispatch a custom event to trigger search
+                window.dispatchEvent(new CustomEvent('triggerSearch', { detail: searchValue }));
+                // Keep focus on input
+                e.target.focus();
+              } else if (e.key === 'Escape' && searchValue) {
+                e.preventDefault();
+                onClearSearch();
+                // Keep focus on input
+                e.target.focus();
+              }
+            }}
             ref={searchInputRef}
             aria-label="Search examples"
           />
@@ -71,8 +83,11 @@ const ExampleTableHeader = ({
           {searchValue && (
             <button 
               className="absolute inset-y-0 right-0 pr-3 flex items-center"
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 onClearSearch();
+                // Focus immediately without timeout - the event won't bubble up
                 searchInputRef.current?.focus();
               }}
               title="Clear search"

@@ -63,8 +63,10 @@ const ExampleDetailModalWithParaphrase = (props) => {
       // Show success message
       toast.success(`Added ${paraphrasedOutputs.length} paraphrased variation${paraphrasedOutputs.length !== 1 ? 's' : ''}`);
       
-      // Trigger refresh in parent component
+      // Trigger refresh in parent component - pass the existing example to trigger a complete refresh
       if (onExampleUpdated) {
+        // Pass the current example with a special flag to indicate that a refresh is needed
+        // Our fix in ExampleTable.handleExampleUpdated will handle this to do a full refresh
         onExampleUpdated(example);
       }
     } catch (error) {
