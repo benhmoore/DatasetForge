@@ -1,0 +1,334 @@
+from typing import Dict, List, Any, Optional, Tuple
+import logging
+import time
+import json
+import re
+from datetime import datetime
+
+from ..api.schemas import (
+    WorkflowExecutionResult,
+    NodeExecutionResult,
+    ModelNodeConfig,
+    TransformNodeConfig,
+    WorkflowExecuteRequest,
+    SeedData
+)
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
+class WorkflowExecutor:
+    """
+    Executes workflows by processing nodes in the correct order based on connections.
+    This is a placeholder implementation - the actual node execution will be implemented later.
+    """
+    
+    def __init__(self, debug_mode: bool = False):
+        self.debug_mode = debug_mode
+        # Registry of node executors mapped by node type
+        self.node_executors = {
+            "model": self._execute_model_node,
+            "transform": self._execute_transform_node,
+        }
+    
+    async def execute_workflow(self, 
+                        workflow_id: str, 
+                        workflow_data: Dict[str, Any], 
+                        seed_data: SeedData) -> WorkflowExecutionResult:
+        """
+        Execute a workflow with the given seed data.
+        
+        Args:
+            workflow_id: The ID of the workflow
+            workflow_data: The workflow configuration including nodes and connections
+            seed_data: The seed data for the workflow
+            
+        Returns:
+            WorkflowExecutionResult: The results of the workflow execution
+        """
+        logger.info(f"Starting workflow execution for workflow {workflow_id}")
+        start_time = time.time()
+        
+        # Extract nodes and connections
+        nodes = workflow_data.get("nodes", {})
+        connections = workflow_data.get("connections", [])
+        
+        # Build a graph of node dependencies
+        # Each node's ID maps to a list of dependent node IDs
+        dependency_graph = self._build_dependency_graph(nodes, connections)
+        
+        # Determine execution order (topological sort)
+        execution_order = self._determine_execution_order(dependency_graph)
+        logger.info(f"Execution order: {execution_order}")
+        
+        # Execute nodes in the determined order
+        node_results = []
+        node_outputs = {}  # Store intermediate outputs for each node
+        
+        # Initialize with seed data
+        initial_data = {
+            "seed_data": seed_data.dict(),
+            "slots": seed_data.slots
+        }
+        
+        # Track the final output node
+        final_node_id = execution_order[-1] if execution_order else None
+        final_output = {}
+        
+        for node_id in execution_order:
+            node_config = nodes.get(node_id)
+            if not node_config:
+                logger.error(f"Node {node_id} not found in workflow configuration")
+                continue
+                
+            # Get node inputs based on connections
+            node_inputs = self._get_node_inputs(node_id, connections, node_outputs, initial_data)
+            
+            # Execute the node
+            node_type = node_config.get("type")
+            executor = self.node_executors.get(node_type)
+            
+            if not executor:
+                error_msg = f"No executor found for node type: {node_type}"
+                logger.error(error_msg)
+                node_result = NodeExecutionResult(
+                    node_id=node_id,
+                    node_type=node_type or "unknown",
+                    input=node_inputs,
+                    output={},
+                    execution_time=0,
+                    status="error",
+                    error_message=error_msg
+                )
+                node_results.append(node_result)
+                continue
+            
+            # Execute the node
+            try:
+                logger.info(f"Executing node {node_id} of type {node_type}")
+                node_start_time = time.time()
+                node_output = await executor(node_config, node_inputs)
+                node_execution_time = time.time() - node_start_time
+                
+                # Store the output for use by downstream nodes
+                node_outputs[node_id] = node_output
+                
+                # Update final output if this is the last node
+                if node_id == final_node_id:
+                    final_output = node_output
+                
+                # Record the result
+                node_result = NodeExecutionResult(
+                    node_id=node_id,
+                    node_type=node_type,
+                    input=node_inputs,
+                    output=node_output,
+                    execution_time=node_execution_time,
+                    status="success"
+                )
+                node_results.append(node_result)
+                
+            except Exception as e:
+                logger.exception(f"Error executing node {node_id}: {str(e)}")
+                node_result = NodeExecutionResult(
+                    node_id=node_id,
+                    node_type=node_type or "unknown",
+                    input=node_inputs,
+                    output={},
+                    execution_time=time.time() - node_start_time,
+                    status="error",
+                    error_message=str(e)
+                )
+                node_results.append(node_result)
+                # Consider whether to continue execution or stop on error
+        
+        total_execution_time = time.time() - start_time
+        
+        # Determine overall workflow status
+        if all(result.status == "success" for result in node_results):
+            status = "success"
+        elif any(result.status == "success" for result in node_results):
+            status = "partial_success"
+        else:
+            status = "error"
+        
+        logger.info(f"Workflow execution completed in {total_execution_time:.2f}s with status: {status}")
+        
+        return WorkflowExecutionResult(
+            workflow_id=workflow_id,
+            results=node_results,
+            seed_data=seed_data,
+            final_output=final_output,
+            execution_time=total_execution_time,
+            status=status
+        )
+    
+    def _build_dependency_graph(self, nodes: Dict[str, Any], 
+                               connections: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+        """
+        Build a graph of node dependencies based on connections.
+        
+        Returns:
+            Dict[str, List[str]]: Keys are node IDs, values are lists of dependent node IDs
+        """
+        # Initialize empty lists for all nodes
+        graph = {node_id: [] for node_id in nodes.keys()}
+        
+        # Add dependencies based on connections
+        for connection in connections:
+            source_id = connection.get("source_node_id")
+            target_id = connection.get("target_node_id")
+            
+            if source_id and target_id:
+                if source_id in graph:
+                    graph[source_id].append(target_id)
+                else:
+                    graph[source_id] = [target_id]
+        
+        return graph
+    
+    def _determine_execution_order(self, dependency_graph: Dict[str, List[str]]) -> List[str]:
+        """
+        Determine the topological order for executing nodes.
+        
+        Args:
+            dependency_graph: A graph of node dependencies
+            
+        Returns:
+            List[str]: Node IDs in topological execution order
+        """
+        # Find nodes with no dependencies (root nodes)
+        incoming_edges = {node: 0 for node in dependency_graph.keys()}
+        for node, deps in dependency_graph.items():
+            for dep in deps:
+                if dep in incoming_edges:
+                    incoming_edges[dep] += 1
+                else:
+                    incoming_edges[dep] = 1
+        
+        # Start with nodes that have no incoming edges
+        execution_order = []
+        queue = [node for node, count in incoming_edges.items() if count == 0]
+        
+        # Process queue
+        while queue:
+            node = queue.pop(0)
+            execution_order.append(node)
+            
+            for dependent in dependency_graph.get(node, []):
+                incoming_edges[dependent] -= 1
+                if incoming_edges[dependent] == 0:
+                    queue.append(dependent)
+        
+        # Check for cycles
+        if len(execution_order) < len(dependency_graph):
+            logger.warning("Cycle detected in workflow graph")
+            # Add any remaining nodes (this will allow execution but might not be correct)
+            for node in dependency_graph:
+                if node not in execution_order:
+                    execution_order.append(node)
+        
+        return execution_order
+    
+    def _get_node_inputs(self, node_id: str, connections: List[Dict[str, Any]], 
+                        node_outputs: Dict[str, Dict[str, Any]], 
+                        initial_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Determine the inputs for a node based on connections and previous outputs.
+        
+        Args:
+            node_id: The ID of the node
+            connections: The workflow connections
+            node_outputs: The outputs from previously executed nodes
+            initial_data: Initial data for the workflow
+            
+        Returns:
+            Dict[str, Any]: The inputs for the node
+        """
+        # Start with initial data
+        node_inputs = initial_data.copy()
+        
+        # Find connections where this node is the target
+        input_connections = [
+            conn for conn in connections 
+            if conn.get("target_node_id") == node_id
+        ]
+        
+        # Add inputs from connected nodes
+        for connection in input_connections:
+            source_id = connection.get("source_node_id")
+            if source_id in node_outputs:
+                # Use the entire output of the source node as input to this node
+                # In a more advanced implementation, we might use source_handle/target_handle
+                # to map specific outputs to specific inputs
+                node_inputs.update(node_outputs[source_id])
+        
+        return node_inputs
+    
+    async def _execute_model_node(self, node_config: Dict[str, Any], 
+                           node_inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute a model node.
+        
+        This is a placeholder implementation - the actual model execution will be implemented later.
+        
+        Args:
+            node_config: The node configuration
+            node_inputs: The inputs for the node
+            
+        Returns:
+            Dict[str, Any]: The outputs from the node
+        """
+        # For now, just return a placeholder result
+        # In the future, this will call the LLM API
+        return {
+            "output": f"Model output for {node_config.get('name')} with inputs: {node_inputs.get('slots')}",
+            "model": node_config.get("model", "placeholder-model"),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    
+    async def _execute_transform_node(self, node_config: Dict[str, Any], 
+                               node_inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute a transform node that applies regex or string replacement.
+        
+        Args:
+            node_config: The node configuration
+            node_inputs: The inputs for the node
+            
+        Returns:
+            Dict[str, Any]: The outputs from the node
+        """
+        pattern = node_config.get("pattern", "")
+        replacement = node_config.get("replacement", "")
+        is_regex = node_config.get("is_regex", False)
+        apply_to_field = node_config.get("apply_to_field", "output")
+        
+        # Get the text to transform
+        input_text = node_inputs.get(apply_to_field, "")
+        if not input_text or not isinstance(input_text, str):
+            logger.warning(f"Transform node received invalid input for field {apply_to_field}")
+            input_text = str(input_text) if input_text is not None else ""
+        
+        # Apply the transformation
+        if is_regex:
+            try:
+                output_text = re.sub(pattern, replacement, input_text)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern: {str(e)}")
+        else:
+            # Simple string replacement
+            output_text = input_text.replace(pattern, replacement)
+        
+        # Return the results, preserving other input fields
+        result = node_inputs.copy()
+        result[apply_to_field] = output_text
+        result["transform_applied"] = {
+            "pattern": pattern,
+            "replacement": replacement,
+            "is_regex": is_regex,
+            "field": apply_to_field,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        return result
