@@ -34,7 +34,7 @@
   - [ ] Filter nodes
   - [ ] Fork/merge logic
 - [ ] Implement `CustomFunctionNode` executor
-- [ ] Create workflow templates/presets
+- [x] Create workflow templates/presets
 - [x] Add workflow sharing (JSON copy/share UI)
 
 ## Backend API
