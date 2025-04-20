@@ -29,13 +29,16 @@ async def execute_workflow(
     session: Session = Depends(get_session),
 ):
     """
-    Execute a workflow with the provided workflow definition and seed data.
+    Execute a workflow with the provided workflow definition and template output.
     The workflow definition is provided by the client and not stored on the server.
+    The workflow processes the output of the template generation.
     """
     try:
-        # Extract workflow definition and seed data from request
+        # Extract workflow definition and input data from request
         workflow_definition = request.get("workflow")
-        seed_data_dict = request.get("seed_data")
+        input_data = request.get("input_data", {})
+        seed_data_dict = request.get("seed_data", {})  # For backwards compatibility
+        template_output = request.get("template_output", "")
         debug_mode = request.get("debug_mode", False)
         
         if not workflow_definition:
@@ -43,28 +46,39 @@ async def execute_workflow(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Workflow definition is required"
             )
+        
+        # Ensure we have proper input data for the workflow
+        # First check if we have seed_data for backward compatibility
+        if seed_data_dict and not input_data:
+            logger.info("Using legacy seed_data format for workflow execution")
+            try:
+                seed_data = SeedData.parse_obj(seed_data_dict)
+            except Exception as e:
+                logger.error(f"Error parsing seed data: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid seed data format: {str(e)}"
+                )
+        else:
+            # Create a simplified SeedData object with the input data
+            seed_data = SeedData(slots={})
             
-        if not seed_data_dict:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Seed data is required"
-            )
-        
-        # Convert seed data to SeedData model
-        try:
-            seed_data = SeedData.parse_obj(seed_data_dict)
-        except Exception as e:
-            logger.error(f"Error parsing seed data: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid seed data format: {str(e)}"
-            )
-        
         # Initialize workflow executor
         executor = WorkflowExecutor(debug_mode=debug_mode)
         
         # Generate a unique ID for this execution (not stored)
         workflow_id = workflow_definition.get("id", "temp-workflow")
+        
+        # Add template output to the input data to be passed to the workflow
+        # This ensures the input node will have access to the template output
+        if template_output:
+            input_data["output"] = template_output
+        
+        # Check if input_data should be included in the seed data
+        if input_data and isinstance(input_data, dict):
+            # Add any input data to what we pass to the executor
+            for key, value in input_data.items():
+                seed_data.slots[key] = value
         
         # Execute the workflow
         result = await executor.execute_workflow(
@@ -91,32 +105,48 @@ async def execute_workflow_stream(
     """
     Execute a workflow with streaming progress updates.
     Returns a streaming response with node execution progress and results.
+    The workflow processes the output of the template generation.
     """
     async def generate_workflow_progress() -> AsyncGenerator[str, None]:
         try:
-            # Extract workflow definition and seed data from request
+            # Extract workflow definition and input data from request
             workflow_definition = request.get("workflow")
-            seed_data_dict = request.get("seed_data")
+            input_data = request.get("input_data", {})
+            seed_data_dict = request.get("seed_data", {})  # For backwards compatibility
+            template_output = request.get("template_output", "")
             debug_mode = request.get("debug_mode", False)
             
-            if not workflow_definition or not seed_data_dict:
+            if not workflow_definition:
                 error_msg = json.dumps({
                     "type": "error",
-                    "error": "Workflow definition and seed data are required"
+                    "error": "Workflow definition is required"
                 })
                 yield f"{error_msg}\n"
                 return
             
-            # Convert seed data to SeedData model
-            try:
-                seed_data = SeedData.parse_obj(seed_data_dict)
-            except Exception as e:
-                error_msg = json.dumps({
-                    "type": "error",
-                    "error": f"Invalid seed data format: {str(e)}"
-                })
-                yield f"{error_msg}\n"
-                return
+            # Handle input data - first try legacy seed_data format
+            if seed_data_dict and not input_data:
+                try:
+                    seed_data = SeedData.parse_obj(seed_data_dict)
+                except Exception as e:
+                    error_msg = json.dumps({
+                        "type": "error",
+                        "error": f"Invalid seed data format: {str(e)}"
+                    })
+                    yield f"{error_msg}\n"
+                    return
+            else:
+                # Create a simplified SeedData object
+                seed_data = SeedData(slots={})
+                
+            # Add template output to the input data to be passed to the workflow
+            if template_output:
+                input_data["output"] = template_output
+                
+            # Add any input data to what we pass to the executor
+            if input_data and isinstance(input_data, dict):
+                for key, value in input_data.items():
+                    seed_data.slots[key] = value
             
             # Setup workflow executor with progress callback
             workflow_id = workflow_definition.get("id", "temp-workflow")

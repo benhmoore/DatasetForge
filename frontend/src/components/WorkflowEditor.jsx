@@ -14,7 +14,6 @@ import '@xyflow/react/dist/style.css';
 import { toast } from 'react-toastify';
 import ModelNode from './ModelNode';
 import TransformNode from './TransformNode';
-import TemplateNode from './TemplateNode';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
 
@@ -22,7 +21,6 @@ import Icon from './Icons';
 const NODE_TYPES = {
   model: 'Model',
   transform: 'Transform',
-  template: 'Template',
   filter: 'Filter',
   custom: 'Custom Function',
   input: 'Input',
@@ -107,14 +105,14 @@ const InputNodeComponent = ({ data, isConnectable }) => {
     <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-purple-500 min-w-[200px] relative">
       <h4 className="font-medium text-sm mb-2 text-purple-700">
         <Icon name="database" className="w-4 h-4 inline-block mr-1" />
-        Seed Input
+        Template Output
       </h4>
       <div className="text-xs">
         <div className="mb-1">
-          <span className="font-medium">Source:</span> Seed Bank
+          <span className="font-medium">Source:</span> Template Generation
         </div>
         <div className="mb-1">
-          <span className="font-medium">Available Fields:</span> {data.fields?.join(', ') || 'All fields'}
+          <span className="font-medium">Contains:</span> Model output from selected template
         </div>
       </div>
       
@@ -156,39 +154,7 @@ const OutputNodeComponent = ({ data, isConnectable }) => {
   );
 };
 
-const TemplateNodeComponent = ({ data, isConnectable }) => {
-  return (
-    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-indigo-500 min-w-[250px] relative">
-      {/* Input handle */}
-      <Handle
-        type="target"
-        position="left"
-        style={{ background: '#6366f1', width: '12px', height: '12px' }}
-        isConnectable={isConnectable}
-      />
-      
-      <h4 className="font-medium text-sm mb-2 text-indigo-700">{data.label}</h4>
-      <div className="text-xs">
-        <div className="mb-1">
-          <span className="font-medium">Template ID:</span> {data.template_id || 'Not set'}
-        </div>
-        {data.instruction && (
-          <div className="mb-1 truncate max-w-xs">
-            <span className="font-medium">Additional Instruction:</span> {data.instruction.substring(0, 30)}...
-          </div>
-        )}
-      </div>
-      
-      {/* Output handle */}
-      <Handle
-        type="source"
-        position="right"
-        style={{ background: '#6366f1', width: '12px', height: '12px' }}
-        isConnectable={isConnectable}
-      />
-    </div>
-  );
-};
+// Template node is no longer used - removed
 
 /**
  * WorkflowEditor component for visual workflow editing
@@ -343,9 +309,7 @@ const WorkflowEditor = ({
         case 'transformNode':
           nodeType = 'transform';
           break;
-        case 'templateNode':
-          nodeType = 'template';
-          break;
+        // Template node removed
         case 'inputNode':
           nodeType = 'input';
           break;
@@ -498,20 +462,12 @@ const WorkflowEditor = ({
           apply_to_field: 'output'
         };
         break;
-      case 'template':
-        nodeType = 'templateNode';
-        nodeData = {
-          ...nodeData,
-          template_id: null,
-          instruction: ''
-        };
-        break;
+      // Template node type removed
       case 'input':
         nodeType = 'inputNode';
         nodeData = {
           ...nodeData,
-          label: 'Seed Input',
-          fields: ['slots', 'seed_data'],
+          label: 'Template Output',
         };
         break;
       case 'output':
@@ -743,7 +699,6 @@ const WorkflowEditor = ({
   const nodeTypes = {
     modelNode: ModelNodeComponent,
     transformNode: TransformNodeComponent,
-    templateNode: TemplateNodeComponent,
     inputNode: InputNodeComponent,
     outputNode: OutputNodeComponent,
   };
@@ -885,14 +840,7 @@ const WorkflowEditor = ({
                 />
               )}
               
-              {selectedNode.type === 'templateNode' && (
-                <TemplateNode
-                  nodeConfig={selectedNode.data}
-                  onConfigChange={(config) => handleNodeConfigChange(selectedNode.id, config)}
-                  disabled={disabled}
-                  availableTemplates={availableTemplates}
-                />
-              )}
+              {/* Template node configuration removed */}
             </div>
           )}
         </div>

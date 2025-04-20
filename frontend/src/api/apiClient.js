@@ -284,9 +284,10 @@ const api = {
     .then(response => response.data),
     
   // Workflow API endpoints
-  executeWorkflow: (workflow, seedData, debugMode = false) => apiClient.post('/workflow/execute', {
+  executeWorkflow: (workflow, templateOutput, inputData = {}, debugMode = false) => apiClient.post('/workflow/execute', {
     workflow,
-    seed_data: seedData,
+    template_output: templateOutput,
+    input_data: inputData,
     debug_mode: debugMode
   }).then(response => response.data),
   
@@ -296,7 +297,7 @@ const api = {
   }).then(response => response.data),
   
   // Streaming workflow execution
-  executeWorkflowWithStream: async (workflow, seedData, onData, signal, debugMode = false) => {
+  executeWorkflowWithStream: async (workflow, templateOutput, inputData = {}, onData, signal, debugMode = false) => {
     console.log('Sending workflow execution request:', {
       workflow: workflow.id || 'unnamed-workflow',
       nodes: Object.keys(workflow.nodes).length,
@@ -312,7 +313,8 @@ const api = {
       },
       body: JSON.stringify({
         workflow,
-        seed_data: seedData,
+        template_output: templateOutput,
+        input_data: inputData,
         debug_mode: debugMode
       }),
       signal: signal // Pass the signal to fetch

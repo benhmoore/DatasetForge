@@ -505,16 +505,26 @@ class WorkflowExecutor:
     async def _execute_input_node(self, node_config: Dict[str, Any], 
                            node_inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute an input node - passes through the initial seed data.
+        Execute an input node - passes through the template generation output.
         
         Args:
             node_config: The node configuration
-            node_inputs: The inputs for the node (contains seed data)
+            node_inputs: The inputs for the node (contains template generation output)
             
         Returns:
-            Dict[str, Any]: The seed data to pass to downstream nodes
+            Dict[str, Any]: The processed template output to pass to downstream nodes
         """
-        # Simply pass through the seed data
+        # We expect node_inputs to contain 'output' field from the template generation
+        if 'output' not in node_inputs and 'generation_output' in node_inputs:
+            # Try to use generation_output as fallback if output is not available
+            node_inputs['output'] = node_inputs['generation_output']
+            
+        # Ensure we have an output field, even if empty
+        if 'output' not in node_inputs:
+            logger.warning("Input node received no output from template generation")
+            node_inputs['output'] = ""
+        
+        # Mark the source as the input node
         result = node_inputs.copy()
         result["_node_info"] = {
             "type": "input",

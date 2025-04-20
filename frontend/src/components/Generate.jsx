@@ -326,10 +326,23 @@ const Generate = ({ context }) => {
           // Reset node status map for this variation
           nodeStatusMap[variationKey] = {};
           
+          // Get the template output which we'll pass to the workflow
+          const templateOutput = targetVariation.output || "";
+          
+          // Include additional data that may be useful in the workflow
+          const additionalData = {
+            slots: seedData.slots, // Original slots
+            template_id: data.template_id,
+            instruction: data.instruction || "",
+            processed_prompt: targetVariation.processed_prompt || ""
+          };
+          
           // Execute workflow with streaming for this seed/variation
+          // Now passing the template output and additional data
           await api.executeWorkflowWithStream(
             currentWorkflow,
-            seedData,
+            templateOutput,
+            additionalData,
             (progressData) => {
               // Handle progress updates
               if (progressData.type === 'init') {
