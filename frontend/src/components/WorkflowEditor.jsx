@@ -499,15 +499,7 @@ const WorkflowEditor = ({
         
         {/* Right Group: Workflow Actions */}
         <div className="flex items-center space-x-2 pl-4">
-          <button 
-            onClick={saveWorkflow} 
-            className={`px-3 py-1 rounded transition text-sm flex items-center space-x-1 ${hasUnsavedChanges ? 'bg-green-500 hover:bg-green-600 text-white animate-pulse' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}
-            disabled={!hasUnsavedChanges || disabled}
-            title="Save Workflow"
-          >
-            <Icon name="save" className="w-4 h-4" />
-            <span>Save</span>
-          </button>
+          {/* Save button removed as workflow will be saved automatically when modal closes */}
           
           {/* Action Buttons */} 
           {onNew && (
