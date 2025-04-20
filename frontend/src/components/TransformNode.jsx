@@ -1,63 +1,38 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { Handle } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react'; // Import Position
 import CustomSelect from './CustomSelect';
-import withNodeWrapper from './withNodeWrapper';
+// Removed withNodeWrapper import
 
 /**
  * TransformNode component for configuring a text transformation node in a workflow
  */
-const TransformNodeInner = ({ 
-  data, // Pass raw data from ReactFlow
+const TransformNode = ({ 
+  data, // Data object from React Flow, contains config and onConfigChange
+  id,   // Node ID from React Flow
   disabled = false,
   isConnectable = true
 }) => {
-  // Destructure the necessary values directly from data prop
-  const { onConfigChange } = data;
-  
-  // Create local state for handling our configuration
-  const [localConfig, setLocalConfig] = useState({
-    pattern: data.pattern || '',
-    replacement: data.replacement || '',
-    is_regex: data.is_regex || false,
-    apply_to_field: data.apply_to_field || 'output'
-  });
-  
-  // Debug output to see what we're working with
-  useEffect(() => {
-    console.log("TransformNode data from ReactFlow:", data);
-    console.log("TransformNode localConfig:", localConfig);
-  }, [data, localConfig]);
-  
-  // Update our parent when local config changes
-  const updateParent = (updatedConfig) => {
-    // Only update if we have the callback
-    if (onConfigChange) {
-      // Create complete updated config
-      const completeConfig = {
-        ...data,
-        ...updatedConfig
-      };
-      console.log("TransformNode: Sending update to parent:", completeConfig);
-      onConfigChange(completeConfig);
-    }
-  };
-  // Regex test status and error
-  const [regexStatus, setRegexStatus] = useState({
-    isValid: true,
-    error: null
-  });
-  
-  // Preview states
+  // Destructure config and callback from data
+  const { 
+    onConfigChange, 
+    pattern = '', 
+    replacement = '', 
+    is_regex = false, 
+    apply_to_field = 'output',
+    name, // Get name/label from data
+    label
+  } = data;
+
+  // State only for regex validation and preview
+  const [regexStatus, setRegexStatus] = useState({ isValid: true, error: null });
   const [previewInput, setPreviewInput] = useState('Hello world! This is a test input.');
   const [previewOutput, setPreviewOutput] = useState('');
-  
+
   // Update preview output when input or transform configs change
   useEffect(() => {
     try {
-      // Use the values from our local state
-      const { pattern, replacement, is_regex } = localConfig;
-      
+      // Use values directly from data prop
       if (!pattern) {
         setPreviewOutput(previewInput);
         return;
@@ -65,86 +40,42 @@ const TransformNodeInner = ({
       
       if (is_regex) {
         try {
-          const regex = new RegExp(pattern);
+          // Validate regex on the fly
+          new RegExp(pattern); // Throws error if invalid
+          const regex = new RegExp(pattern, 'g'); // Add 'g' flag for global replace in preview
           const transformed = previewInput.replace(regex, replacement);
           setPreviewOutput(transformed);
-          
-          setRegexStatus({
-            isValid: true,
-            error: null
-          });
+          setRegexStatus({ isValid: true, error: null });
         } catch (error) {
-          setPreviewOutput(previewInput);
-          setRegexStatus({
-            isValid: false,
-            error: error.message
-          });
+          setPreviewOutput(previewInput); // Show original input on error
+          setRegexStatus({ isValid: false, error: error.message });
         }
       } else {
-        // Simple string replacement
-        const transformed = previewInput.replace(pattern, replacement);
+        // Simple string replacement (only replaces first instance by default)
+        // For a global replace preview:
+        const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape special chars
+        const regex = new RegExp(escapedPattern, 'g');
+        const transformed = previewInput.replace(regex, replacement);
+        // Or keep simple replace: const transformed = previewInput.replace(pattern, replacement);
         setPreviewOutput(transformed);
+        setRegexStatus({ isValid: true, error: null }); // Reset status for non-regex
       }
     } catch (error) {
       console.error('Error in transform preview:', error);
-      setPreviewOutput(previewInput);
+      setPreviewOutput(previewInput); // Fallback to original input
+      setRegexStatus({ isValid: false, error: 'Preview error' }); // Indicate a general preview error
     }
-  }, [previewInput, localConfig]);
+  // Depend on previewInput and relevant config fields from data
+  }, [previewInput, pattern, replacement, is_regex]);
   
-  // Handle field selection
-  const handleFieldChange = (fieldName) => {
-    // Update local state
-    setLocalConfig(prev => ({
-      ...prev,
-      apply_to_field: fieldName
-    }));
-    
-    // Send update to parent
-    updateParent({ apply_to_field: fieldName });
+  // Generic handler to update specific config fields
+  const handleConfigUpdate = (field, value) => {
+    if (onConfigChange) {
+      console.log(`TransformNode (${id}): handleConfigUpdate -> ${field}: ${value}`);
+      onConfigChange(id, { [field]: value });
+    }
   };
-  
-  // Handle pattern change
-  const handlePatternChange = (e) => {
-    const value = e.target.value;
-    
-    // Update local state
-    setLocalConfig(prev => ({
-      ...prev,
-      pattern: value
-    }));
-    
-    // Send update to parent
-    updateParent({ pattern: value });
-  };
-  
-  // Handle replacement change
-  const handleReplacementChange = (e) => {
-    const value = e.target.value;
-    
-    // Update local state
-    setLocalConfig(prev => ({
-      ...prev,
-      replacement: value
-    }));
-    
-    // Send update to parent
-    updateParent({ replacement: value });
-  };
-  
-  // Toggle regex mode
-  const handleRegexToggle = () => {
-    const newValue = !localConfig.is_regex;
-    
-    // Update local state
-    setLocalConfig(prev => ({
-      ...prev,
-      is_regex: newValue
-    }));
-    
-    // Send update to parent
-    updateParent({ is_regex: newValue });
-  };
-  
+
   // Handle preview input change
   const handlePreviewInputChange = (e) => {
     setPreviewInput(e.target.value);
@@ -158,26 +89,27 @@ const TransformNodeInner = ({
   ];
   
   return (
-    <div className="p-4 space-y-4 bg-white rounded border border-gray-200 relative">
+    <div className="p-4 space-y-4 bg-white rounded border border-gray-200 relative shadow-sm min-w-[300px]">
       {/* Input handle */}
       <Handle 
         type="target" 
-        position="left" 
+        position={Position.Left} // Use Position enum
         id="input" 
         isConnectable={isConnectable} 
-        className="w-3 h-3 bg-orange-500"
+        className="!w-3 !h-3 !bg-orange-500"
       />
       
       {/* Output handle */}
       <Handle 
         type="source" 
-        position="right" 
+        position={Position.Right} // Use Position enum
         id="output" 
         isConnectable={isConnectable} 
-        className="w-3 h-3 bg-orange-500"
+        className="!w-3 !h-3 !bg-orange-500"
       />
       
-      <h3 className="font-medium text-lg">{data?.name || data?.label || 'Transform Node'}</h3>
+      {/* Use name or label from data, fallback */}
+      <h3 className="font-medium text-lg">{name || label || 'Transform Node'}</h3>
       
       {/* Apply to field selection */}
       <div className="space-y-2">
@@ -186,8 +118,8 @@ const TransformNodeInner = ({
         </label>
         <CustomSelect
           options={fieldOptions}
-          value={localConfig.apply_to_field}
-          onChange={handleFieldChange}
+          value={apply_to_field} // Use value from data
+          onChange={(value) => handleConfigUpdate('apply_to_field', value)}
           disabled={disabled}
         />
       </div>
@@ -196,13 +128,13 @@ const TransformNodeInner = ({
       <div className="flex items-center space-x-2">
         <input
           type="checkbox"
-          id="regex-toggle"
-          checked={localConfig.is_regex}
-          onChange={handleRegexToggle}
+          id={`regex-toggle-${id}`} // Use unique ID
+          checked={is_regex} // Use value from data
+          onChange={() => handleConfigUpdate('is_regex', !is_regex)}
           disabled={disabled}
           className="rounded text-blue-600 focus:ring-blue-500"
         />
-        <label htmlFor="regex-toggle" className="text-sm font-medium text-gray-700">
+        <label htmlFor={`regex-toggle-${id}`} className="text-sm font-medium text-gray-700">
           Use Regular Expression
         </label>
       </div>
@@ -210,14 +142,14 @@ const TransformNodeInner = ({
       {/* Pattern input */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
-          {localConfig.is_regex ? 'Regex Pattern' : 'Search Text'}
+          {is_regex ? 'Regex Pattern' : 'Search Text'}
         </label>
         <input
           type="text"
-          className={`w-full p-2 border rounded ${!regexStatus.isValid ? 'border-red-500' : ''}`}
-          value={localConfig.pattern}
-          onChange={handlePatternChange}
-          placeholder={localConfig.is_regex ? 'e.g., \\b(hello|hi)\\b' : 'Text to find...'}
+          className={`w-full p-2 border rounded ${!regexStatus.isValid ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'focus:border-blue-500 focus:ring-blue-500'}`}
+          value={pattern} // Use value from data
+          onChange={(e) => handleConfigUpdate('pattern', e.target.value)}
+          placeholder={is_regex ? 'e.g., \\b(hello|hi)\\b' : 'Text to find...'}
           disabled={disabled}
         />
         {!regexStatus.isValid && (
@@ -228,20 +160,20 @@ const TransformNodeInner = ({
       {/* Replacement input */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
-          {localConfig.is_regex ? 'Replacement (can use $1, $2 for capture groups)' : 'Replace With'}
+          {is_regex ? 'Replacement (use $1, $&)' : 'Replace With'}
         </label>
         <input
           type="text"
-          className="w-full p-2 border rounded"
-          value={localConfig.replacement}
-          onChange={handleReplacementChange}
+          className="w-full p-2 border rounded focus:border-blue-500 focus:ring-blue-500"
+          value={replacement} // Use value from data
+          onChange={(e) => handleConfigUpdate('replacement', e.target.value)}
           placeholder="Replacement text..."
           disabled={disabled}
         />
       </div>
       
       {/* Preview section */}
-      <div className="pt-2 space-y-3 border-t border-gray-200">
+      <div className="pt-4 space-y-3 border-t border-gray-200 mt-4">
         <h4 className="font-medium text-sm">Transform Preview</h4>
         
         {/* Preview input */}
@@ -250,7 +182,7 @@ const TransformNodeInner = ({
             Sample Input
           </label>
           <textarea
-            className="w-full h-16 p-2 border rounded text-sm"
+            className="w-full h-16 p-2 border rounded text-sm focus:ring-blue-500 focus:border-blue-500"
             value={previewInput}
             onChange={handlePreviewInputChange}
             placeholder="Enter text to preview transformation..."
@@ -273,5 +205,4 @@ const TransformNodeInner = ({
 };
 
 // Export the direct component
-const TransformNode = TransformNodeInner;
 export default TransformNode;

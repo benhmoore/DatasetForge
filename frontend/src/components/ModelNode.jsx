@@ -1,57 +1,33 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { Handle } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react'; // Import Position
 import CustomSelect from './CustomSelect';
 import CustomSlider from './CustomSlider';
 import api from '../api/apiClient';
-import withNodeWrapper from './withNodeWrapper';
 
 /**
  * ModelNode component for configuring a model node in a workflow
  */
-const ModelNodeInner = ({ 
-  data, // Pass raw data from ReactFlow
+const ModelNode = ({ 
+  data, // Data object from React Flow, contains config and onConfigChange
+  id,   // Node ID from React Flow
   disabled = false,
-  availableTemplates = [],
   isConnectable = true
 }) => {
-  // Destructure the necessary values directly from data prop
-  const { onConfigChange } = data;
-  // Create local state for our models fetch
+  // Destructure config and callback from data
+  const { 
+    onConfigChange, 
+    model = '', 
+    system_instruction = '', 
+    model_parameters = { temperature: 0.7, top_p: 1.0, max_tokens: 1000 },
+    name, // Get name/label from data
+    label 
+  } = data;
+
+  // State only for fetched models and loading status
   const [models, setModels] = useState([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
-  
-  // Create local state for handling our configuration
-  const [localConfig, setLocalConfig] = useState({
-    model: data.model || '',
-    system_instruction: data.system_instruction || '',
-    model_parameters: data.model_parameters || {
-      temperature: 0.7,
-      top_p: 1.0,
-      max_tokens: 1000
-    }
-  });
-  
-  // Debug output to see what we're working with
-  useEffect(() => {
-    console.log("ModelNode data from ReactFlow:", data);
-    console.log("ModelNode localConfig:", localConfig);
-  }, [data, localConfig]);
-  
-  // Update our parent when local config changes
-  const updateParent = (updatedConfig) => {
-    // Only update if we have the callback
-    if (onConfigChange) {
-      // Create complete updated config
-      const completeConfig = {
-        ...data,
-        ...updatedConfig
-      };
-      console.log("ModelNode: Sending update to parent:", completeConfig);
-      onConfigChange(completeConfig);
-    }
-  };
-  
+
   // Fetch available models on component mount
   useEffect(() => {
     const fetchModels = async () => {
@@ -66,96 +42,66 @@ const ModelNodeInner = ({
         setIsLoadingModels(false);
       }
     };
-    
     fetchModels();
-  }, []);
-  
+  }, []); // Run only once on mount
+
   // Handle model selection
-  const handleModelChange = (modelName) => {
-    // Update our local state
-    setLocalConfig(prev => ({
-      ...prev,
-      model: modelName
-    }));
-    
-    // Send update to parent
-    updateParent({ model: modelName });
+  const handleModelChange = (selectedModelName) => {
+    if (onConfigChange) {
+      console.log(`ModelNode (${id}): handleModelChange -> ${selectedModelName}`);
+      onConfigChange(id, { model: selectedModelName });
+    }
   };
-  
+
   // Handle system instruction change
   const handleInstructionChange = (e) => {
     const newValue = e.target.value;
-    console.log('ModelNode: handleInstructionChange', newValue);
-    
-    // Update our local state
-    setLocalConfig(prev => ({
-      ...prev,
-      system_instruction: newValue
-    }));
-    
-    // Send update to parent
-    updateParent({ system_instruction: newValue });
-    
-    // Debug output on blur
-    e.target.onblur = () => {
-      console.log("CURRENT SYSTEM INSTRUCTION:", localConfig.system_instruction);
-      console.log("DATA SYSTEM INSTRUCTION:", data.system_instruction);
-    };
+    if (onConfigChange) {
+      console.log(`ModelNode (${id}): handleInstructionChange -> ${newValue.substring(0, 20)}...`);
+      onConfigChange(id, { system_instruction: newValue });
+    }
   };
-  
+
   // Handle parameter changes
   const handleParameterChange = (param, value) => {
-    // Update our local state
-    setLocalConfig(prev => {
+    if (onConfigChange) {
       const updatedParams = {
-        ...prev.model_parameters,
+        ...model_parameters, // Use current parameters from props
         [param]: value
       };
-      
-      // Update local state
-      const newConfig = {
-        ...prev,
-        model_parameters: updatedParams
-      };
-      
-      // Send update to parent
-      updateParent({ 
-        model_parameters: updatedParams
-      });
-      
-      return newConfig;
-    });
+      console.log(`ModelNode (${id}): handleParameterChange -> ${param}: ${value}`);
+      onConfigChange(id, { model_parameters: updatedParams });
+    }
   };
-  
+
   // Model options for dropdown
-  const modelOptions = models.map(model => ({
-    value: model,
-    label: model
+  const modelOptions = models.map(m => ({
+    value: m,
+    label: m
   }));
-  
-  // No longer needed - template handling is now in TemplateNode component
-  
+
   return (
-    <div className="p-4 space-y-4 bg-white rounded border border-gray-200 relative">
+    <div className="p-4 space-y-4 bg-white rounded border border-gray-200 relative shadow-sm min-w-[300px]">
       {/* Input handle */}
       <Handle 
         type="target" 
-        position="left" 
+        position={Position.Left} // Use Position enum
         id="input" 
         isConnectable={isConnectable} 
-        className="w-3 h-3 bg-blue-500"
+        className="!w-3 !h-3 !bg-blue-500" // Use !important Tailwind prefix if needed
       />
       
       {/* Output handle */}
       <Handle 
         type="source" 
-        position="right" 
+        position={Position.Right} // Use Position enum
         id="output" 
         isConnectable={isConnectable} 
-        className="w-3 h-3 bg-blue-500"
+        className="!w-3 !h-3 !bg-blue-500"
       />
       
-      <h3 className="font-medium text-lg">{data?.name || data?.label || 'Model Node'}</h3>
+      {/* Use name or label from data, fallback */}
+      <h3 className="font-medium text-lg">{name || label || 'Model Node'}</h3>
       
       {/* Model selection */}
       <div className="space-y-2">
@@ -164,17 +110,13 @@ const ModelNodeInner = ({
         </label>
         <CustomSelect
           options={modelOptions}
-          value={localConfig.model || ''}
+          value={model || ''} // Use model directly from data
           onChange={handleModelChange}
           placeholder="Select a model..."
           isLoading={isLoadingModels}
           disabled={disabled}
         />
-        {/* Debug */}
-        <div className="text-xs mt-1 text-gray-400">Data Model: {data.model || 'none'}</div>
       </div>
-      
-      {/* Template selection removed - now handled by separate TemplateNode */}
       
       {/* System instruction */}
       <div className="space-y-2">
@@ -182,15 +124,12 @@ const ModelNodeInner = ({
           System Instruction
         </label>
         <textarea
-          className="w-full h-24 p-2 border rounded text-sm"
-          value={localConfig.system_instruction || ''}
+          className="w-full h-24 p-2 border rounded text-sm focus:ring-blue-500 focus:border-blue-500"
+          value={system_instruction || ''} // Use system_instruction directly from data
           onChange={handleInstructionChange}
-          onBlur={() => console.log("CURRENT DATA:", data)}
           placeholder="Enter system instructions for the model..."
           disabled={disabled}
         />
-        {/* Debug */}
-        <div className="text-xs mt-1 text-gray-400">Data instruction: {(data.system_instruction || '').substring(0, 20)}...</div>
       </div>
       
       {/* Model parameters */}
@@ -201,15 +140,15 @@ const ModelNodeInner = ({
         <div>
           <CustomSlider
             label="Temperature"
-            value={localConfig.model_parameters?.temperature || 0.7}
+            value={model_parameters?.temperature ?? 0.7} // Use ?? for default
             onChange={(value) => handleParameterChange('temperature', value)}
             min={0}
             max={2}
             step={0.05}
             disabled={disabled}
           />
-          <p className="text-xs text-gray-500">
-            Controls randomness: Lower values for more predictable outputs, higher for more creative ones.
+          <p className="text-xs text-gray-500 mt-1">
+            Controls randomness. Lower = predictable, Higher = creative.
           </p>
         </div>
         
@@ -217,15 +156,15 @@ const ModelNodeInner = ({
         <div>
           <CustomSlider
             label="Top-p"
-            value={localConfig.model_parameters?.top_p || 1.0}
+            value={model_parameters?.top_p ?? 1.0} // Use ?? for default
             onChange={(value) => handleParameterChange('top_p', value)}
             min={0}
             max={1}
             step={0.05}
             disabled={disabled}
           />
-          <p className="text-xs text-gray-500">
-            Nucleus sampling: Controls diversity by considering only tokens with the top p probability mass.
+          <p className="text-xs text-gray-500 mt-1">
+            Nucleus sampling. Considers tokens with top p probability mass.
           </p>
         </div>
         
@@ -233,15 +172,15 @@ const ModelNodeInner = ({
         <div>
           <CustomSlider
             label="Max Tokens"
-            value={localConfig.model_parameters?.max_tokens || 1000}
+            value={model_parameters?.max_tokens ?? 1000} // Use ?? for default
             onChange={(value) => handleParameterChange('max_tokens', Math.round(value))}
             min={100}
-            max={4000}
+            max={4000} // Consider adjusting max based on models
             step={100}
             disabled={disabled}
           />
-          <p className="text-xs text-gray-500">
-            Maximum number of tokens to generate in the response.
+          <p className="text-xs text-gray-500 mt-1">
+            Maximum tokens to generate in the response.
           </p>
         </div>
       </div>
@@ -250,5 +189,4 @@ const ModelNodeInner = ({
 };
 
 // Export the direct component
-const ModelNode = ModelNodeInner;
 export default ModelNode;

@@ -8,13 +8,14 @@ import {
   useNodesState, 
   useEdgesState,
   MarkerType,
-  Handle
+  Handle,
+  Position // Import Position
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { toast } from 'react-toastify';
-import isEqual from 'lodash/isEqual'; // Import isEqual
-import ModelNode from './ModelNode';
-import TransformNode from './TransformNode';
+import isEqual from 'lodash/isEqual'; // Keep for comparing workflow prop content
+import ModelNode from './ModelNode'; // Direct import
+import TransformNode from './TransformNode'; // Direct import
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
 
@@ -22,8 +23,6 @@ import Icon from './Icons';
 const NODE_TYPES = {
   model: 'Model',
   transform: 'Transform',
-  // filter: 'Filter', // Example for future expansion
-  // custom: 'Custom Function', // Example for future expansion
   input: 'Input',
   output: 'Output'
 };
@@ -44,10 +43,10 @@ const InputNodeComponent = ({ data, isConnectable }) => (
     <div className="font-semibold text-green-800 mb-2">{data.label || 'Input'}</div>
     <Handle 
       type="source" 
-      position="right" 
+      position={Position.Right} // Use Position enum
       id="output" 
       isConnectable={isConnectable} 
-      className="w-3 h-3 bg-green-500"
+      className="!w-3 !h-3 !bg-green-500" // Use !important prefix if needed
     />
     <div className="text-xs text-gray-500 mt-1">Workflow Input</div>
   </div>
@@ -59,16 +58,17 @@ const OutputNodeComponent = ({ data, isConnectable }) => (
     <div className="font-semibold text-purple-800 mb-2">{data.label || 'Output'}</div>
     <Handle 
       type="target" 
-      position="left" 
+      position={Position.Left} // Use Position enum
       id="input" 
       isConnectable={isConnectable} 
-      className="w-3 h-3 bg-purple-500"
+      className="!w-3 !h-3 !bg-purple-500"
     />
      <div className="text-xs text-gray-500 mt-1">Workflow Output</div>
   </div>
 );
 
 // Map internal types to actual components for React Flow
+// Use direct components, not wrapped ones
 const nodeTypes = { 
   modelNode: ModelNode, 
   transformNode: TransformNode,
@@ -81,738 +81,387 @@ const nodeTypes = {
  */
 const WorkflowEditor = ({ 
   workflow, 
-  setWorkflow,
-  availableTemplates = [], // Assuming templates might be needed for some nodes
+  setWorkflow, // Callback to update the parent's workflow state
   onImport, // Callback for import action
   onExport, // Callback for export action
   disabled = false // Disable editing controls
 }) => {
-  // State to track if there are unsaved changes
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const reactFlowWrapper = useRef(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  
-  // Reference to the ReactFlow instance
-  const reactFlowInstance = useRef(null);
-  
-  // Node change handler that marks position changes as unsaved
-  const handleNodesChange = useCallback((changes) => {
-    console.log("Node changes:", changes);
+  const [workflowName, setWorkflowName] = useState('');
+  const [workflowDescription, setWorkflowDescription] = useState('');
+  const [selectedNodeType, setSelectedNodeType] = useState('model'); // Default node type to add
+  const [selectedNodeId, setSelectedNodeId] = useState(null); // Track selected node ID
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  const reactFlowWrapper = useRef(null);
+  const nodeIdCounterRef = useRef(1); // Counter for generating unique node IDs
+  const previousWorkflowRef = useRef(null); // Ref to store previous workflow prop instance
+
+  // --- State Synchronization ---
+
+  // Handler for changes within a node's configuration (called by child nodes)
+  // This function is passed down to each node via its `data` prop.
+  const handleNodeConfigChange = useCallback((nodeId, updatedConfig) => {
+    if (disabled) return;
     
-    // Let ReactFlow update its internal state
-    onNodesChange(changes);
+    console.log(`WorkflowEditor: Node config change received for node ${nodeId}`, updatedConfig);
     
-    // Check if there are meaningful changes (position changes, additions, or removals)
-    const hasPositionChanges = changes.some(change => 
-      change.type === 'position' || 
-      (change.type === 'dimensions') || // Also track dimension changes
-      change.type === 'add' || 
-      change.type === 'remove'
+    setNodes(prevNodes => 
+      prevNodes.map(node => {
+        if (node.id === nodeId) {
+          // Create a new data object, merging the existing data with the updates
+          const newData = {
+            ...node.data,
+            ...updatedConfig,
+            // Update label if name changes (ensure name exists in updatedConfig)
+            label: updatedConfig.name !== undefined ? updatedConfig.name : node.data.label,
+          };
+          // Return a *new* node object with the updated data
+          return { ...node, data: newData };
+        }
+        return node; // Return unchanged nodes
+      })
     );
     
-    // Look specifically for position changes for debugging
-    changes.forEach(change => {
-      if (change.type === 'position' && change.position) {
-        console.log(`Node ${change.id} moved to:`, change.position);
-      }
-    });
-    
-    // If there are changes, mark that we have unsaved changes
-    if (hasPositionChanges) {
-      setHasUnsavedChanges(true);
-    }
-  }, [onNodesChange, setHasUnsavedChanges]);
-  
-  // Simple edge change handler
-  const handleEdgesChange = useCallback((changes) => {
-    // Let ReactFlow update its internal state
-    onEdgesChange(changes);
-    
-    // Mark that we have unsaved changes if there are any changes
-    if (changes.length > 0) {
-      setHasUnsavedChanges(true);
-    }
-  }, [onEdgesChange, setHasUnsavedChanges]);
-  const [selectedNode, setSelectedNode] = useState(null); // For potential future inspector panel
-  const [selectedNodeType, setSelectedNodeType] = useState('model'); // Default node type to add
-  const [workflowName, setWorkflowName] = useState(workflow?.name || 'New Workflow');
-  const [workflowDescription, setWorkflowDescription] = useState(workflow?.description || '');
-  
-  const nodeIdCounterRef = useRef(1); // Counter for generating unique node IDs
-  const isInternalUpdateRef = useRef(false); // Ref to track if updates are due to prop loading
-  const previousWorkflowRef = useRef(); // Ref to store previous workflow prop instance
-
-  // Refs to hold current state for stable callback access
-  const nodesRef = useRef(nodes);
-  const edgesRef = useRef(edges);
-  const workflowNameRef = useRef(workflowName);
-  const workflowDescriptionRef = useRef(workflowDescription);
-
-  // Update refs whenever state changes
-  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
-  useEffect(() => { edgesRef.current = edges; }, [edges]);
-  useEffect(() => { workflowNameRef.current = workflowName; }, [workflowName]);
-  useEffect(() => { workflowDescriptionRef.current = workflowDescription; }, [workflowDescription]);
+    setHasUnsavedChanges(true); // Mark changes as unsaved
+  }, [setNodes, disabled]);
 
   // Effect to load workflow from props
   useEffect(() => {
     // Only run loading logic if the workflow prop *instance* has changed
-    if (workflow !== previousWorkflowRef.current) {
-      console.log("Workflow prop instance changed.");
+    // Or if the workflow prop content has changed (using deep comparison)
+    const incomingWorkflow = workflow || { name: 'New Workflow', description: '', nodes: {}, connections: [] };
+    const previousWorkflow = previousWorkflowRef.current || { name: 'New Workflow', description: '', nodes: {}, connections: [] };
 
-      // Construct a representation of the current internal state using refs
-      const internalNodesMap = {};
-      nodesRef.current.forEach(node => {
-        const { onConfigChange, label, ...nodeConfig } = node.data;
-        let nodeType;
-        // Map React Flow type back to internal type
-        Object.entries(nodeComponentMap).forEach(([internalType, componentType]) => {
-          if (node.type === componentType) {
-            nodeType = internalType;
+    // Compare relevant parts to see if an update is needed
+    const nameChanged = incomingWorkflow.name !== previousWorkflow.name;
+    const descriptionChanged = incomingWorkflow.description !== previousWorkflow.description;
+    // Use isEqual for deep comparison of nodes and connections objects/arrays
+    const nodesChanged = !isEqual(incomingWorkflow.nodes, previousWorkflow.nodes);
+    const connectionsChanged = !isEqual(incomingWorkflow.connections, previousWorkflow.connections);
+
+    if (workflow !== previousWorkflowRef.current || nameChanged || descriptionChanged || nodesChanged || connectionsChanged) {
+      console.log("Workflow prop changed or content differs. Loading into editor.");
+
+      try {
+        const reactFlowNodes = [];
+        const reactFlowEdges = [];
+        let maxId = 0; // Track max numeric ID part
+        
+        const workflowNodes = incomingWorkflow.nodes || {};
+        const workflowConnections = incomingWorkflow.connections || [];
+
+        Object.entries(workflowNodes).forEach(([nodeId, nodeConfig]) => {
+          // Update counter based on existing node IDs
+          const idNumber = parseInt(nodeId.replace(/[^0-9]/g, ''), 10);
+          if (!isNaN(idNumber) && idNumber > maxId) {
+            maxId = idNumber;
+          }
+          
+          const position = nodeConfig.position || { x: 100, y: 100 + reactFlowNodes.length * 150 };
+          const nodeComponentType = nodeComponentMap[nodeConfig.type] || 'modelNode'; // Fallback
+          
+          // Prepare node data, ensuring onConfigChange is attached
+          // Pass the *entire* nodeConfig from the workflow into the data object
+          // Also include the label derived from name/type
+          const data = {
+            ...nodeConfig, // Spread the whole config here
+            label: nodeConfig.name || `${NODE_TYPES[nodeConfig.type] || 'Node'}`,
+            onConfigChange: handleNodeConfigChange // Pass the stable callback
+          };
+          
+          reactFlowNodes.push({ 
+            id: nodeId, 
+            type: nodeComponentType, 
+            position, 
+            data // Pass the prepared data object
+          });
+        });
+        
+        nodeIdCounterRef.current = maxId + 1; // Set counter after finding max ID
+        
+        workflowConnections.forEach((connection) => {
+          if (connection.source_node_id && connection.target_node_id) {
+            reactFlowEdges.push({
+              id: `edge-${connection.source_node_id}-${connection.source_handle || 'default'}-${connection.target_node_id}-${connection.target_handle || 'default'}`, 
+              source: connection.source_node_id,
+              target: connection.target_node_id,
+              sourceHandle: connection.source_handle || null,
+              targetHandle: connection.target_handle || null,
+              type: 'smoothstep',
+              animated: true,
+              style: { stroke: '#3b82f6' },
+              markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#3b82f6' },
+            });
           }
         });
-        nodeType = nodeType || 'model'; // Fallback
         
-        const { onConfigChange: _, ...configToSave } = nodeConfig; // Exclude function
-        internalNodesMap[node.id] = {
-          id: node.id,
-          type: nodeType,
-          name: label || nodeConfig.name || 'Untitled Node',
-          position: { ...node.position }, // Clone position to avoid reference issues
-          ...configToSave
-        };
-      });
-      const internalConnections = edgesRef.current.map(edge => ({
-        source_node_id: edge.source,
-        target_node_id: edge.target,
-        source_handle: edge.sourceHandle,
-        target_handle: edge.targetHandle
-      }));
-      const internalName = workflowNameRef.current;
-      const internalDescription = workflowDescriptionRef.current;
-
-      // Extract data from the incoming workflow prop
-      const incomingNodesMap = workflow?.nodes || {};
-      const incomingConnections = workflow?.connections || [];
-      const incomingName = workflow?.name || 'New Workflow';
-      const incomingDescription = workflow?.description || '';
-
-      // Clean nodes for comparison (remove non-serializable data like functions)
-      const cleanNodes = (nodesObj) => 
-        Object.values(nodesObj).map(({ onConfigChange, ...rest }) => rest);
-
-      // Perform deep comparisons
-      const nodesAreEqual = isEqual(cleanNodes(internalNodesMap), cleanNodes(incomingNodesMap));
-      const connectionsAreEqual = isEqual(internalConnections, incomingConnections);
-      const nameAreEqual = internalName === incomingName;
-      const descriptionAreEqual = internalDescription === incomingDescription;
-
-      // Only proceed with updating internal state if the incoming prop *content* differs
-      if (!nodesAreEqual || !connectionsAreEqual || !nameAreEqual || !descriptionAreEqual) {
-         console.log("Workflow prop content differs from internal state. Loading prop.");
-         isInternalUpdateRef.current = true; // Mark as internal update START
-         
-         if (workflow) {
-           try {
-             const reactFlowNodes = [];
-             const reactFlowEdges = [];
-             let maxId = 0; // Track max numeric ID part
-             
-             if (workflow.nodes && typeof workflow.nodes === 'object') {
-               Object.entries(workflow.nodes).forEach(([nodeId, nodeConfig]) => {
-                 // Update counter based on existing node IDs
-                 const idNumber = parseInt(nodeId.replace(/[^0-9]/g, ''), 10);
-                 if (!isNaN(idNumber) && idNumber > maxId) {
-                   maxId = idNumber;
-                 }
-                 
-                 const position = nodeConfig.position || { x: 100, y: 100 + reactFlowNodes.length * 150 };
-                 
-                 // Map internal type to React Flow component type
-                 const nodeComponentType = nodeComponentMap[nodeConfig.type] || 'modelNode'; // Fallback
-                 
-                 // Ensure onConfigChange is attached correctly
-                 let data = {
-                   ...nodeConfig, // Spread first to allow overrides
-                   label: nodeConfig.name || `${NODE_TYPES[nodeConfig.type] || 'Node'}`, // Use NODE_TYPES for label
-                   onConfigChange: (updatedConfig) => handleNodeConfigChange(nodeId, updatedConfig)
-                 };
-                 
-                 reactFlowNodes.push({ id: nodeId, type: nodeComponentType, position, data });
-               });
-             }
-             nodeIdCounterRef.current = maxId + 1; // Set counter after finding max ID
-             
-             if (workflow.connections && Array.isArray(workflow.connections)) {
-               workflow.connections.forEach((connection, index) => {
-                 if (connection.source_node_id && connection.target_node_id) {
-                   reactFlowEdges.push({
-                     // Generate a more robust edge ID
-                     id: `edge-${connection.source_node_id}-${connection.source_handle || 'default'}-${connection.target_node_id}-${connection.target_handle || 'default'}`, 
-                     source: connection.source_node_id,
-                     target: connection.target_node_id,
-                     sourceHandle: connection.source_handle || null,
-                     targetHandle: connection.target_handle || null,
-                     type: 'smoothstep',
-                     animated: true,
-                     style: { stroke: '#3b82f6' },
-                     markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#3b82f6' },
-                   });
-                 }
-               });
-             }
-             
-             setNodes(reactFlowNodes);
-             setEdges(reactFlowEdges);
-             setWorkflowName(incomingName); // Use incoming name
-             setWorkflowDescription(incomingDescription); // Use incoming description
-
-           } catch (error) {
-             console.error('Error loading workflow:', error);
-             toast.error('Failed to load workflow diagram');
-           }
-         } else {
-           // Handle null/undefined workflow prop (reset state)
-           setNodes([]);
-           setEdges([]);
-           setWorkflowName('New Workflow');
-           setWorkflowDescription('');
-           nodeIdCounterRef.current = 1;
-         }
-         
-         // Use setTimeout to reset the flag *after* the current render cycle completes
-         setTimeout(() => {
-           isInternalUpdateRef.current = false; // Mark as internal update END
-           console.log("Internal update flag reset after prop load.");
-         }, 0);
-      } else {
-         console.log("Workflow prop instance changed BUT content matches internal state. Skipping internal state update.");
-      }
-
-      // Update the ref to the new prop instance for the next render's comparison
-      previousWorkflowRef.current = workflow;
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workflow]); // Only depends on the external workflow prop instance change
-
-  // STABLE Callback to update the parent component's workflow state
-  // Reads current state from refs, compares with previous prop, calls setWorkflow if changed
-  const updateWorkflowObject = useCallback(() => {
-    // Skip if the update was triggered by the workflow prop loading effect
-    if (isInternalUpdateRef.current) {
-      console.log("Skipping updateWorkflowObject: internal update from prop loading in progress.");
-      return;
-    }
-    console.log("Running updateWorkflowObject to save current state.");
-    
-    // Important: We need to get the absolute latest node positions and state
-    // Read from nodesRef BUT also make sure to capture the latest positions
-    console.log("Latest nodes with positions:", nodesRef.current);
-
-    // Read current state directly from refs
-    const currentNodes = nodesRef.current;
-    const currentEdges = edgesRef.current;
-    const currentWorkflowName = workflowNameRef.current;
-    const currentWorkflowDescription = workflowDescriptionRef.current;
-
-    // Construct the workflow object from current internal state (refs)
-    const workflowNodes = {};
-    currentNodes.forEach(node => {
-      // Extract node data, careful to preserve all properties
-      const { onConfigChange, label, ...nodeConfig } = node.data;
-      console.log(`Processing node ${node.id}, data:`, node.data);
-      
-      let nodeType;
-      // Map React Flow type back to internal type
-      Object.entries(nodeComponentMap).forEach(([internalType, componentType]) => {
-        if (node.type === componentType) {
-          nodeType = internalType;
-        }
-      });
-      nodeType = nodeType || 'model'; // Fallback
-      
-      // CRITICAL: We must preserve ALL properties in nodeConfig to prevent data loss
-      // First remove functions that can't be serialized
-      const { onConfigChange: _, ...configToSave } = nodeConfig;
-      
-      // Create the node representation to save in the workflow
-      // Explicitly include all properties we care about
-      workflowNodes[node.id] = {
-        id: node.id,
-        type: nodeType,
-        name: label || nodeConfig.name || 'Untitled Node',
-        position: node.position,
-        // For ModelNode
-        model: nodeConfig.model,
-        system_instruction: nodeConfig.system_instruction,
-        model_parameters: nodeConfig.model_parameters,
-        // For TransformNode
-        pattern: nodeConfig.pattern,
-        replacement: nodeConfig.replacement,
-        is_regex: nodeConfig.is_regex,
-        apply_to_field: nodeConfig.apply_to_field,
-        // Include all other properties
-        ...configToSave
-      };
-      
-      console.log(`Workflow node ${node.id} after processing:`, workflowNodes[node.id]);
-    });
-    
-    const workflowConnections = currentEdges.map(edge => ({
-      source_node_id: edge.source,
-      target_node_id: edge.target,
-      source_handle: edge.sourceHandle,
-      target_handle: edge.targetHandle
-    }));
-
-    const updatedWorkflow = {
-      // Use the ID from the *previous* workflow prop if available, otherwise generate
-      id: previousWorkflowRef.current?.id || `workflow-${Date.now()}`, 
-      name: currentWorkflowName, 
-      description: currentWorkflowDescription, 
-      nodes: workflowNodes,
-      connections: workflowConnections,
-      updated_at: new Date().toISOString()
-    };
-
-    // Compare relevant parts of updatedWorkflow with previousWorkflowRef.current
-    const prevWorkflow = previousWorkflowRef.current || {};
-    const currentNodesMap = prevWorkflow.nodes || {};
-    const currentConnections = prevWorkflow.connections || [];
-    const currentName = prevWorkflow.name || '';
-    const currentDescription = prevWorkflow.description || '';
-
-    const newNodesMap = updatedWorkflow.nodes || {};
-    const newConnections = updatedWorkflow.connections || [];
-    const newName = updatedWorkflow.name || '';
-    const newDescription = updatedWorkflow.description || '';
-
-    // Prepare nodes for comparison by removing functions/non-serializable data
-    // Skip deep comparison entirely - always update the workflow
-    console.log("Directly updating workflow with latest nodes:", workflowNodes);
-    console.log("Sample node properties (if available):");
-    
-    // Log some sample node properties for debugging
-    const firstNodeId = Object.keys(workflowNodes)[0];
-    if (firstNodeId) {
-      const sampleNode = workflowNodes[firstNodeId];
-      console.log(`- Node ${firstNodeId} system_instruction:`, sampleNode.system_instruction);
-      console.log(`- Node ${firstNodeId} model_parameters:`, sampleNode.model_parameters);
-    }
-    
-    // Always update the workflow object
-    console.log("ALWAYS updating workflow object");
-    setWorkflow(updatedWorkflow); // Call prop function to update parent
-  // Only depend on the setWorkflow prop function itself (and potentially previousWorkflowRef if needed, but likely stable)
-  }, [setWorkflow]); 
-
-  // Update our hasUnsavedChanges flag when state changes, but don't auto-save
-  useEffect(() => {
-    // Skip if the update was triggered by loading from props
-    if (isInternalUpdateRef.current) {
-      console.log("Skipping unsaved changes tracking due to loading from props");
-      return;
-    }
-    
-    // Mark that we have unsaved changes
-    setHasUnsavedChanges(true);
-    console.log("Marked workflow as having unsaved changes");
-    
-  // Depend on the actual state variables
-  }, [nodes, edges, workflowName, workflowDescription]); 
-  
-  // Direct function to save the current workflow - completely rewritten for maximum reliability
-  const handleSaveWorkflow = useCallback(() => {
-    if (disabled) return;
-    
-    console.log("=== SAVING WORKFLOW ===");
-    
-    // Get the latest nodes from the React Flow instance if available
-    let currentNodes = nodes;
-    
-    // If we have access to the ReactFlow instance, use it to get the most up-to-date nodes
-    // This ensures we have the final positions after dragging stops
-    if (reactFlowInstance.current) {
-      const rfNodes = reactFlowInstance.current.getNodes();
-      if (rfNodes && rfNodes.length > 0) {
-        console.log("Using nodes directly from ReactFlow instance:", rfNodes);
-        currentNodes = rfNodes;
-      }
-    }
-    
-    console.log("Current nodes at save time:", currentNodes);
-    
-    // Create workflow object directly from current state
-    const workflowNodes = {};
-    
-    // Process each node to capture its current state completely
-    currentNodes.forEach(node => {
-      // Extract node data and show what we're working with
-      const { data, id, type, position, dragging, selected } = node;
-      console.log(`Saving node ${id} (${type}) at position:`, position);
-      
-      // Determine internal node type from React Flow type
-      let nodeType;
-      Object.entries(nodeComponentMap).forEach(([internalType, componentType]) => {
-        if (type === componentType) {
-          nodeType = internalType;
-        }
-      });
-      nodeType = nodeType || 'model'; // Fallback
-      
-      // Remove function properties that can't be saved
-      const { onConfigChange, ...nodeData } = data;
-      
-      // Build the complete node object with all properties
-      const nodeObject = {
-        id,
-        type: nodeType,
-        name: data.label || data.name || 'Untitled Node',
-        // CRITICAL: Always save the current position
-        position: {
-          x: position.x, 
-          y: position.y
-        },
-        ...nodeData // Include ALL data properties from the node
-      };
-      
-      // Double-check model node specific properties
-      if (nodeType === 'model') {
-        // Make sure we log these explicitly for debugging
-        console.log(`  - model: "${data.model}"`);
-        console.log(`  - system_instruction: "${data.system_instruction}"`);
-        console.log(`  - model_parameters:`, data.model_parameters);
+        setNodes(reactFlowNodes);
+        setEdges(reactFlowEdges);
+        setWorkflowName(incomingWorkflow.name);
+        setWorkflowDescription(incomingWorkflow.description || '');
+        setHasUnsavedChanges(false); // Reset unsaved changes flag after loading
+        previousWorkflowRef.current = workflow; // Update the ref to the current workflow prop
         
-        // Make sure they're included in the saved object
-        nodeObject.model = data.model;
-        nodeObject.system_instruction = data.system_instruction;
-        nodeObject.model_parameters = data.model_parameters || {
-          temperature: 0.7,
-          top_p: 1.0,
-          max_tokens: 1000
-        };
-      }
-      
-      // Save to our nodes map
-      workflowNodes[id] = nodeObject;
-      console.log(`Final node object for ${id}:`, nodeObject);
-    });
-    
-    // Process edges
-    const workflowConnections = edges.map(edge => ({
-      source_node_id: edge.source,
-      target_node_id: edge.target,
-      source_handle: edge.sourceHandle,
-      target_handle: edge.targetHandle
-    }));
-    
-    // Create the full workflow object
-    const updatedWorkflow = {
-      id: workflow?.id || `workflow-${Date.now()}`,
-      name: workflowName,
-      description: workflowDescription,
-      nodes: workflowNodes,
-      connections: workflowConnections,
-      updated_at: new Date().toISOString()
-    };
-    
-    console.log("Complete workflow object:", updatedWorkflow);
-    
-    // CRITICAL VERIFICATION: Check that positions were preserved
-    Object.keys(workflowNodes).forEach(nodeId => {
-      const node = workflowNodes[nodeId];
-      const originalNode = currentNodes.find(n => n.id === nodeId);
-      
-      console.log(`POSITION CHECK - Node ${nodeId}:`);
-      console.log(`  Original: ${JSON.stringify(originalNode.position)}`);
-      console.log(`  Saved:    ${JSON.stringify(node.position)}`);
-      
-      // Verify the position is correct (should be identical)
-      if (originalNode && 
-          (originalNode.position.x !== node.position.x || 
-           originalNode.position.y !== node.position.y)) {
-        console.error(`Position mismatch for node ${nodeId}!`);
-      }
-    });
-    
-    // Direct sanity check for first node
-    if (Object.keys(workflowNodes).length > 0) {
-      const firstNodeId = Object.keys(workflowNodes)[0];
-      const firstNode = workflowNodes[firstNodeId];
-      if (firstNode.type === 'model') {
-        console.log("VERIFICATION - First node system_instruction:", firstNode.system_instruction);
+        console.log("Workflow loaded into editor state:", { 
+          nodeCount: reactFlowNodes.length, 
+          edgeCount: reactFlowEdges.length,
+          name: incomingWorkflow.name
+        });
+
+      } catch (error) {
+        console.error("Error loading workflow into editor:", error);
+        toast.error("Failed to load workflow into editor.");
+        // Optionally reset state to a safe default
+        setNodes([]);
+        setEdges([]);
+        setWorkflowName('Error Loading');
+        setWorkflowDescription('');
+        setHasUnsavedChanges(false);
+        previousWorkflowRef.current = null;
       }
     }
-    
-    // Send to parent
-    setWorkflow(updatedWorkflow);
-    
-    // Reset the unsaved changes flag
-    setHasUnsavedChanges(false);
-    
-    // Show success message
-    toast.success("Workflow saved successfully");
-  }, [disabled, nodes, edges, workflowName, workflowDescription, workflow?.id, setWorkflow, nodeComponentMap]);
+  // Depend on workflow prop instance and the stable callback
+  }, [workflow, setNodes, setEdges, handleNodeConfigChange]); 
 
   // --- React Flow Handlers ---
 
+  // Handle node selection changes
+  const handleNodesChange = useCallback((changes) => {
+    if (disabled) return;
+    onNodesChange(changes); // Apply changes using React Flow's handler
+    
+    // Update selected node ID if a node is selected/deselected
+    const selectionChange = changes.find(change => change.type === 'select');
+    if (selectionChange) {
+      setSelectedNodeId(selectionChange.selected ? selectionChange.id : null);
+    }
+    
+    // Mark changes if nodes moved or were deleted
+    if (changes.some(c => c.type === 'position' || c.type === 'remove')) {
+      setHasUnsavedChanges(true);
+    }
+  }, [onNodesChange, disabled]);
+
+  // Handle edge changes (creation, deletion)
+  const handleEdgesChange = useCallback((changes) => {
+    if (disabled) return;
+    onEdgesChange(changes); // Apply changes using React Flow's handler
+    setHasUnsavedChanges(true); // Any edge change is considered an unsaved change
+  }, [onEdgesChange, disabled]);
+
+  // Handle new connection creation
   const onConnect = useCallback((params) => {
     if (disabled) return;
     
-    // Add the edge to the React Flow state
-    setEdges((eds) => addEdge({ 
+    console.log("Creating new edge:", params);
+    
+    const newEdge = { 
       ...params, 
-      type: 'smoothstep', 
-      animated: true, 
+      id: `edge-${params.source}-${params.sourceHandle || 'default'}-${params.target}-${params.targetHandle || 'default'}`,
+      type: 'smoothstep',
+      animated: true,
       style: { stroke: '#3b82f6' },
-      markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#3b82f6' } 
-    }, eds));
-    
-    // Mark that we have unsaved changes
+      markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#3b82f6' },
+    };
+    setEdges((eds) => addEdge(newEdge, eds));
     setHasUnsavedChanges(true);
-  }, [setEdges, disabled, setHasUnsavedChanges]);
+  }, [setEdges, disabled]);
 
-  const onNodesDelete = useCallback((deletedNodes) => {
-    if (disabled) return;
-    // Logic to handle node deletion if needed (e.g., confirmation)
-    // React Flow's useNodesState handles the state update automatically via onNodesChange
-  }, [disabled]);
+  // --- Workflow Actions ---
 
-  const onEdgesDelete = useCallback((deletedEdges) => {
-    if (disabled) return;
-    // Logic to handle edge deletion if needed
-    // React Flow's useEdgesState handles the state update automatically via onEdgesChange
-  }, [disabled]);
-
-  const onNodeClick = useCallback((event, node) => {
-    setSelectedNode(node); // Select node on click
-  }, []);
-
-  // --- Custom Handlers ---
-
-  // Handler for changes within a node's configuration (called by child nodes)
-  const handleNodeConfigChange = (nodeId, updatedConfig) => {
+  // Add a new node to the canvas
+  const addNode = useCallback(() => {
     if (disabled) return;
     
-    console.log('WorkflowEditor: Node config change for node', nodeId, 'with config:', updatedConfig);
+    const newNodeId = `${selectedNodeType}-${nodeIdCounterRef.current++}`;
+    const nodeLabel = `${NODE_TYPES[selectedNodeType]} ${nodeIdCounterRef.current - 1}`;
+    const nodeComponentType = nodeComponentMap[selectedNodeType];
     
-    // Use a direct state update
-    setNodes(prevNodes => {
-      // Find the node we need to update
-      const nodeIndex = prevNodes.findIndex(n => n.id === nodeId);
-      if (nodeIndex === -1) {
-        console.error(`Node with ID ${nodeId} not found!`);
-        return prevNodes;
-      }
-      
-      // Create a deep copy of the nodes array
-      const newNodes = [...prevNodes];
-      
-      // Get the target node
-      const targetNode = prevNodes[nodeIndex];
-      
-      // Create a new data object with the updated configuration
-      const newData = {
-        ...targetNode.data,
-        ...updatedConfig,
-        // Update label if name changes
-        label: updatedConfig.name !== undefined ? updatedConfig.name : targetNode.data.label,
-      };
-      
-      // Make sure to preserve the callback
-      newData.onConfigChange = targetNode.data.onConfigChange;
-      
-      // Create a new node with updated data
-      newNodes[nodeIndex] = {
-        ...targetNode,
-        data: newData
-      };
-      
-      return newNodes;
-    });
-    
-    // Mark that we have unsaved changes
-    setHasUnsavedChanges(true);
-  };
-
-  // Handler to add a new node to the canvas
-  const handleAddNode = () => {
-    if (disabled) return;
-    
-    const hasInputNode = nodesRef.current.some(node => node.type === 'inputNode');
-    const hasOutputNode = nodesRef.current.some(node => node.type === 'outputNode');
-    
-    // Prevent adding multiple input/output nodes
-    if (selectedNodeType === 'input' && hasInputNode) {
-      toast.warning('Workflow can only have one input node.'); return;
-    }
-    if (selectedNodeType === 'output' && hasOutputNode) {
-      toast.warning('Workflow can only have one output node.'); return;
-    }
-    
-    // Calculate position for the new node (simple vertical stacking for now)
-    const yPos = nodesRef.current.length * 150 + 100;
-    const position = { x: 100, y: yPos };
-    
-    // Generate unique ID, handling special cases for input/output
-    const newNodeId = selectedNodeType === 'input' ? 'input-node' : 
-                   selectedNodeType === 'output' ? 'output-node' : 
-                   `node-${nodeIdCounterRef.current++}`;
-
-    // Get the React Flow component type from the internal type
-    const nodeComponentType = nodeComponentMap[selectedNodeType] || 'modelNode'; // Fallback
-
-    // Define initial data based on node type
-    let nodeData = { 
-      type: selectedNodeType, // Store internal type
-      name: `New ${NODE_TYPES[selectedNodeType]}` // Initial name
+    // Determine position (e.g., center of viewport or offset)
+    // This requires access to the reactFlowInstance, which might not be ready immediately.
+    // A simpler approach is a fixed offset or relative position.
+    const position = { 
+      x: Math.random() * 400 + 100, // Random position for now
+      y: Math.random() * 200 + 100 
     }; 
-
-    switch (selectedNodeType) {
-      case 'model':
-        // Ensure initial data includes all properties ModelNode expects
-        nodeData = { 
-          ...nodeData, 
-          model: '', // Add missing model property
-          model_provider: 'ollama', 
-          model_name: '', // model_name might be redundant if model holds the identifier
-          temperature: 0.7, 
-          max_tokens: 1024, 
-          prompt: '',
-          system_instruction: '', // Add missing system_instruction
-          model_parameters: { // Ensure model_parameters object exists
-            temperature: 0.7,
-            top_p: 1.0,
-            max_tokens: 1024
-          }
-        };
-        break;
-      case 'transform':
-        nodeData = { ...nodeData, transform_type: 'replace', pattern: '', replacement: '' };
-        break;
-      // Input and Output have basic data initially
-      case 'input':
-      case 'output':
-        break; 
-      default: 
-        // Fallback for potentially unknown types
-        nodeData = { ...nodeData, name: 'New Node' };
+    
+    // Define default configuration based on node type
+    let defaultConfig = {};
+    if (selectedNodeType === 'model') {
+      defaultConfig = {
+        type: 'model',
+        name: nodeLabel,
+        model: '', // Default empty model
+        system_instruction: '',
+        model_parameters: { temperature: 0.7, top_p: 1.0, max_tokens: 1000 }
+      };
+    } else if (selectedNodeType === 'transform') {
+      defaultConfig = {
+        type: 'transform',
+        name: nodeLabel,
+        pattern: '',
+        replacement: '',
+        is_regex: false,
+        apply_to_field: 'output'
+      };
+    } else if (selectedNodeType === 'input') {
+      defaultConfig = { type: 'input', name: 'Input' };
+    } else if (selectedNodeType === 'output') {
+      defaultConfig = { type: 'output', name: 'Output' };
     }
     
-    // Add label and the crucial onConfigChange handler
-    nodeData.label = nodeData.name || `${NODE_TYPES[selectedNodeType]} Node`;
-    nodeData.onConfigChange = (config) => handleNodeConfigChange(newNodeId, config);
-
-    const newNode = { 
-      id: newNodeId, 
-      type: nodeComponentType, 
-      position, 
-      data: nodeData 
+    const newNode = {
+      id: newNodeId,
+      type: nodeComponentType,
+      position,
+      data: {
+        ...defaultConfig, // Spread the default config
+        label: nodeLabel, // Set initial label
+        onConfigChange: handleNodeConfigChange // Pass the callback
+      }
     };
     
-    setNodes(nds => [...nds, newNode]); // Add the new node to state
-    setSelectedNode(newNode); // Optionally select the new node
-    setHasUnsavedChanges(true); // Mark that we have unsaved changes
+    console.log("Adding new node:", newNode);
+    setNodes((nds) => nds.concat(newNode));
+    setHasUnsavedChanges(true);
+  }, [selectedNodeType, setNodes, handleNodeConfigChange, disabled]);
 
-    // Provide guidance if adding the first non-IO node
-    if (nodes.length === 0 && !['input', 'output'].includes(selectedNodeType)) {
-      toast.info('Remember to add Input and Output nodes to complete the workflow.');
-    }
+  // Save the current workflow state
+  const saveWorkflow = useCallback(() => {
+    if (disabled) return;
+    
+    // Transform React Flow state back into the workflow structure
+    const updatedNodes = {};
+    nodes.forEach(node => {
+      // Extract the core configuration from node.data, excluding React Flow specific stuff like 'label' and 'onConfigChange'
+      const { label, onConfigChange, ...configData } = node.data;
+      updatedNodes[node.id] = {
+        ...configData, // The actual configuration
+        position: node.position // Save the position
+      };
+    });
+    
+    const updatedConnections = edges.map(edge => ({
+      source_node_id: edge.source,
+      source_handle: edge.sourceHandle || null, // Ensure null if undefined
+      target_node_id: edge.target,
+      target_handle: edge.targetHandle || null // Ensure null if undefined
+    }));
+    
+    const updatedWorkflow = {
+      ...(workflow || {}), // Preserve existing ID and other top-level fields
+      name: workflowName,
+      description: workflowDescription,
+      nodes: updatedNodes,
+      connections: updatedConnections,
+      updated_at: new Date().toISOString() // Add/update timestamp
+    };
+    
+    console.log("Saving workflow:", { 
+      id: updatedWorkflow.id, 
+      name: updatedWorkflow.name, 
+      nodeCount: Object.keys(updatedNodes).length, 
+      connectionCount: updatedConnections.length 
+    });
+    
+    setWorkflow(updatedWorkflow); // Call the parent's update function
+    setHasUnsavedChanges(false); // Reset flag after saving
+    toast.success(`Workflow '${workflowName}' saved.`);
+    
+  }, [nodes, edges, workflowName, workflowDescription, setWorkflow, workflow, disabled]);
+
+  // Handle workflow name change
+  const handleNameChange = (e) => {
+    if (disabled) return;
+    setWorkflowName(e.target.value);
+    setHasUnsavedChanges(true);
   };
 
-  // Handler for deleting the currently selected node
-  const handleDeleteNode = () => {
-    if (!selectedNode || disabled) return;
-    // Prevent deleting Input/Output nodes if they are the only ones of their type? (Optional)
-    // if ((selectedNode.id === 'input-node' || selectedNode.id === 'output-node')) {
-    //   toast.warning("Cannot delete the core Input/Output nodes.");
-    //   return;
-    // }
-    setNodes(nds => nds.filter(n => n.id !== selectedNode.id));
-    setEdges(eds => eds.filter(e => e.source !== selectedNode.id && e.target !== selectedNode.id));
-    setSelectedNode(null); // Deselect after deletion
-    setHasUnsavedChanges(true); // Mark that we have unsaved changes
+  // Handle workflow description change
+  const handleDescriptionChange = (e) => {
+    if (disabled) return;
+    setWorkflowDescription(e.target.value);
+    setHasUnsavedChanges(true);
   };
 
-  // --- Render ---
+  // Options for the node type selector
+  const nodeTypeOptions = Object.entries(NODE_TYPES).map(([key, label]) => ({
+    value: key,
+    label: label
+  }));
 
   return (
-    <div className="flex flex-col h-[600px] border rounded-lg shadow-sm bg-gray-50">
+    <div className="flex flex-col h-[70vh] border rounded-lg overflow-hidden">
       {/* Toolbar */}
-      <div className="p-2 border-b bg-white flex items-center space-x-2">
-        <input 
-          type="text" 
-          value={workflowName} 
-          onChange={(e) => setWorkflowName(e.target.value)} 
-          placeholder="Workflow Name"
-          className="flex-grow p-1 border rounded text-sm font-medium"
-          disabled={disabled}
-        />
-        <input 
-          type="text" 
-          value={workflowDescription} 
-          onChange={(e) => setWorkflowDescription(e.target.value)} 
-          placeholder="Description (optional)"
-          className="flex-grow p-1 border rounded text-sm"
-          disabled={disabled}
-        />
-        <CustomSelect
-          options={Object.entries(NODE_TYPES).map(([value, label]) => ({ value, label }))}
-          value={selectedNodeType}
-          onChange={(value) => setSelectedNodeType(value)}
-          disabled={disabled}
-          className="w-36 text-sm"
-        />
-        <button 
-          onClick={handleAddNode} 
-          className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50"
-          disabled={disabled}
-        >
-          <Icon name="plus" className="inline-block mr-1 h-4 w-4" /> Add Node
-        </button>
-        <button 
-          onClick={handleDeleteNode} 
-          className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={!selectedNode || disabled}
-        >
-           <Icon name="trash" className="inline-block mr-1 h-4 w-4" /> Delete
-        </button>
+      <div className="p-2 border-b bg-gray-50 flex items-center space-x-4">
+        {/* Workflow Name & Description */}
+        <div className="flex-grow flex items-center space-x-2">
+           <input 
+             type="text"
+             value={workflowName}
+             onChange={handleNameChange}
+             placeholder="Workflow Name"
+             className="px-2 py-1 border rounded text-sm font-medium focus:ring-blue-500 focus:border-blue-500"
+             disabled={disabled}
+           />
+           <input 
+             type="text"
+             value={workflowDescription}
+             onChange={handleDescriptionChange}
+             placeholder="Workflow Description (optional)"
+             className="px-2 py-1 border rounded text-sm flex-grow focus:ring-blue-500 focus:border-blue-500"
+             disabled={disabled}
+           />
+        </div>
+        
+        {/* Node Adder */}
+        <div className="flex items-center space-x-2">
+          <CustomSelect
+            options={nodeTypeOptions}
+            value={selectedNodeType}
+            onChange={setSelectedNodeType}
+            disabled={disabled}
+            className="w-36" // Adjust width as needed
+          />
+          <button 
+            onClick={addNode} 
+            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition text-sm flex items-center space-x-1 disabled:opacity-50"
+            disabled={disabled}
+          >
+            <Icon name="plus" className="w-4 h-4" />
+            <span>Add Node</span>
+          </button>
+        </div>
         
         {/* Save Button */}
         <button 
-          onClick={handleSaveWorkflow}
-          className={`px-3 py-1 rounded text-sm ${
-            hasUnsavedChanges 
-              ? "bg-green-600 text-white hover:bg-green-700" 
-              : "bg-gray-200 text-gray-500"
-          } ml-4 disabled:opacity-50`}
-          disabled={disabled || !hasUnsavedChanges}
-          title={hasUnsavedChanges ? "Save workflow changes" : "No unsaved changes"}
+          onClick={saveWorkflow} 
+          className={`px-3 py-1 rounded transition text-sm flex items-center space-x-1 ${hasUnsavedChanges ? 'bg-green-500 hover:bg-green-600 text-white animate-pulse' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}
+          disabled={!hasUnsavedChanges || disabled}
         >
-          <Icon name="save" className="inline-block mr-1 h-4 w-4" /> 
-          {hasUnsavedChanges ? "Save*" : "Saved"}
+          <Icon name="save" className="w-4 h-4" />
+          <span>Save Workflow</span>
         </button>
-
-        {/* Import/Export Buttons */}
+        
+        {/* Import/Export Buttons (Optional) */}
         {onImport && (
           <button 
-            onClick={onImport} 
-            className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 disabled:opacity-50"
+            onClick={() => { /* Trigger import logic */ }} 
+            className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50"
             disabled={disabled}
-            title="Import Workflow (JSON)"
           >
-            <Icon name="upload" className="inline-block mr-1 h-4 w-4" /> Import
+            Import
           </button>
         )}
         {onExport && (
-           <button 
-            onClick={onExport} 
-            className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 disabled:opacity-50"
+          <button 
+            onClick={() => onExport(workflow)} // Pass current workflow state for export
+            className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50"
             disabled={disabled}
-            title="Export Workflow (JSON)"
           >
-             <Icon name="download" className="inline-block mr-1 h-4 w-4" /> Export
+            Export
           </button>
         )}
       </div>
@@ -822,48 +471,20 @@ const WorkflowEditor = ({
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onInit={(instance) => {
-            // Save the ReactFlow instance so we can access it later
-            reactFlowInstance.current = instance;
-            console.log("ReactFlow instance initialized");
-          }}
-          onNodesChange={handleNodesChange} // Use our custom handler
-          onEdgesChange={handleEdgesChange} // Use our custom handler
+          onNodesChange={handleNodesChange} // Use the combined handler
+          onEdgesChange={handleEdgesChange} // Use the combined handler
           onConnect={onConnect}
-          onNodeClick={onNodeClick}
-          onNodesDelete={onNodesDelete}
-          onEdgesDelete={onEdgesDelete}
-          onNodeDragStop={(event, node) => {
-            // Make sure we mark changes as unsaved when dragging stops
-            setHasUnsavedChanges(true);
-            console.log("Node drag stopped, final position:", node.position);
-            
-            // CRITICAL FIX: Directly update the node with its new position in React Flow state
-            setNodes(nds => 
-              nds.map(n => {
-                if (n.id === node.id) {
-                  console.log(`Explicitly updating node ${n.id} position to:`, node.position);
-                  // Create a new node object with the updated position
-                  return { 
-                    ...n, 
-                    position: { ...node.position } 
-                  };
-                }
-                return n;
-              })
-            );
-          }}
-          nodeTypes={nodeTypes} // Use the mapped components
+          nodeTypes={nodeTypes}
           fitView
-          className="bg-gradient-to-br from-gray-50 to-gray-100" // Subtle background
-          deleteKeyCode={disabled ? null : 'Backspace'} // Disable delete key if editor is disabled
+          className="bg-gradient-to-br from-blue-50 to-indigo-100" // Example background
+          deleteKeyCode={disabled ? null : 'Backspace'} // Disable delete if editor is disabled
           nodesDraggable={!disabled}
           nodesConnectable={!disabled}
           elementsSelectable={!disabled}
         >
           <Controls showInteractive={!disabled} />
           <MiniMap nodeStrokeWidth={3} zoomable pannable />
-          <Background variant="dots" gap={16} size={1} color="#ddd" />
+          <Background variant="dots" gap={16} size={1} color="#ccc" />
         </ReactFlow>
       </div>
     </div>
