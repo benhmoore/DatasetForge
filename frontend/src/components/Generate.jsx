@@ -301,6 +301,54 @@ const Generate = ({ context }) => {
     // Track node statuses for progress visualization
     const nodeStatusMap = {};
     
+    // First, we need to generate outputs using the normal template pipeline,
+    // exactly as if workflow mode was disabled
+    console.log("Running standard template generation before workflow processing");
+    
+    // Use the standard generation API to get template outputs
+    try {
+      await api.generate(data, (result) => {
+        if (signal.aborted) {
+          console.log("Skipping update for aborted request.");
+          return;
+        }
+        
+        // Update the variation with template output
+        setVariations(prevVariations => {
+          const updated = [...prevVariations];
+          const targetIndex = updated.findIndex(v =>
+            v.seed_index === result.seed_index &&
+            v.variation_index === result.variation_index &&
+            v.isGenerating && v.id.startsWith('temp-')
+          );
+
+          if (targetIndex !== -1) {
+            // Store the template generation output, but keep isGenerating=true
+            // since we'll now process it through the workflow
+            updated[targetIndex] = {
+              ...updated[targetIndex],
+              ...result,
+              _source: 'template_output',
+              isGenerating: true, // Still generating because workflow processing is next
+              error: null
+            };
+          } else {
+            console.error(`Could not find placeholder for seed ${result.seed_index}, variation ${result.variation_index}`);
+          }
+          return updated;
+        });
+      }, signal);
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Template generation failed before workflow:', error);
+        toast.error(`Template generation failed: ${error.message}`);
+      }
+      return;
+    }
+    
+    // At this point, our variations should have template outputs
+    // Now we can process each through the workflow
+    
     // Process each seed through the workflow
     for (let seedIndex = 0; seedIndex < data.seeds.length; seedIndex++) {
       const seedData = data.seeds[seedIndex];
@@ -316,8 +364,26 @@ const Generate = ({ context }) => {
           // Create a variation key for lookup
           const variationKey = `${seedIndex}_${variationIndex}`;
           
-          // Find target variation
-          const targetVariation = variationMap[variationKey];
+          // Find target variation - should now have template output
+          let targetVariation = null;
+          
+          // Find the latest state of the variation (with template output)
+          setVariations(prevVariations => {
+            const varIndex = prevVariations.findIndex(v => 
+              v.seed_index === seedIndex && 
+              v.variation_index === variationIndex && 
+              v.id.startsWith('temp-')
+            );
+            
+            if (varIndex !== -1) {
+              targetVariation = prevVariations[varIndex];
+            }
+            return prevVariations; // No state change
+          });
+          
+          // Wait for state update to propagate
+          await new Promise(resolve => setTimeout(resolve, 10));
+          
           if (!targetVariation) {
             console.error(`Variation not found for seed ${seedIndex}, variation ${variationIndex}`);
             continue;
@@ -326,28 +392,46 @@ const Generate = ({ context }) => {
           // Reset node status map for this variation
           nodeStatusMap[variationKey] = {};
           
-          // Get the template output which we'll pass to the workflow
+          // Get the template output from the template generation step
           const templateOutput = targetVariation.output || "";
           
-          // Include additional data that may be useful in the workflow
-          const additionalData = {
-            slots: seedData.slots, // Original slots
+          console.log(`Feeding template output to workflow for variation ${variationKey}:`, {
+            hasOutput: !!templateOutput,
+            outputLength: templateOutput.length,
+            outputPreview: templateOutput ? templateOutput.substring(0, 50) + (templateOutput.length > 50 ? '...' : '') : 'empty'
+          });
+          
+          // Package all template results as context for the workflow
+          const templateContext = {
+            slots: seedData.slots,
             template_id: data.template_id,
             instruction: data.instruction || "",
-            processed_prompt: targetVariation.processed_prompt || ""
+            processed_prompt: targetVariation.processed_prompt || "",
+            system_prompt: targetVariation.system_prompt || "",
+            tool_calls: targetVariation.tool_calls || null,
+            variation: targetVariation.variation || ""
           };
           
           // Execute workflow with streaming for this seed/variation
-          // Now passing the template output and additional data
           await api.executeWorkflowWithStream(
             currentWorkflow,
-            templateOutput,
-            additionalData,
+            templateOutput, // Template output becomes workflow input
+            templateContext, // Context data for workflow
             (progressData) => {
               // Handle progress updates
               if (progressData.type === 'init') {
                 // Initialize node statuses
                 const nodeIds = progressData.execution_order || [];
+                
+                // Some nodes might be isolated or not properly connected
+                if (progressData.input_nodes) {
+                  console.log("Workflow structure analysis:", {
+                    input_nodes: progressData.input_nodes,
+                    output_nodes: progressData.output_nodes,
+                    isolated_nodes: progressData.isolated_nodes || [],
+                    execution_order: progressData.execution_order || []
+                  });
+                }
                 
                 // Set all nodes to queued initially
                 nodeIds.forEach(nodeId => {
@@ -421,7 +505,44 @@ const Generate = ({ context }) => {
                   
                   if (targetIndex !== -1) {
                     // Extract the final output from workflow result
-                    const workflowOutput = progressData.result?.final_output?.output || "No output from workflow";
+                    let workflowOutput = "";
+                    
+                    // Try to get output from different places
+                    if (progressData.result?.final_output?.output) {
+                      workflowOutput = progressData.result.final_output.output;
+                      console.log("Using final_output.output as workflow result", {
+                        length: workflowOutput.length,
+                        preview: workflowOutput.substring(0, 50) + '...'
+                      });
+                    } else if (progressData.result?.final_output) {
+                      // If final_output exists but no output field, try other fields
+                      const finalOutput = progressData.result.final_output;
+                      for (const key of ['result', 'text', 'content', 'value']) {
+                        if (finalOutput[key]) {
+                          workflowOutput = finalOutput[key];
+                          console.log(`Using final_output.${key} as workflow result`);
+                          break;
+                        }
+                      }
+                    }
+                    
+                    // If still empty, check results array for any output
+                    if (!workflowOutput && progressData.result?.results) {
+                      // Look for the last result with an output
+                      const results = progressData.result.results;
+                      for (let i = results.length - 1; i >= 0; i--) {
+                        if (results[i].output) {
+                          workflowOutput = results[i].output;
+                          console.log(`Using results[${i}].output as workflow result`);
+                          break;
+                        }
+                      }
+                    }
+                    
+                    // Final fallback
+                    if (!workflowOutput) {
+                      workflowOutput = "No output from workflow";
+                    }
                     
                     updated[targetIndex] = {
                       ...updated[targetIndex],
@@ -648,15 +769,83 @@ const Generate = ({ context }) => {
             return updated;
           });
           
-          // Use streaming API for progress updates
+          // Get output from the current variation for regeneration input
+          // This must be passed as a STRING in all cases
+          const variationOutput = currentVariation.output || "";
+          
+          // Log what we're sending to help with debugging
+          console.log(`Preparing workflow input for regeneration:`, {
+            hasOutput: !!currentVariation.output,
+            outputPreview: currentVariation.output ? currentVariation.output.substring(0, 50) + '...' : 'empty',
+            variationKeys: Object.keys(currentVariation)
+          });
+          
+          // Full variation data for context
+          const regenerationData = {
+            slots: slotData,
+            template_id: selectedTemplate.id,
+            instruction: instruction || "",
+            regenerating: true,
+            original_output: variationOutput
+          };
+          
+          // First get the template output using standard generation
+          const regenParams = {
+            template_id: selectedTemplate.id,
+            seeds: [{ slots: slotData }],
+            count: 1,
+            ...(instruction && instruction.trim() !== '' && { instruction: instruction.trim() })
+          };
+          
+          // Temporary variable to store template output
+          let templateOutput = "";
+          
+          console.log("Getting fresh template output for regeneration");
+          
+          // Get template output first (identical to standard template process)
+          try {
+            await api.generate(regenParams, (result) => {
+              templateOutput = result.output || "";
+              console.log("Received template output for workflow regeneration:", {
+                hasOutput: !!templateOutput,
+                outputLength: templateOutput.length,
+                outputPreview: templateOutput.substring(0, 50) + (templateOutput.length > 50 ? '...' : '')
+              });
+            });
+          } catch (error) {
+            console.error("Failed to get template output for regeneration:", error);
+            templateOutput = ""; // Use empty string if template generation fails
+          }
+          
+          // Update the state to reflect we got template output
+          setVariations(prevVariations => {
+            const targetIndex = prevVariations.findIndex(v => v.id === id);
+            if (targetIndex !== -1) {
+              prevVariations[targetIndex].template_output = templateOutput;
+            }
+            return prevVariations;
+          });
+          
+          // Use streaming API for progress updates (with template output)
           await api.executeWorkflowWithStream(
             currentWorkflow,
-            { slots: slotData },
+            templateOutput, // Now using fresh template output
+            regenerationData,
             (progressData) => {
               // Handle progress updates
               if (progressData.type === 'init') {
                 // Initialize node statuses
                 const nodeIds = progressData.execution_order || [];
+                
+                // Some nodes might be isolated or not properly connected
+                if (progressData.input_nodes) {
+                  console.log("Workflow structure analysis:", {
+                    input_nodes: progressData.input_nodes,
+                    output_nodes: progressData.output_nodes,
+                    isolated_nodes: progressData.isolated_nodes || [],
+                    execution_order: progressData.execution_order || []
+                  });
+                }
                 
                 // Set all nodes to queued initially
                 nodeIds.forEach(nodeId => {
@@ -730,7 +919,44 @@ const Generate = ({ context }) => {
                   
                   if (targetIndex !== -1) {
                     // Extract the final output from workflow result
-                    const workflowOutput = progressData.result?.final_output?.output || "No output from workflow";
+                    let workflowOutput = "";
+                    
+                    // Try to get output from different places
+                    if (progressData.result?.final_output?.output) {
+                      workflowOutput = progressData.result.final_output.output;
+                      console.log("Using final_output.output as workflow result", {
+                        length: workflowOutput.length,
+                        preview: workflowOutput.substring(0, 50) + '...'
+                      });
+                    } else if (progressData.result?.final_output) {
+                      // If final_output exists but no output field, try other fields
+                      const finalOutput = progressData.result.final_output;
+                      for (const key of ['result', 'text', 'content', 'value']) {
+                        if (finalOutput[key]) {
+                          workflowOutput = finalOutput[key];
+                          console.log(`Using final_output.${key} as workflow result`);
+                          break;
+                        }
+                      }
+                    }
+                    
+                    // If still empty, check results array for any output
+                    if (!workflowOutput && progressData.result?.results) {
+                      // Look for the last result with an output
+                      const results = progressData.result.results;
+                      for (let i = results.length - 1; i >= 0; i--) {
+                        if (results[i].output) {
+                          workflowOutput = results[i].output;
+                          console.log(`Using results[${i}].output as workflow result`);
+                          break;
+                        }
+                      }
+                    }
+                    
+                    // Final fallback
+                    if (!workflowOutput) {
+                      workflowOutput = "No output from workflow";
+                    }
                     
                     updated[targetIndex] = {
                       ...updated[targetIndex],

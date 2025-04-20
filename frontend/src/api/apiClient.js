@@ -284,12 +284,21 @@ const api = {
     .then(response => response.data),
     
   // Workflow API endpoints
-  executeWorkflow: (workflow, templateOutput, inputData = {}, debugMode = false) => apiClient.post('/workflow/execute', {
-    workflow,
-    template_output: templateOutput,
-    input_data: inputData,
-    debug_mode: debugMode
-  }).then(response => response.data),
+  executeWorkflow: (workflow, templateOutput, inputData = {}, debugMode = false) => {
+    // Log what we're sending to help debugging
+    console.log('Workflow execution input:', {
+      templateOutputType: typeof templateOutput,
+      isString: typeof templateOutput === 'string',
+      hasOutput: typeof templateOutput === 'object' && templateOutput && 'output' in templateOutput
+    });
+    
+    return apiClient.post('/workflow/execute', {
+      workflow,
+      template_output: templateOutput,
+      input_data: inputData,
+      debug_mode: debugMode
+    }).then(response => response.data);
+  },
   
   executeWorkflowStep: (nodeConfig, inputs) => apiClient.post('/workflow/execute_step', {
     node_config: nodeConfig,
@@ -317,6 +326,15 @@ const api = {
         input_data: inputData,
         debug_mode: debugMode
       }),
+      // Log key info about what we're sending
+      ...(() => {
+        console.log('Streaming workflow execution input:', {
+          templateOutputType: typeof templateOutput,
+          templateOutputLength: typeof templateOutput === 'string' ? templateOutput.length : 'not-string',
+          inputDataKeys: Object.keys(inputData || {})
+        });
+        return {}; // Return empty object to spread (no effect)
+      })(),
       signal: signal // Pass the signal to fetch
     });
 
