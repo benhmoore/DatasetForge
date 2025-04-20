@@ -1,17 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
-// Removed Handle and Position imports as they are handled by NodeBase
+import { Position } from '@xyflow/react';
 import CustomSelect from './CustomSelect';
 import CustomSlider from './CustomSlider';
 import api from '../api/apiClient';
-import NodeBase from './NodeBase'; // Import the base component
+import NodeBase from './NodeBase';
 
 /**
  * ModelNode component for configuring a model node in a workflow
+ * Supports multiple inputs that are referenced in the system prompt
  */
 const ModelNode = ({ 
-  data, // Data object from React Flow, contains config and onConfigChange
-  id,   // Node ID from React Flow
+  data,
+  id,
   disabled = false,
   isConnectable = true
 }) => {
@@ -19,12 +20,13 @@ const ModelNode = ({
   const { 
     onConfigChange, 
     model = '', 
-    system_instruction = '', 
+    system_instruction = '',
     model_parameters = { temperature: 0.7, top_p: 1.0, max_tokens: 1000 },
-    // name and label are handled by NodeBase
+    // Get named inputs array with default empty array
+    inputs = [],
   } = data;
 
-  // State only for fetched models and loading status
+  // State for models and loading status
   const [models, setModels] = useState([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
 
@@ -54,11 +56,10 @@ const ModelNode = ({
   };
 
   // Handle system instruction change
-  const handleInstructionChange = (e) => {
-    const newValue = e.target.value;
+  const handleSystemInstructionChange = (e) => {
     if (onConfigChange) {
-      console.log(`ModelNode (${id}): handleInstructionChange -> ${newValue.substring(0, 20)}...`);
-      onConfigChange(id, { system_instruction: newValue });
+      console.log(`ModelNode (${id}): handleSystemInstructionChange`);
+      onConfigChange(id, { system_instruction: e.target.value });
     }
   };
 
@@ -66,7 +67,7 @@ const ModelNode = ({
   const handleParameterChange = (param, value) => {
     if (onConfigChange) {
       const updatedParams = {
-        ...model_parameters, // Use current parameters from props
+        ...model_parameters,
         [param]: value
       };
       console.log(`ModelNode (${id}): handleParameterChange -> ${param}: ${value}`);
@@ -80,15 +81,59 @@ const ModelNode = ({
     label: m
   }));
 
+  // Ensure we always have at least one empty input for connection
+  const ensureEmptyInput = useCallback(() => {
+    // If we have no inputs or the last input has a connection, add an empty one
+    if (!inputs.length || inputs[inputs.length - 1].connected) {
+      const newInputName = `input${inputs.length + 1}`;
+      const updatedInputs = [...inputs, { id: newInputName, connected: false }];
+      
+      if (onConfigChange) {
+        console.log(`ModelNode (${id}): Adding empty input ${newInputName}`);
+        onConfigChange(id, { inputs: updatedInputs });
+      }
+    }
+  }, [inputs, onConfigChange, id]);
+
+  // Check on mount and when inputs change
+  useEffect(() => {
+    ensureEmptyInput();
+  }, [ensureEmptyInput]);
+
+  // Mark an input as connected
+  const markInputConnected = useCallback((inputId) => {
+    if (!onConfigChange) return;
+    
+    const inputIndex = inputs.findIndex(input => input.id === inputId);
+    if (inputIndex === -1) return;
+    
+    const updatedInputs = [...inputs];
+    updatedInputs[inputIndex] = { ...updatedInputs[inputIndex], connected: true };
+    
+    console.log(`ModelNode (${id}): Marking input ${inputId} as connected`);
+    onConfigChange(id, { inputs: updatedInputs });
+    
+    // Ensure we still have an empty input
+    setTimeout(ensureEmptyInput, 0);
+  }, [inputs, onConfigChange, id, ensureEmptyInput]);
+
+  // Define input handles for NodeBase dynamically
+  const inputHandles = inputs.map(input => ({
+    id: input.id,
+    position: Position.Left,
+    label: input.connected ? `Input: ${input.id}` : `Connect to ${input.id}`,
+    onConnect: () => markInputConnected(input.id)
+  }));
+
   return (
-    // Use NodeBase to wrap the specific content
     <NodeBase 
       id={id} 
       data={data} 
       isConnectable={isConnectable} 
       disabled={disabled} 
-      nodeType="model" // Specify type for styling
-      iconName="cpu" // Specify icon
+      nodeType="model"
+      iconName="cpu"
+      inputHandles={inputHandles}
     >
       {/* Model selection */}
       <div className="space-y-2">
@@ -97,7 +142,7 @@ const ModelNode = ({
         </label>
         <CustomSelect
           options={modelOptions}
-          value={model || ''} // Use model directly from data
+          value={model || ''}
           onChange={handleModelChange}
           placeholder="Select a model..."
           isLoading={isLoadingModels}
@@ -106,28 +151,36 @@ const ModelNode = ({
       </div>
       
       {/* System instruction */}
-      <div className="space-y-2">
+      <div className="mt-4 space-y-2">
         <label className="block text-sm font-medium text-gray-700">
           System Instruction
         </label>
         <textarea
-          className="w-full h-24 p-2 border rounded text-sm focus:ring-blue-500 focus:border-blue-500"
-          value={system_instruction || ''} // Use system_instruction directly from data
-          onChange={handleInstructionChange}
-          placeholder="Enter system instructions for the model..."
+          value={system_instruction}
+          onChange={handleSystemInstructionChange}
+          className="w-full p-2 border rounded text-sm"
+          rows={4}
+          placeholder="Enter system instructions for the model. Use {inputName} to reference specific inputs."
           disabled={disabled}
         />
+        
+        {inputs.length > 1 && (
+          <div className="text-xs text-gray-500 mt-1">
+            <p>Reference your inputs using <code>{'{inputName}'}</code> syntax.</p>
+            <p>Available inputs: {inputs.filter(i => i.connected).map(i => i.id).join(', ')}</p>
+          </div>
+        )}
       </div>
       
       {/* Model parameters */}
-      <div className="space-y-4 pt-2">
+      <div className="space-y-4 mt-6">
         <h4 className="font-medium text-sm">Model Parameters</h4>
         
         {/* Temperature slider */}
         <div>
           <CustomSlider
             label="Temperature"
-            value={model_parameters?.temperature ?? 0.7} // Use ?? for default
+            value={model_parameters?.temperature ?? 0.7}
             onChange={(value) => handleParameterChange('temperature', value)}
             min={0}
             max={2}
@@ -143,7 +196,7 @@ const ModelNode = ({
         <div>
           <CustomSlider
             label="Top-p"
-            value={model_parameters?.top_p ?? 1.0} // Use ?? for default
+            value={model_parameters?.top_p ?? 1.0}
             onChange={(value) => handleParameterChange('top_p', value)}
             min={0}
             max={1}
@@ -159,10 +212,10 @@ const ModelNode = ({
         <div>
           <CustomSlider
             label="Max Tokens"
-            value={model_parameters?.max_tokens ?? 1000} // Use ?? for default
+            value={model_parameters?.max_tokens ?? 1000}
             onChange={(value) => handleParameterChange('max_tokens', Math.round(value))}
             min={100}
-            max={4000} // Consider adjusting max based on models
+            max={4000}
             step={100}
             disabled={disabled}
           />
@@ -171,9 +224,8 @@ const ModelNode = ({
           </p>
         </div>
       </div>
-    </NodeBase> // Close NodeBase
+    </NodeBase>
   );
 };
 
-// Export the direct component
 export default ModelNode;

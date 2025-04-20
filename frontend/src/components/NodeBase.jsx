@@ -5,6 +5,8 @@ import Icon from './Icons'; // Assuming you have an Icon component
 /**
  * NodeBase component providing common structure for custom nodes.
  * Handles rendering, editable name header, and collapsing.
+ * Reads and updates collapsed state from node data.
+ * Dynamically renders input/output handles based on props.
  */
 const NodeBase = ({ 
   id, 
@@ -13,11 +15,16 @@ const NodeBase = ({
   disabled = false, 
   children, // Node-specific content
   nodeType = 'default', // e.g., 'model', 'transform' for styling handles
-  iconName = 'box' // Default icon
+  iconName = 'box', // Default icon
+  // Define input handles as an array of objects { id: string, position: Position, label?: string }
+  inputHandles = [{ id: 'input', position: Position.Left }],
+  // Define output handles similarly
+  outputHandles = [{ id: 'output', position: Position.Right }]
 }) => {
-  const { name, label, onConfigChange } = data;
+  // Read isCollapsed from data, default to false if not present
+  const { name, label, onConfigChange, isCollapsed = false } = data;
   
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  // Local state only for editing name
   const [isEditingName, setIsEditingName] = useState(false);
   const [currentName, setCurrentName] = useState(name || label || 'Node');
 
@@ -29,8 +36,9 @@ const NodeBase = ({
                            '!bg-gray-500'; // Default
 
   const toggleCollapse = () => {
-    if (!isEditingName) { // Don't collapse/expand when editing name
-      setIsCollapsed(!isCollapsed);
+    if (!isEditingName && onConfigChange) { // Don't collapse/expand when editing name, ensure callback exists
+      console.log(`NodeBase (${id}): toggleCollapse -> ${!isCollapsed}`);
+      onConfigChange(id, { isCollapsed: !isCollapsed }); // Update state via callback
     }
   };
 
@@ -40,13 +48,13 @@ const NodeBase = ({
 
   const handleNameBlur = () => {
     setIsEditingName(false);
-    if (currentName.trim() && onConfigChange && currentName !== (name || label)) {
+    const originalName = name || label || 'Node'; // Get original name from props
+    if (currentName.trim() && onConfigChange && currentName !== originalName) {
       console.log(`NodeBase (${id}): handleNameBlur -> ${currentName}`);
       onConfigChange(id, { name: currentName }); 
-      // The WorkflowEditor's handleNodeConfigChange should update the label in the node data
     } else {
       // Reset if name is empty or unchanged
-      setCurrentName(name || label || 'Node');
+      setCurrentName(originalName);
     }
   };
 
@@ -55,42 +63,49 @@ const NodeBase = ({
       handleNameBlur(); // Save on Enter
     } else if (e.key === 'Escape') {
       setIsEditingName(false); // Cancel on Escape
-      setCurrentName(name || label || 'Node'); // Reset
+      setCurrentName(name || label || 'Node'); // Reset using name from props
     }
   };
 
   const startEditingName = (e) => {
-    // Prevent collapsing when clicking to edit
     e.stopPropagation(); 
     if (!disabled) {
-      setCurrentName(name || label || 'Node'); // Ensure current value before editing
+      setCurrentName(name || label || 'Node'); // Ensure current value from props before editing
       setIsEditingName(true);
     }
   };
 
   return (
     <div className={`bg-white rounded border border-gray-200 shadow-sm min-w-[250px] ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}>
-      {/* Input handle (always visible) */}
-      {nodeType !== 'input' && ( // Don't show input handle for Input nodes
-        <Handle 
-          type="target" 
-          position={Position.Left}
-          id="input" 
-          isConnectable={isConnectable && !disabled} 
+      {/* Input Handles */}
+      {inputHandles.map((handle, index) => (
+        <Handle
+          key={handle.id}
+          type="target"
+          position={handle.position}
+          id={handle.id}
+          isConnectable={isConnectable && !disabled}
           className={`!w-3 !h-3 ${handleColorClass}`}
+          // Add vertical offset for multiple handles
+          style={{ top: `${(index + 1) * (100 / (inputHandles.length + 1))}%` }}
+          title={handle.label || handle.id} // Add tooltip for handle ID/label
         />
-      )}
+      ))}
       
-      {/* Output handle (always visible) */}
-      {nodeType !== 'output' && ( // Don't show output handle for Output nodes
-        <Handle 
-          type="source" 
-          position={Position.Right}
-          id="output" 
-          isConnectable={isConnectable && !disabled} 
+      {/* Output Handles */}
+      {outputHandles.map((handle, index) => (
+        <Handle
+          key={handle.id}
+          type="source"
+          position={handle.position}
+          id={handle.id}
+          isConnectable={isConnectable && !disabled}
           className={`!w-3 !h-3 ${handleColorClass}`}
+          // Add vertical offset for multiple handles
+          style={{ top: `${(index + 1) * (100 / (outputHandles.length + 1))}%` }}
+          title={handle.label || handle.id} // Add tooltip for handle ID/label
         />
-      )}
+      ))}
       
       {/* Header */}
       <div 
@@ -117,20 +132,20 @@ const NodeBase = ({
               onClick={startEditingName}
               title={`Click to edit name: ${name || label || 'Node'}`} // Tooltip
             >
-              {name || label || 'Node'}
+              {name || label || 'Node'} {/* Display name from props */}
             </span>
           )}
         </div>
         {!disabled && ( // Only show collapse icon if not disabled
           <Icon 
-            name={isCollapsed ? 'chevron-down' : 'chevron-up'} 
+            name={isCollapsed ? 'chevron-down' : 'chevron-up'} // Use isCollapsed from props
             className="w-4 h-4 text-gray-400 ml-2" 
           />
         )}
       </div>
       
       {/* Node-specific Content (collapsible) */}
-      {!isCollapsed && (
+      {!isCollapsed && ( // Use isCollapsed from props
         <div className="p-4 space-y-4">
           {children}
         </div>
