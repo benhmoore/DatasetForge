@@ -43,6 +43,7 @@ const WorkflowManager = ({
   
   // Update JSON when workflow changes
   useEffect(() => {
+    console.log("WorkflowManager: workflow updated", workflow?.id);
     if (workflow) {
       setWorkflowJson(JSON.stringify(workflow, null, 2));
     } else {
@@ -65,9 +66,18 @@ const WorkflowManager = ({
         return;
       }
       
-      setWorkflow(parsed);
-      setShowJsonEditor(false);
-      toast.success('Workflow updated from JSON');
+      console.log("Saving workflow from JSON editor:", {
+        id: parsed.id,
+        nodeCount: Object.keys(parsed.nodes).length,
+        connectionCount: parsed.connections.length
+      });
+      
+      // Use setTimeout to ensure React renders before we update the workflow
+      setTimeout(() => {
+        setWorkflow(parsed);
+        setShowJsonEditor(false);
+        toast.success('Workflow updated from JSON');
+      }, 0);
     } catch (error) {
       toast.error(`Failed to parse workflow JSON: ${error.message}`);
     }

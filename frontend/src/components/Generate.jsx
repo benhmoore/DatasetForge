@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { useDebouncedCallback } from 'use-debounce'; // Import useDebouncedCallback
 import api from '../api/apiClient';
 import SeedForm from './SeedForm';
 import VariationCard from './VariationCard';
@@ -144,14 +145,26 @@ const Generate = ({ context }) => {
     }
   }, []);
   
-  // Save workflow to localStorage when it changes
-  useEffect(() => {
-    if (currentWorkflow) {
-      localStorage.setItem('datasetforge_currentWorkflow', JSON.stringify(currentWorkflow));
+  // Debounced function to save workflow to localStorage
+  const debouncedSaveWorkflow = useDebouncedCallback((workflowToSave) => {
+    if (workflowToSave) {
+      console.log("Generate (Debounced): Saving workflow to localStorage", {
+        id: workflowToSave.id, 
+        nodeCount: Object.keys(workflowToSave.nodes || {}).length,
+        connectionCount: (workflowToSave.connections || []).length
+      });
+      localStorage.setItem('datasetforge_currentWorkflow', JSON.stringify(workflowToSave));
     } else {
+      console.log("Generate (Debounced): Removing workflow from localStorage");
       localStorage.removeItem('datasetforge_currentWorkflow');
     }
-  }, [currentWorkflow]);
+  }, 500); // Debounce for 500ms
+
+  // Save workflow to localStorage when it changes (using debounced function)
+  useEffect(() => {
+    // Call the debounced save function whenever currentWorkflow changes
+    debouncedSaveWorkflow(currentWorkflow);
+  }, [currentWorkflow, debouncedSaveWorkflow]);
   
   // Save workflow enabled setting to localStorage
   useEffect(() => {
