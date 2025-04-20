@@ -40,6 +40,7 @@ const Generate = ({ context }) => {
   const [workflowEnabled, setWorkflowEnabled] = useState(false);
   const [currentWorkflow, setCurrentWorkflow] = useState(null);
   const [isExecutingWorkflow, setIsExecutingWorkflow] = useState(false);
+  const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false); // <-- Add state for modal visibility
   
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
@@ -1342,6 +1343,16 @@ const Generate = ({ context }) => {
     toast.success('Workflow exported');
   };
 
+  // Handler to open the workflow modal
+  const handleOpenWorkflowModal = useCallback(() => {
+    setIsWorkflowModalOpen(true);
+  }, []);
+
+  // Handler to close the workflow modal
+  const handleCloseWorkflowModal = useCallback(() => {
+    setIsWorkflowModalOpen(false);
+  }, []);
+
   // Determine button text and action based on selected variations
   const saveButtonText = selectedCount > 0
     ? `Save Selected (${selectedCount})`
@@ -1390,33 +1401,46 @@ const Generate = ({ context }) => {
               disabled={isLoading || isGenerating || templates.length === 0 || selectedDataset?.archived} // Disable if archived
             />
             
-            {/* Workflow Toggle */}
+            {/* Workflow Toggle & Manage Button */}
             <div className="mt-3 flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">
+              <label className="text-sm font-medium text-gray-700 flex items-center">
+                <Icon name="workflow" className="h-4 w-4 mr-1.5 text-gray-500" />
                 Workflow Mode
               </label>
-              <div className="relative inline-block w-10 align-middle select-none">
-                <input
-                  type="checkbox"
-                  name="workflow-toggle"
-                  id="workflow-toggle"
-                  className="opacity-0 absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
-                  checked={workflowEnabled}
-                  onChange={handleToggleWorkflow}
-                  disabled={isGenerating || isParaphrasing}
-                />
-                <label
-                  htmlFor="workflow-toggle"
-                  className={`block overflow-hidden h-6 rounded-full cursor-pointer ${
-                    workflowEnabled ? 'bg-blue-500' : 'bg-gray-300'
-                  }`}
-                >
-                  <span
-                    className={`block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out ${
-                      workflowEnabled ? 'translate-x-4' : 'translate-x-0'
+              <div className="flex items-center space-x-2">
+                {workflowEnabled && (
+                  <button
+                    onClick={handleOpenWorkflowModal}
+                    className="text-sm text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isGenerating || isParaphrasing}
+                    title="Open Workflow Editor"
+                  >
+                    Manage Workflow
+                  </button>
+                )}
+                <div className="relative inline-block w-10 align-middle select-none">
+                  <input
+                    type="checkbox"
+                    name="workflow-toggle"
+                    id="workflow-toggle"
+                    className="opacity-0 absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
+                    checked={workflowEnabled}
+                    onChange={handleToggleWorkflow}
+                    disabled={isGenerating || isParaphrasing}
+                  />
+                  <label
+                    htmlFor="workflow-toggle"
+                    className={`block overflow-hidden h-6 rounded-full cursor-pointer ${
+                      workflowEnabled ? 'bg-blue-500' : 'bg-gray-300'
                     }`}
-                  ></span>
-                </label>
+                  >
+                    <span
+                      className={`block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out ${
+                        workflowEnabled ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    ></span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -1508,17 +1532,55 @@ const Generate = ({ context }) => {
         </div>
       </div>
       
-      {/* Workflow Manager */}
-      {workflowEnabled && (
-        <div className="border-t pt-6 w-full">
-          <WorkflowManager
-            visible={workflowEnabled}
-            workflow={currentWorkflow}
-            setWorkflow={setCurrentWorkflow}
-            onImport={handleWorkflowImport}
-            onExport={handleWorkflowExport}
-            disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
-          />
+      {/* Workflow Manager Modal */}
+      {isWorkflowModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-y-auto p-4"
+          onClick={handleCloseWorkflowModal} // Close on backdrop click
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="workflow-manager-title"
+        >
+          <div 
+            className="bg-white rounded-lg w-full max-w-6xl shadow-xl max-h-[90vh] flex flex-col animate-fadeIn"
+            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
+          >
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-5 border-b border-gray-200 flex-shrink-0">
+              <h2 id="workflow-manager-title" className="text-xl font-semibold flex items-center">
+                <Icon name="workflow" className="h-5 w-5 mr-2 text-blue-600" />
+                Workflow Manager
+              </h2>
+              <button
+                className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                onClick={handleCloseWorkflowModal}
+                aria-label="Close workflow manager"
+                title="Close"
+              >
+                <Icon name="close" className="h-5 w-5" />
+              </button>
+            </div>
+            
+            {/* Modal Body - WorkflowManager component */}
+            <div className="flex-grow overflow-y-auto p-1"> {/* Reduced padding for more space */}
+              <WorkflowManager
+                // Pass necessary props to WorkflowManager
+                visible={isWorkflowModalOpen} // Keep visible prop for internal logic if needed
+                workflow={currentWorkflow}
+                setWorkflow={setCurrentWorkflow}
+                onImport={handleWorkflowImport}
+                onExport={handleWorkflowExport}
+                disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                // Add onClose prop if WorkflowManager needs to close itself
+                // onClose={handleCloseWorkflowModal} 
+              />
+            </div>
+            
+            {/* Optional Modal Footer (can add buttons here if needed) */}
+            {/* <div className="flex justify-end space-x-2 p-4 border-t border-gray-200 flex-shrink-0 bg-gray-50">
+              <button onClick={handleCloseWorkflowModal} className="...">Close</button>
+            </div> */}
+          </div>
         </div>
       )}
 
