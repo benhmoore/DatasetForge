@@ -79,6 +79,8 @@ const WorkflowEditor = forwardRef(({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isNewConfirmOpen, setIsNewConfirmOpen] = useState(false);
   const [copiedNodes, setCopiedNodes] = useState(null); // <-- State for copied nodes
+  const [showJsonEditor, setShowJsonEditor] = useState(false); // <-- State for JSON editor visibility
+  const [workflowJson, setWorkflowJson] = useState(''); // <-- State for JSON editor content
 
   // --- Undo/Redo State ---
   const [history, setHistory] = useState([]); // Array of past states { nodes, edges, name, description }
@@ -190,15 +192,45 @@ const WorkflowEditor = forwardRef(({
   }, [history, historyIndex, setNodes, setEdges, disabled]);
 
 
+  // --- JSON Editor Handlers ---
+  const handleJsonChange = (e) => {
+    if (disabled) return;
+    setWorkflowJson(e.target.value);
+    setHasUnsavedChanges(true); // Editing JSON is an unsaved change
+  };
+
+  const handleSaveJson = () => {
+    if (disabled) return false;
+    try {
+      const parsed = JSON.parse(workflowJson);
+      if (!parsed.name || !parsed.nodes || !parsed.connections) {
+        toast.error('Invalid workflow format. Must include name, nodes, and connections.');
+        return false;
+      }
+      parsed.updated_at = new Date().toISOString();
+      // Update the main workflow state which will trigger re-render and potentially history save
+      setWorkflow(parsed);
+      setShowJsonEditor(false); // Switch back to visual editor after saving JSON
+      setHasUnsavedChanges(false); // Assume save is successful
+      toast.success('Workflow updated from JSON');
+      // Note: History might not perfectly reflect the JSON state change unless we manually add a snapshot here.
+      // For simplicity, we reset unsaved changes and let the next visual edit create a new history point.
+      return true;
+    } catch (error) {
+      toast.error(`Failed to parse and save workflow JSON: ${error.message}`);
+      return false;
+    }
+  };
+
   // Expose the saveWorkflow method via ref
   useImperativeHandle(ref, () => ({
     saveWorkflow: () => {
       if (hasUnsavedChanges) {
-        saveWorkflow();
-        return true;
+        return saveWorkflow(); // Call the internal save function
       }
-      return false;
-    }
+      return false; // Indicate no save was needed
+    },
+    isJsonEditorActive: () => showJsonEditor // Expose JSON editor state if needed
   }));
 
   // Handler for changes within a node's configuration
@@ -283,6 +315,7 @@ const WorkflowEditor = forwardRef(({
         setEdges(reactFlowEdges);
         setWorkflowName(incomingWorkflow.name);
         setWorkflowDescription(incomingWorkflow.description || '');
+        setWorkflowJson(JSON.stringify(incomingWorkflow, null, 2)); // <-- Set initial JSON state
 
         // Initialize history with the loaded state
         const initialState = {
@@ -296,6 +329,7 @@ const WorkflowEditor = forwardRef(({
 
         setHasUnsavedChanges(false); // Reset unsaved changes flag after loading
         previousWorkflowRef.current = workflow; // Update the ref
+        setShowJsonEditor(false); // Default to visual editor on load
 
         // console.log("Workflow loaded. History initialized.");
 
@@ -307,6 +341,7 @@ const WorkflowEditor = forwardRef(({
         setHistory([]); setHistoryIndex(-1); // Clear history on error
         setHasUnsavedChanges(false);
         previousWorkflowRef.current = null;
+        setWorkflowJson(''); // Clear JSON on error
       }
     }
   }, [workflow, setNodes, setEdges, handleNodeConfigChange]); // Keep dependencies minimal for loading
@@ -644,52 +679,57 @@ const WorkflowEditor = forwardRef(({
 
   // Save the current workflow state
   const saveWorkflow = useCallback(() => {
-    if (disabled) return;
+    if (disabled) return false;
 
-    // Get the current state directly from state variables
-    const currentNodes = nodes;
-    const currentEdges = edges;
-    const currentName = workflowName;
-    const currentDescription = workflowDescription;
+    if (showJsonEditor) {
+      // If JSON editor is active, try saving from its content
+      return handleSaveJson();
+    } else {
+      // If visual editor is active, save from nodes/edges state
+      const currentNodes = nodes;
+      const currentEdges = edges;
+      const currentName = workflowName;
+      const currentDescription = workflowDescription;
 
-    const updatedNodes = {};
-    currentNodes.forEach(node => {
-      const { label, onConfigChange, ...configData } = node.data;
-      updatedNodes[node.id] = {
-        ...configData,
-        position: node.position // Ensure latest position is saved
+      // ... (rest of the visual save logic remains the same) ...
+      const updatedNodes = {};
+      currentNodes.forEach(node => {
+        const { label, onConfigChange, ...configData } = node.data;
+        updatedNodes[node.id] = {
+          ...configData,
+          position: node.position // Ensure latest position is saved
+        };
+      });
+
+      const updatedConnections = currentEdges.map(edge => ({
+        source_node_id: edge.source,
+        source_handle: edge.sourceHandle || null,
+        target_node_id: edge.target,
+        target_handle: edge.targetHandle || null
+      }));
+
+      const updatedWorkflow = {
+        ...(workflow || {}), // Preserve other potential workflow properties
+        name: currentName,
+        description: currentDescription,
+        nodes: updatedNodes,
+        connections: updatedConnections,
+        updated_at: new Date().toISOString()
       };
-    });
 
-    const updatedConnections = currentEdges.map(edge => ({
-      source_node_id: edge.source,
-      source_handle: edge.sourceHandle || null,
-      target_node_id: edge.target,
-      target_handle: edge.targetHandle || null
-    }));
-
-    const updatedWorkflow = {
-      ...(workflow || {}), // Preserve other potential workflow properties
-      name: currentName,
-      description: currentDescription,
-      nodes: updatedNodes,
-      connections: updatedConnections,
-      updated_at: new Date().toISOString()
-    };
-
-    setWorkflow(updatedWorkflow); // Call parent update function
-
-    // Reset unsaved changes flag after successful save
-    setHasUnsavedChanges(false);
-
-    // Optional: Reset history to only contain the saved state
-    // const savedState = { nodes: cloneDeep(currentNodes), edges: cloneDeep(currentEdges), name: currentName, description: currentDescription };
-    // setHistory([savedState]);
-    // setHistoryIndex(0);
-
-    toast.success(`Workflow '${currentName}' saved.`);
-
-  }, [nodes, edges, workflowName, workflowDescription, setWorkflow, workflow, disabled]); // Dependencies reflect current state being saved
+      setWorkflow(updatedWorkflow); // Call parent update function
+      setHasUnsavedChanges(false); // Reset unsaved changes flag
+      toast.success(`Workflow '${currentName}' saved.`);
+      // Optional: Reset history (as before)
+      // const savedState = { nodes: cloneDeep(currentNodes), edges: cloneDeep(currentEdges), name: currentName, description: currentDescription };
+      // setHistory([savedState]);
+      // setHistoryIndex(0);
+      return true; // Indicate save was successful
+    }
+  }, [
+      nodes, edges, workflowName, workflowDescription, setWorkflow, workflow, disabled,
+      showJsonEditor, workflowJson, handleSaveJson // <-- Add JSON state dependencies
+  ]);
 
   // Handle workflow name change
   const handleNameChange = (e) => {
@@ -729,9 +769,70 @@ const WorkflowEditor = forwardRef(({
     </button>
   );
 
+  // Function to get the latest workflow data based on current state
+  const getLatestWorkflowData = useCallback(() => {
+    if (hasUnsavedChanges) {
+      if (showJsonEditor) {
+        try {
+          const parsed = JSON.parse(workflowJson);
+          if (!parsed.name || !parsed.nodes || !parsed.connections) {
+            toast.error('Cannot export: Invalid workflow format in JSON editor.');
+            return null; // Indicate failure
+          }
+          // Use the potentially unsaved name/description from JSON if present
+          return {
+             ...(workflow || {}), // Preserve other potential workflow properties
+             ...parsed,
+             updated_at: new Date().toISOString() // Mark as potentially updated
+          };
+        } catch (error) {
+          toast.error(`Cannot export: Failed to parse workflow JSON: ${error.message}`);
+          return null; // Indicate failure
+        }
+      } else {
+        // Construct from visual editor state
+        const currentNodes = nodes;
+        const currentEdges = edges;
+        const currentName = workflowName;
+        const currentDescription = workflowDescription;
+
+        const updatedNodes = {};
+        currentNodes.forEach(node => {
+          const { label, onConfigChange, ...configData } = node.data;
+          updatedNodes[node.id] = {
+            ...configData,
+            position: node.position
+          };
+        });
+
+        const updatedConnections = currentEdges.map(edge => ({
+          source_node_id: edge.source,
+          source_handle: edge.sourceHandle || null,
+          target_node_id: edge.target,
+          target_handle: edge.targetHandle || null
+        }));
+
+        return {
+          ...(workflow || {}), // Preserve other potential workflow properties
+          name: currentName,
+          description: currentDescription,
+          nodes: updatedNodes,
+          connections: updatedConnections,
+          updated_at: new Date().toISOString() // Mark as potentially updated
+        };
+      }
+    } else {
+      // No unsaved changes, use the prop (which should be the saved state)
+      return workflow;
+    }
+  }, [
+      workflow, hasUnsavedChanges, showJsonEditor, workflowJson,
+      nodes, edges, workflowName, workflowDescription
+  ]);
+
 
   return (
-    <div className="flex flex-col h-[70vh] border rounded-lg overflow-hidden">
+    <div className="flex flex-col h-[70vh] m-0 overflow-hidden">
       {/* Toolbar */}
       <div className="p-2 border-b bg-gray-50 flex items-center space-x-4 justify-between">
         {/* Left Group: Workflow Info */}
@@ -766,7 +867,7 @@ const WorkflowEditor = forwardRef(({
           />
         </div>
 
-        {/* Right Group: Workflow Actions (Add Undo/Redo) */}
+        {/* Right Group: Workflow Actions (Add Undo/Redo/JSON Toggle) */}
         <div className="flex items-center space-x-2 pl-4">
             {/* Undo Button */}
             <button
@@ -785,6 +886,16 @@ const WorkflowEditor = forwardRef(({
               title="Redo (Ctrl+Y)"
             >
                <Icon name="redo" className="w-4 h-4" />
+            </button>
+
+            {/* JSON Editor Toggle Button */}
+            <button
+              onClick={() => setShowJsonEditor(!showJsonEditor)}
+              className={`px-3 py-1 ${showJsonEditor ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'} hover:bg-blue-700 hover:text-white rounded transition text-sm disabled:opacity-50 flex items-center space-x-1`}
+              disabled={disabled}
+              title={showJsonEditor ? "Switch to Visual Editor" : "Switch to JSON Editor"}
+            >
+              {showJsonEditor ? 'Visual Editor' : 'JSON Editor'}
             </button>
 
             {/* Existing Buttons */}
@@ -810,9 +921,14 @@ const WorkflowEditor = forwardRef(({
             )}
             {onExport && (
               <button
-                onClick={() => onExport(workflow)} // Export still uses the prop workflow state
+                onClick={() => {
+                  const dataToExport = getLatestWorkflowData();
+                  if (dataToExport) {
+                    onExport(dataToExport);
+                  }
+                }}
                 className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
-                disabled={disabled || !workflow}
+                disabled={disabled || (!workflow && !hasUnsavedChanges)} // Disable if no base workflow and no unsaved changes to construct from
                 title="Export Workflow to JSON"
               >
                  <Icon name="download" className="w-4 h-4" />
@@ -821,43 +937,80 @@ const WorkflowEditor = forwardRef(({
         </div>
       </div>
 
-      {/* React Flow Canvas */}
-      <div className="flex-grow relative" ref={reactFlowWrapper} tabIndex={0} /* Make div focusable for events */ >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={handleNodesChange} // Now calls debouncedSaveHistory for moves/resizes
-          onEdgesChange={handleEdgesChange} // Now calls saveHistorySnapshot for removals
-          onConnect={onConnect}           // Now calls saveHistorySnapshot
-          nodeTypes={nodeTypes}
-          fitView
-          className="bg-gradient-to-br from-blue-50 to-indigo-100"
-          // Let React Flow handle deletion via onNodesChange/onEdgesChange after we save history
-          deleteKeyCode={disabled ? null : 'Backspace'}
-          nodesDraggable={!disabled}
-          nodesConnectable={!disabled}
-          elementsSelectable={!disabled}
-          selectNodesOnDrag={!disabled}
-          // Handle deletions specifically to save history *before* the change occurs
-          onNodesDelete={(deletedNodes) => {
-              if (!disabled && !isRestoringHistory.current && deletedNodes.length > 0) {
-                  // console.log("Handling node delete for history.");
-                  saveHistorySnapshot(); // Save state *before* deletion is applied by onNodesChange
-              }
-          }}
-          onEdgesDelete={(deletedEdges) => {
-               if (!disabled && !isRestoringHistory.current && deletedEdges.length > 0) {
-                  // console.log("Handling edge delete for history.");
-                  saveHistorySnapshot(); // Save state *before* deletion is applied by onEdgesChange
-              }
-          }}
-        >
-          <Controls showInteractive={!disabled} />
-          <MiniMap nodeStrokeWidth={3} zoomable pannable />
-          <Background variant="dots" gap={16} size={1} color="#ccc" />
-          {/* <Panel position="top-right">History Index: {historyIndex}</Panel> */}
-        </ReactFlow>
-      </div>
+      {/* Conditional Rendering: React Flow Canvas or JSON Editor */}
+      {showJsonEditor ? (
+        <div className="flex-grow p-3 space-y-3 overflow-auto">
+          <p className="text-sm text-gray-500">
+            Edit the workflow JSON directly. Be careful to maintain valid JSON format. Saving here will update the workflow and switch back to the visual editor. Undo/Redo history is not tracked while editing JSON.
+          </p>
+          <textarea
+            className="w-full h-[calc(100%-80px)] p-2 font-mono text-sm border rounded focus:ring-blue-500 focus:border-blue-500"
+            value={workflowJson}
+            onChange={handleJsonChange}
+            disabled={disabled}
+            spellCheck="false"
+          />
+          <div className="flex justify-end space-x-2">
+            <button
+              className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded transition text-sm"
+              onClick={() => {
+                  setShowJsonEditor(false);
+                  // Optionally reset JSON to last known good state if changes are discarded
+                  setWorkflowJson(JSON.stringify(workflow || {}, null, 2));
+                  setHasUnsavedChanges(false); // Discard changes made in JSON editor
+              }}
+              disabled={disabled}
+            >
+              Cancel (Discard JSON Edits)
+            </button>
+            <button
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition text-sm disabled:opacity-50"
+              onClick={handleSaveJson}
+              disabled={disabled || !workflowJson.trim() || !hasUnsavedChanges}
+            >
+              Save JSON & Switch to Visual
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* React Flow Canvas */
+        <div className="flex-grow relative" ref={reactFlowWrapper} tabIndex={0} /* Make div focusable for events */ >
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={handleNodesChange} // Now calls debouncedSaveHistory for moves/resizes
+            onEdgesChange={handleEdgesChange} // Now calls saveHistorySnapshot for removals
+            onConnect={onConnect}           // Now calls saveHistorySnapshot
+            nodeTypes={nodeTypes}
+            fitView
+            className="bg-gradient-to-br from-blue-50 to-indigo-100"
+            // Let React Flow handle deletion via onNodesChange/onEdgesChange after we save history
+            deleteKeyCode={disabled ? null : 'Backspace'}
+            nodesDraggable={!disabled}
+            nodesConnectable={!disabled}
+            elementsSelectable={!disabled}
+            selectNodesOnDrag={!disabled}
+            // Handle deletions specifically to save history *before* the change occurs
+            onNodesDelete={(deletedNodes) => {
+                if (!disabled && !isRestoringHistory.current && deletedNodes.length > 0) {
+                    // console.log("Handling node delete for history.");
+                    saveHistorySnapshot(); // Save state *before* deletion is applied by onNodesChange
+                }
+            }}
+            onEdgesDelete={(deletedEdges) => {
+                 if (!disabled && !isRestoringHistory.current && deletedEdges.length > 0) {
+                    // console.log("Handling edge delete for history.");
+                    saveHistorySnapshot(); // Save state *before* deletion is applied by onEdgesChange
+                }
+            }}
+          >
+            <Controls showInteractive={!disabled} />
+            <MiniMap nodeStrokeWidth={3} zoomable pannable />
+            <Background variant="dots" gap={16} size={1} color="#ccc" />
+            {/* <Panel position="top-right">History Index: {historyIndex}</Panel> */}
+          </ReactFlow>
+        </div>
+      )}
 
       {/* Confirmation Modal for New Workflow */}
       <ConfirmationModal

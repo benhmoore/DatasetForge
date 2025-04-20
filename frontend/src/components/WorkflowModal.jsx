@@ -50,7 +50,7 @@ const WorkflowModal = ({
         </div>
 
         {/* Modal Body - WorkflowManager component */}
-        <div className="flex-grow overflow-y-auto p-1"> {/* Reduced padding for more space */}
+        <div className="flex-grow overflow-y-auto"> {/* Reduced padding for more space */}
           <WorkflowManager
             visible={isOpen} // Pass visibility state
             workflow={workflow}

@@ -18,8 +18,6 @@ const WorkflowManager = ({
 }) => {
   const [templates, setTemplates] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [showJsonEditor, setShowJsonEditor] = useState(false);
-  const [workflowJson, setWorkflowJson] = useState('');
 
   const workflowEditorRef = useRef(null);
 
@@ -47,71 +45,21 @@ const WorkflowManager = ({
   // Handle save requests
   useEffect(() => {
     if (saveRequest && visible && workflow) {
-      console.log("WorkflowManager: Auto-saving workflow before closing modal", {
-        saveRequest,
-        showJsonEditor
-      });
+      console.log("WorkflowManager: Auto-saving workflow before closing modal", { saveRequest });
 
-      if (showJsonEditor) {
-        try {
-          const parsed = JSON.parse(workflowJson);
-          if (!parsed.name || !parsed.nodes || !parsed.connections) {
-            toast.error('Cannot save: Invalid workflow format in JSON editor.');
-            return;
-          }
-          parsed.updated_at = new Date().toISOString();
-          setWorkflow(parsed);
-          toast.success('Workflow JSON saved before closing');
-        } catch (error) {
-          console.error("Error saving workflow JSON before closing:", error);
-          toast.error(`Failed to save workflow: ${error.message}`);
+      // Always try saving via the editor ref, which now handles both visual and JSON modes internally
+      if (workflowEditorRef.current && workflowEditorRef.current.saveWorkflow) {
+        const didSave = workflowEditorRef.current.saveWorkflow();
+        if (didSave) {
+          console.log("WorkflowManager: Successfully triggered save via editor ref");
+        } else {
+          console.log("WorkflowManager: No changes to save in editor or save failed");
         }
       } else {
-        if (workflowEditorRef.current && workflowEditorRef.current.saveWorkflow) {
-          const didSave = workflowEditorRef.current.saveWorkflow();
-          if (didSave) {
-            console.log("WorkflowManager: Successfully triggered save via editor ref");
-          } else {
-            console.log("WorkflowManager: No changes to save in editor");
-          }
-        } else {
-          console.warn("WorkflowManager: Could not access editor save method");
-        }
+        console.warn("WorkflowManager: Could not access editor save method");
       }
     }
-  }, [saveRequest, visible, workflow, showJsonEditor, workflowJson, setWorkflow]);
-
-  // Update JSON when workflow changes
-  useEffect(() => {
-    if (workflow) {
-      setWorkflowJson(JSON.stringify(workflow, null, 2));
-    } else {
-      setWorkflowJson('');
-    }
-  }, [workflow]);
-
-  // Parse JSON and update workflow
-  const handleJsonChange = (e) => {
-    setWorkflowJson(e.target.value);
-  };
-
-  const handleSaveJson = () => {
-    try {
-      const parsed = JSON.parse(workflowJson);
-      if (!parsed.name || !parsed.nodes || !parsed.connections) {
-        toast.error('Invalid workflow format. Must include name, nodes, and connections.');
-        return;
-      }
-      parsed.updated_at = new Date().toISOString();
-      setTimeout(() => {
-        setWorkflow(parsed);
-        setShowJsonEditor(false);
-        toast.success('Workflow updated from JSON');
-      }, 0);
-    } catch (error) {
-      toast.error(`Failed to parse workflow JSON: ${error.message}`);
-    }
-  };
+  }, [saveRequest, visible, workflow, setWorkflow]);
 
   // Handle workflow imports
   const handleImportWorkflow = () => {
@@ -131,7 +79,6 @@ const WorkflowManager = ({
           }
           setTimeout(() => {
             setWorkflow(importedWorkflow);
-            setShowJsonEditor(false);
             toast.success(`Workflow '${importedWorkflow.name}' imported successfully.`);
           }, 0);
         } catch (error) {
@@ -182,69 +129,24 @@ const WorkflowManager = ({
       updated_at: new Date().toISOString()
     };
     setWorkflow(newWorkflow);
-    setShowJsonEditor(false);
     toast.info('New workflow created. Remember to save!');
   };
 
   if (!visible) return null;
 
   return (
-    <div className="p-3 bg-white space-y-4">
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex space-x-2">
-          <button
-            className={`px-3 py-1 ${showJsonEditor ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'} hover:bg-blue-700 hover:text-white rounded transition`}
-            onClick={() => setShowJsonEditor(!showJsonEditor)}
-            disabled={disabled}
-          >
-            {showJsonEditor ? 'Visual Editor' : 'JSON Editor'}
-          </button>
-        </div>
-      </div>
-
-      {showJsonEditor ? (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-500">
-            Edit the workflow JSON directly. Be careful to maintain valid JSON format.
-          </p>
-          <textarea
-            className="w-full h-96 p-2 font-mono text-sm border rounded"
-            value={workflowJson}
-            onChange={handleJsonChange}
-            disabled={disabled}
-          />
-          <div className="flex justify-end space-x-2">
-            <button
-              className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded transition"
-              onClick={() => setShowJsonEditor(false)}
-              disabled={disabled}
-            >
-              Cancel
-            </button>
-            <button
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition"
-              onClick={handleSaveJson}
-              disabled={disabled || !workflowJson.trim()}
-            >
-              Save JSON
-            </button>
-          </div>
-        </div>
-      ) : (
-        // Wrap WorkflowEditor with ReactFlowProvider
-        <ReactFlowProvider>
-          <WorkflowEditor
-            ref={workflowEditorRef}
-            workflow={workflow}
-            setWorkflow={setWorkflow}
-            // availableTemplates={templates} // Note: 'availableTemplates' prop was removed from WorkflowEditor, kept here for reference if needed elsewhere
-            onImport={handleImportWorkflow}
-            onExport={handleExportWorkflow}
-            onNew={handleNewWorkflow}
-            disabled={disabled || isLoading}
-          />
-        </ReactFlowProvider>
-      )}
+    <div className="p-0 bg-white">
+      <ReactFlowProvider>
+        <WorkflowEditor
+          ref={workflowEditorRef}
+          workflow={workflow}
+          setWorkflow={setWorkflow}
+          onImport={handleImportWorkflow}
+          onExport={handleExportWorkflow}
+          onNew={handleNewWorkflow}
+          disabled={disabled || isLoading}
+        />
+      </ReactFlowProvider>
 
       {isLoading && (
         <div className="text-center py-4">
