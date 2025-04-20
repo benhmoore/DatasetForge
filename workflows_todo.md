@@ -12,22 +12,22 @@
   - [x] Render `WorkflowManager`
 
 ## Phase 2: Basic Nodes
-- [ ] Create `ModelNode` component
+- [x] Create `ModelNode` component
   - [x] Implement backend `ModelNodeExecutor`
-  - [ ] Add UI for configuring model, instruction, fields
-- [ ] Create `TransformNode` component
+  - [x] Add UI for configuring model, instruction, fields
+- [x] Create `TransformNode` component
   - [x] Implement backend `TransformNodeExecutor`
-  - [ ] Add regex config UI
+  - [x] Add regex config UI
 - [ ] Add streaming progress indicators in `WorkflowRunner`
-- [ ] Basic validation for node configuration
+- [x] Basic validation for node configuration
 
 ## Phase 3: Visual Editor
-- [ ] Implement `WorkflowEditor` using `react-flow-renderer`
-  - [ ] Add support for node dragging and positioning
-  - [ ] Enable connections between nodes
-- [ ] Add configuration panels per node type
-- [ ] Validate workflow structure in editor
-- [ ] Store node positions and edge connections in workflow JSON
+- [x] Implement `WorkflowEditor` using `react-flow-renderer`
+  - [x] Add support for node dragging and positioning
+  - [x] Enable connections between nodes
+- [x] Add configuration panels per node type
+- [x] Validate workflow structure in editor
+- [x] Store node positions and edge connections in workflow JSON
 
 ## Phase 4: Advanced Features
 - [ ] Add new node types
@@ -35,7 +35,7 @@
   - [ ] Fork/merge logic
 - [ ] Implement `CustomFunctionNode` executor
 - [ ] Create workflow templates/presets
-- [ ] Add workflow sharing (JSON copy/share UI)
+- [x] Add workflow sharing (JSON copy/share UI)
 
 ## Backend API
 - [x] `POST /api/workflow/execute_step`
@@ -60,13 +60,13 @@
 - [x] Track processing history with timestamps and status
 - [x] Support graceful error recovery and skip-on-error options
 - [ ] Implement cancellation for long-running workflows
-- [ ] Visual progress for each node during execution
+- [x] Visual progress for each node during execution
 
 ## UX Considerations
 - [x] Keep editor simple (linear-first, no clutter)
 - [x] Show clear error messages and validation warnings
 - [x] Allow user to view, edit, and rerun workflows easily
-- [ ] Responsive and keyboard-navigable UI
+- [x] Responsive and keyboard-navigable UI
 
 ## Done When
 - [x] A complete linear workflow can be configured, run, and modified from UI

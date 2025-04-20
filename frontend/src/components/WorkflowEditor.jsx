@@ -1,0 +1,547 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import ReactFlow, { 
+  Background, 
+  Controls, 
+  MiniMap, 
+  addEdge, 
+  useNodesState, 
+  useEdgesState,
+  MarkerType
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import { toast } from 'react-toastify';
+import ModelNode from './ModelNode';
+import TransformNode from './TransformNode';
+import CustomSelect from './CustomSelect';
+
+// Node type definitions
+const NODE_TYPES = {
+  model: 'Model',
+  transform: 'Transform',
+  filter: 'Filter',
+  custom: 'Custom Function'
+};
+
+/**
+ * Custom node components for ReactFlow
+ */
+const ModelNodeComponent = ({ data, isConnectable }) => {
+  return (
+    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-blue-500 min-w-[250px]">
+      <h4 className="font-medium text-sm mb-2 text-blue-700">{data.label}</h4>
+      <div className="text-xs">
+        <div className="mb-1">
+          <span className="font-medium">Model:</span> {data.model || 'Not set'}
+        </div>
+        {data.template_id && (
+          <div className="mb-1">
+            <span className="font-medium">Template:</span> ID {data.template_id}
+          </div>
+        )}
+        {data.system_instruction && (
+          <div className="mb-1 truncate max-w-xs">
+            <span className="font-medium">Instruction:</span> {data.system_instruction.substring(0, 30)}...
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const TransformNodeComponent = ({ data, isConnectable }) => {
+  return (
+    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-green-500 min-w-[250px]">
+      <h4 className="font-medium text-sm mb-2 text-green-700">{data.label}</h4>
+      <div className="text-xs">
+        <div className="mb-1">
+          <span className="font-medium">Field:</span> {data.apply_to_field || 'output'}
+        </div>
+        <div className="mb-1">
+          <span className="font-medium">{data.is_regex ? 'Regex:' : 'Find:'}</span> {data.pattern || 'Not set'}
+        </div>
+        <div className="mb-1">
+          <span className="font-medium">Replace with:</span> {data.replacement || ''}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * WorkflowEditor component for visual workflow editing
+ */
+const WorkflowEditor = ({ 
+  workflow, 
+  setWorkflow,
+  availableTemplates = [],
+  onImport,
+  onExport,
+  disabled = false
+}) => {
+  const reactFlowWrapper = useRef(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [selectedNodeType, setSelectedNodeType] = useState('model');
+  const [workflowName, setWorkflowName] = useState(workflow?.name || 'New Workflow');
+  const [workflowDescription, setWorkflowDescription] = useState(workflow?.description || '');
+  
+  // Node counter for unique IDs
+  const nodeIdCounterRef = useRef(1);
+  
+  // Load workflow data into ReactFlow format
+  useEffect(() => {
+    if (workflow) {
+      // Convert workflow nodes to ReactFlow format
+      try {
+        const reactFlowNodes = [];
+        const reactFlowEdges = [];
+        
+        // Reset node counter
+        nodeIdCounterRef.current = 1;
+        
+        // Process nodes
+        if (workflow.nodes && typeof workflow.nodes === 'object') {
+          Object.entries(workflow.nodes).forEach(([nodeId, nodeConfig]) => {
+            // Track highest node ID number to avoid duplicates later
+            const idNumber = parseInt(nodeId.replace(/[^0-9]/g, ''), 10);
+            if (!isNaN(idNumber) && idNumber >= nodeIdCounterRef.current) {
+              nodeIdCounterRef.current = idNumber + 1;
+            }
+            
+            // Create ReactFlow node
+            const position = nodeConfig.position || { x: 100, y: 100 + reactFlowNodes.length * 150 };
+            
+            // Node type-specific settings
+            let nodeComponent = '';
+            let data = {
+              label: nodeConfig.name || `${nodeConfig.type} Node`,
+              ...nodeConfig,
+              onConfigChange: (updatedConfig) => handleNodeConfigChange(nodeId, updatedConfig)
+            };
+            
+            switch (nodeConfig.type) {
+              case 'model':
+                nodeComponent = 'modelNode';
+                break;
+              case 'transform':
+                nodeComponent = 'transformNode';
+                break;
+              default:
+                nodeComponent = 'modelNode'; // Default fallback
+            }
+            
+            reactFlowNodes.push({
+              id: nodeId,
+              type: nodeComponent,
+              position,
+              data
+            });
+          });
+        }
+        
+        // Process connections
+        if (workflow.connections && Array.isArray(workflow.connections)) {
+          workflow.connections.forEach((connection, index) => {
+            if (connection.source_node_id && connection.target_node_id) {
+              reactFlowEdges.push({
+                id: `edge-${index}`,
+                source: connection.source_node_id,
+                target: connection.target_node_id,
+                sourceHandle: connection.source_handle || null,
+                targetHandle: connection.target_handle || null,
+                type: 'smoothstep',
+                animated: true,
+                style: { stroke: '#3b82f6' },
+                markerEnd: {
+                  type: MarkerType.ArrowClosed,
+                  width: 15,
+                  height: 15,
+                  color: '#3b82f6',
+                },
+              });
+            }
+          });
+        }
+        
+        setNodes(reactFlowNodes);
+        setEdges(reactFlowEdges);
+        setWorkflowName(workflow.name || 'New Workflow');
+        setWorkflowDescription(workflow.description || '');
+        
+      } catch (error) {
+        console.error('Error loading workflow:', error);
+        toast.error('Failed to load workflow diagram');
+      }
+    } else {
+      // Create empty workflow
+      setNodes([]);
+      setEdges([]);
+      setWorkflowName('New Workflow');
+      setWorkflowDescription('');
+      nodeIdCounterRef.current = 1;
+    }
+  }, [workflow, setNodes, setEdges]);
+  
+  // Update workflow object when nodes/edges change
+  const updateWorkflowObject = useCallback(() => {
+    // Filter out changes that don't affect the workflow definition
+    // (like selection state or ephemeral UI properties)
+    const workflowNodes = {};
+    const workflowConnections = [];
+    
+    // Process nodes
+    nodes.forEach(node => {
+      // Extract only the configuration properties (not the React components or handlers)
+      // that should be saved in the workflow JSON
+      const {
+        onConfigChange, // Remove callback
+        label, // Keep label as name
+        ...nodeConfig
+      } = node.data;
+      
+      workflowNodes[node.id] = {
+        id: node.id,
+        type: nodeConfig.type || 'model',
+        name: label || nodeConfig.name || 'Untitled Node',
+        position: node.position,
+        ...nodeConfig
+      };
+    });
+    
+    // Process edges
+    edges.forEach(edge => {
+      workflowConnections.push({
+        source_node_id: edge.source,
+        target_node_id: edge.target,
+        source_handle: edge.sourceHandle,
+        target_handle: edge.targetHandle
+      });
+    });
+    
+    // Create updated workflow object
+    const updatedWorkflow = {
+      id: workflow?.id || `workflow-${Date.now()}`,
+      name: workflowName,
+      description: workflowDescription,
+      nodes: workflowNodes,
+      connections: workflowConnections,
+      updated_at: new Date().toISOString()
+    };
+    
+    // Only set if there are actual changes
+    if (JSON.stringify(updatedWorkflow) !== JSON.stringify(workflow)) {
+      setWorkflow(updatedWorkflow);
+    }
+  }, [nodes, edges, workflow, workflowName, workflowDescription, setWorkflow]);
+  
+  // Update workflow when nodes/edges change (debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      updateWorkflowObject();
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [nodes, edges, workflowName, workflowDescription, updateWorkflowObject]);
+  
+  // Handle node selection
+  const onNodeClick = useCallback((event, node) => {
+    setSelectedNode(node);
+  }, []);
+  
+  // Handle connection creation
+  const onConnect = useCallback((params) => {
+    setEdges(eds => addEdge({
+      ...params,
+      type: 'smoothstep',
+      animated: true,
+      style: { stroke: '#3b82f6' },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        width: 15,
+        height: 15,
+        color: '#3b82f6',
+      },
+    }, eds));
+  }, [setEdges]);
+  
+  // Add new node to workflow
+  const handleAddNode = () => {
+    if (disabled) return;
+    
+    const nodeId = `node-${nodeIdCounterRef.current++}`;
+    const position = { x: 100, y: 100 + nodes.length * 150 };
+    
+    let nodeType = '';
+    let nodeData = {
+      label: `${NODE_TYPES[selectedNodeType]} Node`,
+      type: selectedNodeType,
+      onConfigChange: (updatedConfig) => handleNodeConfigChange(nodeId, updatedConfig)
+    };
+    
+    // Node type-specific settings
+    switch (selectedNodeType) {
+      case 'model':
+        nodeType = 'modelNode';
+        nodeData = {
+          ...nodeData,
+          model: '',
+          system_instruction: '',
+          template_id: null,
+          model_parameters: {
+            temperature: 0.7,
+            top_p: 1.0,
+            max_tokens: 1000
+          }
+        };
+        break;
+      case 'transform':
+        nodeType = 'transformNode';
+        nodeData = {
+          ...nodeData,
+          pattern: '',
+          replacement: '',
+          is_regex: false,
+          apply_to_field: 'output'
+        };
+        break;
+      default:
+        nodeType = 'modelNode'; // Default fallback
+    }
+    
+    const newNode = {
+      id: nodeId,
+      type: nodeType,
+      position,
+      data: nodeData
+    };
+    
+    setNodes(nds => [...nds, newNode]);
+    setSelectedNode(newNode);
+  };
+  
+  // Delete selected node
+  const handleDeleteNode = () => {
+    if (!selectedNode || disabled) return;
+    
+    // Remove node
+    setNodes(nds => nds.filter(n => n.id !== selectedNode.id));
+    
+    // Remove associated edges
+    setEdges(eds => eds.filter(e => 
+      e.source !== selectedNode.id && e.target !== selectedNode.id
+    ));
+    
+    setSelectedNode(null);
+  };
+  
+  // Update node configuration
+  const handleNodeConfigChange = (nodeId, updatedConfig) => {
+    setNodes(nds => nds.map(node => {
+      if (node.id === nodeId) {
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            ...updatedConfig,
+            onConfigChange: node.data.onConfigChange // Preserve the callback
+          }
+        };
+      }
+      return node;
+    }));
+  };
+  
+  // Export workflow as JSON file
+  const handleExport = () => {
+    updateWorkflowObject(); // Ensure we have the latest workflow state
+    
+    // Create a download link
+    const dataStr = JSON.stringify(workflow, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    // Create a temporary link and trigger download
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${workflow.name || 'workflow'}.json`;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    if (onExport) onExport(workflow);
+    toast.success('Workflow exported successfully');
+  };
+  
+  // Import workflow from file
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target.result;
+        const importedWorkflow = JSON.parse(content);
+        
+        // Basic validation
+        if (!importedWorkflow.nodes || !importedWorkflow.connections) {
+          throw new Error('Invalid workflow format');
+        }
+        
+        setWorkflow(importedWorkflow);
+        if (onImport) onImport(importedWorkflow);
+        toast.success(`Imported workflow: ${importedWorkflow.name}`);
+      } catch (error) {
+        console.error('Failed to import workflow:', error);
+        toast.error(`Failed to import workflow: ${error.message}`);
+      }
+    };
+    reader.readAsText(file);
+    // Reset the file input
+    e.target.value = null;
+  };
+  
+  // Custom node types
+  const nodeTypes = {
+    modelNode: ModelNodeComponent,
+    transformNode: TransformNodeComponent,
+  };
+  
+  // Node type options for dropdown
+  const nodeTypeOptions = Object.entries(NODE_TYPES).map(([value, label]) => ({
+    value,
+    label
+  }));
+  
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+        <div className="space-y-2 flex-grow">
+          <input
+            type="text"
+            value={workflowName}
+            onChange={(e) => setWorkflowName(e.target.value)}
+            placeholder="Workflow Name"
+            className="font-medium text-lg p-2 border rounded w-full disabled:bg-gray-100"
+            disabled={disabled}
+          />
+          <input
+            type="text"
+            value={workflowDescription}
+            onChange={(e) => setWorkflowDescription(e.target.value)}
+            placeholder="Description (optional)"
+            className="text-sm p-2 border rounded w-full disabled:bg-gray-100"
+            disabled={disabled}
+          />
+        </div>
+        
+        <div className="flex space-x-2">
+          <label className="cursor-pointer px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
+            Import
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={handleImport}
+              disabled={disabled}
+            />
+          </label>
+          <button
+            className="px-3 py-1 bg-green-100 hover:bg-green-200 text-green-700 rounded transition disabled:opacity-50"
+            onClick={handleExport}
+            disabled={!workflow || disabled}
+          >
+            Export
+          </button>
+        </div>
+      </div>
+      
+      <div className="flex flex-col md:flex-row gap-4">
+        {/* Main flow editor */}
+        <div className="flex-grow border rounded overflow-hidden" style={{ height: '500px' }} ref={reactFlowWrapper}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            nodeTypes={nodeTypes}
+            fitView
+            snapToGrid={true}
+            snapGrid={[15, 15]}
+          >
+            <Background color="#aaa" gap={16} />
+            <Controls />
+            <MiniMap />
+          </ReactFlow>
+        </div>
+        
+        {/* Sidebar with controls and properties */}
+        <div className="w-full md:w-80 lg:w-96 border rounded p-4 overflow-auto" style={{ maxHeight: '500px' }}>
+          {/* Controls section */}
+          <div className="mb-6 space-y-3">
+            <h3 className="font-medium">Add Nodes</h3>
+            <div className="flex space-x-2 items-center">
+              <div className="flex-grow">
+                <CustomSelect
+                  options={nodeTypeOptions}
+                  value={selectedNodeType}
+                  onChange={setSelectedNodeType}
+                  disabled={disabled}
+                />
+              </div>
+              <button
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition disabled:opacity-50"
+                onClick={handleAddNode}
+                disabled={disabled}
+              >
+                Add Node
+              </button>
+            </div>
+            
+            {selectedNode && (
+              <button
+                className="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 w-full rounded transition disabled:opacity-50"
+                onClick={handleDeleteNode}
+                disabled={disabled}
+              >
+                Delete Selected Node
+              </button>
+            )}
+          </div>
+          
+          {/* Node configuration section */}
+          {selectedNode && (
+            <div className="space-y-3">
+              <h3 className="font-medium">Node Properties</h3>
+              
+              {selectedNode.type === 'modelNode' && (
+                <ModelNode
+                  nodeConfig={selectedNode.data}
+                  onConfigChange={(config) => handleNodeConfigChange(selectedNode.id, config)}
+                  disabled={disabled}
+                  availableTemplates={availableTemplates}
+                />
+              )}
+              
+              {selectedNode.type === 'transformNode' && (
+                <TransformNode
+                  nodeConfig={selectedNode.data}
+                  onConfigChange={(config) => handleNodeConfigChange(selectedNode.id, config)}
+                  disabled={disabled}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default WorkflowEditor;

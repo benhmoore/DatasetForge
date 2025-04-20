@@ -19,6 +19,7 @@ const VariationCard = ({
   error = null,
   tool_calls = null,
   processed_prompt = null,
+  workflow_results = null, // New prop for workflow results
   onToolCallsChange
 }) => {
   // State management
@@ -29,6 +30,7 @@ const VariationCard = ({
   const [showPrompt, setShowPrompt] = useState(false);
   const [isToolEditorOpen, setIsToolEditorOpen] = useState(false);
   const [textareaHeight, setTextareaHeight] = useState('8rem');
+  const [showWorkflowResults, setShowWorkflowResults] = useState(false);
   
   // Refs
   const regenerateInputRef = useRef(null);
@@ -264,6 +266,109 @@ const VariationCard = ({
       </div>
     );
   }, []);
+  
+  // Render workflow results section
+  const renderWorkflowResults = useCallback(() => {
+    if (!workflow_results) return null;
+    
+    const nodeResults = workflow_results.results || [];
+    
+    return (
+      <div className="mt-3 pt-3 border-t border-gray-200">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowWorkflowResults(!showWorkflowResults);
+          }}
+          className="text-xs text-gray-500 hover:text-gray-700 font-medium flex items-center group"
+          aria-expanded={showWorkflowResults}
+        >
+          <Icon
+            name={showWorkflowResults ? 'chevronUp' : 'chevronDown'}
+            className="w-3 h-3 mr-1 inline-block group-hover:text-primary-500 transition-colors"
+            aria-hidden="true"
+          />
+          {showWorkflowResults ? 'Hide Workflow Processing' : 'Show Workflow Processing'}
+          <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full">
+            {nodeResults.length} node{nodeResults.length !== 1 ? 's' : ''}
+          </span>
+          <span className="ml-2 text-xs text-gray-500">
+            {(workflow_results.execution_time || 0).toFixed(2)}s
+          </span>
+        </button>
+        
+        {showWorkflowResults && (
+          <div className="mt-2 space-y-3">
+            {nodeResults.map((node, index) => (
+              <div 
+                key={index}
+                className={`p-3 rounded text-xs ${
+                  node.status === 'error' 
+                    ? 'bg-red-50 border border-red-200' 
+                    : 'bg-blue-50 border border-blue-100'
+                }`}
+              >
+                <div className="flex justify-between mb-1">
+                  <div className="font-medium text-blue-700 flex items-center">
+                    <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-blue-200 text-blue-800 text-xs font-medium mr-2">
+                      {index + 1}
+                    </span>
+                    {node.node_id} ({node.node_type})
+                    <span className="ml-2 text-xs text-gray-500">
+                      {node.execution_time.toFixed(2)}s
+                    </span>
+                  </div>
+                  <div className={`px-2 py-0.5 rounded text-xs ${
+                    node.status === 'success' 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-red-100 text-red-800'
+                  }`}>
+                    {node.status}
+                  </div>
+                </div>
+                
+                {node.status === 'error' && node.error_message && (
+                  <div className="mb-2 text-red-600 bg-red-50 p-1 rounded border border-red-200 flex items-start">
+                    <Icon name="alert" className="h-3 w-3 text-red-600 mt-0.5 mr-1 flex-shrink-0" />
+                    <span className="text-xs">{node.error_message}</span>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="text-xs font-medium text-gray-500 mb-1">Input</div>
+                    <div className="p-1 bg-white bg-opacity-50 rounded border border-gray-200 max-h-24 overflow-auto">
+                      <pre className="text-xs whitespace-pre-wrap">
+                        {JSON.stringify(node.input, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-gray-500 mb-1">Output</div>
+                    <div className="p-1 bg-white bg-opacity-50 rounded border border-gray-200 max-h-24 overflow-auto">
+                      <pre className="text-xs whitespace-pre-wrap">
+                        {JSON.stringify(node.output, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {/* Final output summary */}
+            <div className="p-3 bg-green-50 border border-green-200 rounded text-xs">
+              <div className="font-medium text-green-800 mb-1">Final Output</div>
+              <div className="p-2 bg-white rounded border border-green-100">
+                <pre className="text-xs whitespace-pre-wrap">
+                  {JSON.stringify(workflow_results.final_output, null, 2)}
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }, [workflow_results, showWorkflowResults]);
 
   // Handler for selection button/area
   const handleSelect = useCallback(() => {
@@ -375,6 +480,14 @@ const VariationCard = ({
         }
       }}
     >
+      {/* Workflow indicator badge */}
+      {workflow_results && (
+        <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full shadow-sm">
+          <Icon name="flow" className="h-3 w-3 inline-block mr-1" aria-hidden="true" />
+          Workflow
+        </div>
+      )}
+    
       {/* Dimming overlay when editing */}
       {isEditing && (
         <div 
@@ -511,6 +624,10 @@ const VariationCard = ({
           </div>
         )}
 
+        {/* Workflow results section */}
+        {renderWorkflowResults()}
+        
+        {/* Processed prompt section */}
         {processed_prompt && (
           <div className="mt-3 pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()} /* Prevent clicks from toggling selection */>
             <button
