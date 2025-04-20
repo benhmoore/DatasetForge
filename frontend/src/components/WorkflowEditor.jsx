@@ -219,6 +219,12 @@ const WorkflowEditor = ({
               case 'transform':
                 nodeComponent = 'transformNode';
                 break;
+              case 'input':
+                nodeComponent = 'inputNode';
+                break;
+              case 'output':
+                nodeComponent = 'outputNode';
+                break;
               default:
                 nodeComponent = 'modelNode'; // Default fallback
             }
@@ -292,9 +298,28 @@ const WorkflowEditor = ({
         ...nodeConfig
       } = node.data;
       
+      // Convert ReactFlow node types back to internal node types
+      let nodeType;
+      switch (node.type) {
+        case 'modelNode':
+          nodeType = 'model';
+          break;
+        case 'transformNode':
+          nodeType = 'transform';
+          break;
+        case 'inputNode':
+          nodeType = 'input';
+          break;
+        case 'outputNode':
+          nodeType = 'output';
+          break;
+        default:
+          nodeType = nodeConfig.type || 'model';
+      }
+      
       workflowNodes[node.id] = {
         id: node.id,
-        type: nodeConfig.type || 'model',
+        type: nodeType,
         name: label || nodeConfig.name || 'Untitled Node',
         position: node.position,
         ...nodeConfig
@@ -519,6 +544,26 @@ const WorkflowEditor = ({
       }
     };
     
+    // Create model node (in the middle)
+    const modelNode = {
+      id: 'node-1',
+      type: 'modelNode',
+      position: { x: 300, y: 150 },
+      data: {
+        label: 'Model Node',
+        type: 'model',
+        model: '',
+        system_instruction: '',
+        template_id: null,
+        model_parameters: {
+          temperature: 0.7,
+          top_p: 1.0,
+          max_tokens: 1000
+        },
+        onConfigChange: (updatedConfig) => handleNodeConfigChange('node-1', updatedConfig)
+      }
+    };
+    
     // Create output node
     const outputNode = {
       id: 'output-node',
@@ -532,13 +577,45 @@ const WorkflowEditor = ({
       }
     };
     
-    // Set nodes and reset counter
-    setNodes([inputNode, outputNode]);
-    nodeIdCounterRef.current = 1;
-    setEdges([]);
+    // Create edges connecting the nodes
+    const edges = [
+      {
+        id: 'edge-input-model',
+        source: 'input-node',
+        target: 'node-1',
+        type: 'smoothstep',
+        animated: true,
+        style: { stroke: '#3b82f6' },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 15,
+          height: 15,
+          color: '#3b82f6',
+        },
+      },
+      {
+        id: 'edge-model-output',
+        source: 'node-1',
+        target: 'output-node',
+        type: 'smoothstep',
+        animated: true,
+        style: { stroke: '#3b82f6' },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 15,
+          height: 15,
+          color: '#3b82f6',
+        },
+      }
+    ];
+    
+    // Set nodes and edges
+    setNodes([inputNode, modelNode, outputNode]);
+    setEdges(edges);
+    nodeIdCounterRef.current = 2; // Start from 2 since we used node-1
     setSelectedNode(null);
     
-    toast.success('Initialized new workflow with input and output nodes');
+    toast.success('Initialized new workflow with connected nodes');
   };
   
   // Export workflow as JSON file
