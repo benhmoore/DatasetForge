@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { Handle, Position } from '@xyflow/react'; // Import Position
+// Removed Handle and Position imports as they are handled by NodeBase
 import CustomSelect from './CustomSelect';
 import CustomSlider from './CustomSlider';
 import api from '../api/apiClient';
+import NodeBase from './NodeBase'; // Import the base component
 
 /**
  * ModelNode component for configuring a model node in a workflow
@@ -20,8 +21,7 @@ const ModelNode = ({
     model = '', 
     system_instruction = '', 
     model_parameters = { temperature: 0.7, top_p: 1.0, max_tokens: 1000 },
-    name, // Get name/label from data
-    label 
+    // name and label are handled by NodeBase
   } = data;
 
   // State only for fetched models and loading status
@@ -81,28 +81,15 @@ const ModelNode = ({
   }));
 
   return (
-    <div className="p-4 space-y-4 bg-white rounded border border-gray-200 relative shadow-sm min-w-[300px]">
-      {/* Input handle */}
-      <Handle 
-        type="target" 
-        position={Position.Left} // Use Position enum
-        id="input" 
-        isConnectable={isConnectable} 
-        className="!w-3 !h-3 !bg-blue-500" // Use !important Tailwind prefix if needed
-      />
-      
-      {/* Output handle */}
-      <Handle 
-        type="source" 
-        position={Position.Right} // Use Position enum
-        id="output" 
-        isConnectable={isConnectable} 
-        className="!w-3 !h-3 !bg-blue-500"
-      />
-      
-      {/* Use name or label from data, fallback */}
-      <h3 className="font-medium text-lg">{name || label || 'Model Node'}</h3>
-      
+    // Use NodeBase to wrap the specific content
+    <NodeBase 
+      id={id} 
+      data={data} 
+      isConnectable={isConnectable} 
+      disabled={disabled} 
+      nodeType="model" // Specify type for styling
+      iconName="cpu" // Specify icon
+    >
       {/* Model selection */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
@@ -184,7 +171,7 @@ const ModelNode = ({
           </p>
         </div>
       </div>
-    </div>
+    </NodeBase> // Close NodeBase
   );
 };
 

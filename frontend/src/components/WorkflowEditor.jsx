@@ -16,6 +16,8 @@ import { toast } from 'react-toastify';
 import isEqual from 'lodash/isEqual'; // Keep for comparing workflow prop content
 import ModelNode from './ModelNode'; // Direct import
 import TransformNode from './TransformNode'; // Direct import
+import InputNode from './InputNode'; // Import the new InputNode
+import OutputNode from './OutputNode'; // Import the new OutputNode
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
 
@@ -37,43 +39,13 @@ const nodeComponentMap = {
 
 // --- Node Components ---
 
-// Basic Input Node Component
-const InputNodeComponent = ({ data, isConnectable }) => (
-  <div className="p-3 border border-green-500 bg-green-50 rounded-md shadow-sm w-48">
-    <div className="font-semibold text-green-800 mb-2">{data.label || 'Input'}</div>
-    <Handle 
-      type="source" 
-      position={Position.Right} // Use Position enum
-      id="output" 
-      isConnectable={isConnectable} 
-      className="!w-3 !h-3 !bg-green-500" // Use !important prefix if needed
-    />
-    <div className="text-xs text-gray-500 mt-1">Workflow Input</div>
-  </div>
-);
-
-// Basic Output Node Component
-const OutputNodeComponent = ({ data, isConnectable }) => (
-  <div className="p-3 border border-purple-500 bg-purple-50 rounded-md shadow-sm w-48">
-    <div className="font-semibold text-purple-800 mb-2">{data.label || 'Output'}</div>
-    <Handle 
-      type="target" 
-      position={Position.Left} // Use Position enum
-      id="input" 
-      isConnectable={isConnectable} 
-      className="!w-3 !h-3 !bg-purple-500"
-    />
-     <div className="text-xs text-gray-500 mt-1">Workflow Output</div>
-  </div>
-);
-
 // Map internal types to actual components for React Flow
-// Use direct components, not wrapped ones
+// Use direct components, including the new Input/Output nodes
 const nodeTypes = { 
   modelNode: ModelNode, 
   transformNode: TransformNode,
-  inputNode: InputNodeComponent,
-  outputNode: OutputNodeComponent
+  inputNode: InputNode, // Use imported InputNode
+  outputNode: OutputNode // Use imported OutputNode
 };
 
 /**

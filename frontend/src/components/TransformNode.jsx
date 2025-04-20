@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'react-toastify';
-import { Handle, Position } from '@xyflow/react'; // Import Position
+// Removed Handle and Position imports as they are handled by NodeBase
 import CustomSelect from './CustomSelect';
-// Removed withNodeWrapper import
+import NodeBase from './NodeBase'; // Import the base component
 
 /**
  * TransformNode component for configuring a text transformation node in a workflow
@@ -20,8 +19,7 @@ const TransformNode = ({
     replacement = '', 
     is_regex = false, 
     apply_to_field = 'output',
-    name, // Get name/label from data
-    label
+    // name and label are handled by NodeBase
   } = data;
 
   // State only for regex validation and preview
@@ -35,6 +33,7 @@ const TransformNode = ({
       // Use values directly from data prop
       if (!pattern) {
         setPreviewOutput(previewInput);
+        setRegexStatus({ isValid: true, error: null }); // Ensure status is valid if pattern is empty
         return;
       }
       
@@ -53,7 +52,7 @@ const TransformNode = ({
       } else {
         // Simple string replacement (only replaces first instance by default)
         // For a global replace preview:
-        const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape special chars
+        const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&'); // Escape special chars
         const regex = new RegExp(escapedPattern, 'g');
         const transformed = previewInput.replace(regex, replacement);
         // Or keep simple replace: const transformed = previewInput.replace(pattern, replacement);
@@ -89,28 +88,15 @@ const TransformNode = ({
   ];
   
   return (
-    <div className="p-4 space-y-4 bg-white rounded border border-gray-200 relative shadow-sm min-w-[300px]">
-      {/* Input handle */}
-      <Handle 
-        type="target" 
-        position={Position.Left} // Use Position enum
-        id="input" 
-        isConnectable={isConnectable} 
-        className="!w-3 !h-3 !bg-orange-500"
-      />
-      
-      {/* Output handle */}
-      <Handle 
-        type="source" 
-        position={Position.Right} // Use Position enum
-        id="output" 
-        isConnectable={isConnectable} 
-        className="!w-3 !h-3 !bg-orange-500"
-      />
-      
-      {/* Use name or label from data, fallback */}
-      <h3 className="font-medium text-lg">{name || label || 'Transform Node'}</h3>
-      
+    // Use NodeBase to wrap the specific content
+    <NodeBase 
+      id={id} 
+      data={data} 
+      isConnectable={isConnectable} 
+      disabled={disabled} 
+      nodeType="transform" // Specify type for styling
+      iconName="wand" // Specify icon
+    >
       {/* Apply to field selection */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
@@ -149,7 +135,7 @@ const TransformNode = ({
           className={`w-full p-2 border rounded ${!regexStatus.isValid ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'focus:border-blue-500 focus:ring-blue-500'}`}
           value={pattern} // Use value from data
           onChange={(e) => handleConfigUpdate('pattern', e.target.value)}
-          placeholder={is_regex ? 'e.g., \\b(hello|hi)\\b' : 'Text to find...'}
+          placeholder={is_regex ? 'e.g., \\\\b(hello|hi)\\\\b' : 'Text to find...'}
           disabled={disabled}
         />
         {!regexStatus.isValid && (
@@ -200,7 +186,7 @@ const TransformNode = ({
           </div>
         </div>
       </div>
-    </div>
+    </NodeBase> // Close NodeBase
   );
 };
 
