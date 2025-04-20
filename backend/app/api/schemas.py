@@ -220,6 +220,16 @@ class TransformNodeConfig(BaseNodeConfig):
     apply_to_field: str = "output"  # Which field to transform (output, system_prompt, etc.)
 
 
+class InputNodeConfig(BaseNodeConfig):
+    type: str = "input"
+    fields: Optional[List[str]] = None
+
+
+class OutputNodeConfig(BaseNodeConfig):
+    type: str = "output"
+    field: str = "output"
+
+
 class NodeConnection(BaseModel):
     source_node_id: str
     target_node_id: str

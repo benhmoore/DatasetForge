@@ -30,6 +30,8 @@ class WorkflowExecutor:
         self.node_executors = {
             "model": self._execute_model_node,
             "transform": self._execute_transform_node,
+            "input": self._execute_input_node,
+            "output": self._execute_output_node,
         }
     
     def _get_timestamp(self) -> str:
@@ -334,6 +336,60 @@ class WorkflowExecutor:
             "is_regex": is_regex,
             "field": apply_to_field,
             "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        return result
+    
+    async def _execute_input_node(self, node_config: Dict[str, Any], 
+                           node_inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute an input node - passes through the initial seed data.
+        
+        Args:
+            node_config: The node configuration
+            node_inputs: The inputs for the node (contains seed data)
+            
+        Returns:
+            Dict[str, Any]: The seed data to pass to downstream nodes
+        """
+        # Simply pass through the seed data
+        result = node_inputs.copy()
+        result["_node_info"] = {
+            "type": "input",
+            "id": node_config.get("id", "input-node"),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        return result
+        
+    async def _execute_output_node(self, node_config: Dict[str, Any], 
+                            node_inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute an output node - finalizes the workflow result.
+        
+        Args:
+            node_config: The node configuration
+            node_inputs: The inputs for the node
+            
+        Returns:
+            Dict[str, Any]: The final output wrapped with metadata
+        """
+        # Determine which field to use as the final output
+        output_field = node_config.get("field", "output")
+        
+        # Extract the value from the specified field
+        output_value = node_inputs.get(output_field, "")
+        
+        # Create the final result with metadata
+        result = {
+            "output": output_value,  # Always provide in standard field
+            "original_field": output_field,
+            "workflow_history": node_inputs.get("workflow_history", []),
+            "_node_info": {
+                "type": "output",
+                "id": node_config.get("id", "output-node"),
+                "timestamp": datetime.utcnow().isoformat()
+            }
         }
         
         return result

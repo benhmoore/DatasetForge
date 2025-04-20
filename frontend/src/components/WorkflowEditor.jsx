@@ -7,20 +7,24 @@ import {
   addEdge, 
   useNodesState, 
   useEdgesState,
-  MarkerType 
+  MarkerType,
+  Handle
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { toast } from 'react-toastify';
 import ModelNode from './ModelNode';
 import TransformNode from './TransformNode';
 import CustomSelect from './CustomSelect';
+import Icon from './Icons';
 
 // Node type definitions
 const NODE_TYPES = {
   model: 'Model',
   transform: 'Transform',
   filter: 'Filter',
-  custom: 'Custom Function'
+  custom: 'Custom Function',
+  input: 'Input',
+  output: 'Output'
 };
 
 /**
@@ -28,7 +32,15 @@ const NODE_TYPES = {
  */
 const ModelNodeComponent = ({ data, isConnectable }) => {
   return (
-    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-blue-500 min-w-[250px]">
+    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-blue-500 min-w-[250px] relative">
+      {/* Input handle */}
+      <Handle
+        type="target"
+        position="left"
+        style={{ background: '#3b82f6', width: '12px', height: '12px' }}
+        isConnectable={isConnectable}
+      />
+      
       <h4 className="font-medium text-sm mb-2 text-blue-700">{data.label}</h4>
       <div className="text-xs">
         <div className="mb-1">
@@ -45,13 +57,29 @@ const ModelNodeComponent = ({ data, isConnectable }) => {
           </div>
         )}
       </div>
+      
+      {/* Output handle */}
+      <Handle
+        type="source"
+        position="right"
+        style={{ background: '#3b82f6', width: '12px', height: '12px' }}
+        isConnectable={isConnectable}
+      />
     </div>
   );
 };
 
 const TransformNodeComponent = ({ data, isConnectable }) => {
   return (
-    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-green-500 min-w-[250px]">
+    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-green-500 min-w-[250px] relative">
+      {/* Input handle */}
+      <Handle
+        type="target"
+        position="left"
+        style={{ background: '#10b981', width: '12px', height: '12px' }}
+        isConnectable={isConnectable}
+      />
+      
       <h4 className="font-medium text-sm mb-2 text-green-700">{data.label}</h4>
       <div className="text-xs">
         <div className="mb-1">
@@ -62,6 +90,69 @@ const TransformNodeComponent = ({ data, isConnectable }) => {
         </div>
         <div className="mb-1">
           <span className="font-medium">Replace with:</span> {data.replacement || ''}
+        </div>
+      </div>
+      
+      {/* Output handle */}
+      <Handle
+        type="source"
+        position="right"
+        style={{ background: '#10b981', width: '12px', height: '12px' }}
+        isConnectable={isConnectable}
+      />
+    </div>
+  );
+};
+
+// Input and Output node components
+const InputNodeComponent = ({ data, isConnectable }) => {
+  return (
+    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-purple-500 min-w-[200px] relative">
+      <h4 className="font-medium text-sm mb-2 text-purple-700">
+        <Icon name="database" className="w-4 h-4 inline-block mr-1" />
+        Seed Input
+      </h4>
+      <div className="text-xs">
+        <div className="mb-1">
+          <span className="font-medium">Source:</span> Seed Bank
+        </div>
+        <div className="mb-1">
+          <span className="font-medium">Available Fields:</span> {data.fields?.join(', ') || 'All fields'}
+        </div>
+      </div>
+      
+      {/* Output handle only */}
+      <Handle
+        type="source"
+        position="right"
+        style={{ background: '#8b5cf6', width: '12px', height: '12px' }}
+        isConnectable={isConnectable}
+      />
+    </div>
+  );
+};
+
+const OutputNodeComponent = ({ data, isConnectable }) => {
+  return (
+    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-orange-500 min-w-[200px] relative">
+      {/* Input handle only */}
+      <Handle
+        type="target"
+        position="left"
+        style={{ background: '#f97316', width: '12px', height: '12px' }}
+        isConnectable={isConnectable}
+      />
+      
+      <h4 className="font-medium text-sm mb-2 text-orange-700">
+        <Icon name="check" className="w-4 h-4 inline-block mr-1" />
+        Final Output
+      </h4>
+      <div className="text-xs">
+        <div className="mb-1">
+          <span className="font-medium">Destination:</span> Generation Results
+        </div>
+        <div className="mb-1">
+          <span className="font-medium">Receiving field:</span> {data.field || 'output'}
         </div>
       </div>
     </div>
@@ -270,8 +361,38 @@ const WorkflowEditor = ({
   const handleAddNode = () => {
     if (disabled) return;
     
-    const nodeId = `node-${nodeIdCounterRef.current++}`;
-    const position = { x: 100, y: 100 + nodes.length * 150 };
+    // Count existing input/output nodes to ensure uniqueness
+    const hasInputNode = nodes.some(node => node.type === 'inputNode');
+    const hasOutputNode = nodes.some(node => node.type === 'outputNode');
+    
+    // Check if trying to add a duplicate input/output node
+    if (selectedNodeType === 'input' && hasInputNode) {
+      toast.warning('Workflow already has an input node. Only one input node is allowed.');
+      return;
+    }
+    
+    if (selectedNodeType === 'output' && hasOutputNode) {
+      toast.warning('Workflow already has an output node. Only one output node is allowed.');
+      return;
+    }
+    
+    // Determine node position based on type
+    let position;
+    if (selectedNodeType === 'input') {
+      // Place input node at the left
+      position = { x: 50, y: 150 };
+    } else if (selectedNodeType === 'output') {
+      // Place output node at the right
+      const maxX = Math.max(...nodes.map(n => n.position.x), 300);
+      position = { x: maxX + 250, y: 150 };
+    } else {
+      // Standard position for other nodes
+      position = { x: 250, y: 100 + nodes.length * 150 };
+    }
+    
+    const nodeId = selectedNodeType === 'input' ? 'input-node' : 
+                   selectedNodeType === 'output' ? 'output-node' : 
+                   `node-${nodeIdCounterRef.current++}`;
     
     let nodeType = '';
     let nodeData = {
@@ -306,6 +427,22 @@ const WorkflowEditor = ({
           apply_to_field: 'output'
         };
         break;
+      case 'input':
+        nodeType = 'inputNode';
+        nodeData = {
+          ...nodeData,
+          label: 'Seed Input',
+          fields: ['slots', 'seed_data'],
+        };
+        break;
+      case 'output':
+        nodeType = 'outputNode';
+        nodeData = {
+          ...nodeData,
+          label: 'Final Output',
+          field: 'output',
+        };
+        break;
       default:
         nodeType = 'modelNode'; // Default fallback
     }
@@ -319,6 +456,11 @@ const WorkflowEditor = ({
     
     setNodes(nds => [...nds, newNode]);
     setSelectedNode(newNode);
+    
+    // If this is the first node, suggest adding input/output nodes
+    if (nodes.length === 0 && !['input', 'output'].includes(selectedNodeType)) {
+      toast.info('Remember to add input and output nodes to complete your workflow.');
+    }
   };
   
   // Delete selected node
@@ -351,6 +493,52 @@ const WorkflowEditor = ({
       }
       return node;
     }));
+  };
+  
+  // Initialize a new workflow with input and output nodes
+  const handleInitializeWorkflow = () => {
+    if (disabled) return;
+    
+    // Confirm if there are existing nodes
+    if (nodes.length > 0) {
+      if (!window.confirm('This will replace your existing workflow. Continue?')) {
+        return;
+      }
+    }
+    
+    // Create input node
+    const inputNode = {
+      id: 'input-node',
+      type: 'inputNode',
+      position: { x: 50, y: 150 },
+      data: {
+        label: 'Seed Input',
+        type: 'input',
+        fields: ['slots', 'seed_data'],
+        onConfigChange: (updatedConfig) => handleNodeConfigChange('input-node', updatedConfig)
+      }
+    };
+    
+    // Create output node
+    const outputNode = {
+      id: 'output-node',
+      type: 'outputNode',
+      position: { x: 550, y: 150 },
+      data: {
+        label: 'Final Output',
+        type: 'output',
+        field: 'output',
+        onConfigChange: (updatedConfig) => handleNodeConfigChange('output-node', updatedConfig)
+      }
+    };
+    
+    // Set nodes and reset counter
+    setNodes([inputNode, outputNode]);
+    nodeIdCounterRef.current = 1;
+    setEdges([]);
+    setSelectedNode(null);
+    
+    toast.success('Initialized new workflow with input and output nodes');
   };
   
   // Export workflow as JSON file
@@ -410,6 +598,8 @@ const WorkflowEditor = ({
   const nodeTypes = {
     modelNode: ModelNodeComponent,
     transformNode: TransformNodeComponent,
+    inputNode: InputNodeComponent,
+    outputNode: OutputNodeComponent,
   };
   
   // Node type options for dropdown
@@ -440,7 +630,17 @@ const WorkflowEditor = ({
           />
         </div>
         
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap space-x-2">
+          <button
+            className="px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded transition disabled:opacity-50 mb-2"
+            onClick={handleInitializeWorkflow}
+            disabled={disabled}
+            title="Initialize with input/output nodes"
+          >
+            <Icon name="refresh" className="h-3 w-3 inline-block mr-1" />
+            Initialize
+          </button>
+          
           <label className="cursor-pointer px-3 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition disabled:opacity-50 disabled:cursor-not-allowed">
             Import
             <input
