@@ -89,6 +89,9 @@ const WorkflowManager = ({
         connectionCount: parsed.connections.length
       });
       
+      // Add a timestamp for the update
+      parsed.updated_at = new Date().toISOString();
+      
       // Use setTimeout to ensure React renders before we update the workflow
       setTimeout(() => {
         setWorkflow(parsed);

@@ -7,13 +7,41 @@ import withNodeWrapper from './withNodeWrapper';
 /**
  * TransformNode component for configuring a text transformation node in a workflow
  */
-const TransformNode = ({ 
-  nodeConfig,
-  localConfig,
-  updateConfig,
+const TransformNodeInner = ({ 
+  data, // Pass raw data from ReactFlow
   disabled = false,
   isConnectable = true
 }) => {
+  // Destructure the necessary values directly from data prop
+  const { onConfigChange } = data;
+  
+  // Create local state for handling our configuration
+  const [localConfig, setLocalConfig] = useState({
+    pattern: data.pattern || '',
+    replacement: data.replacement || '',
+    is_regex: data.is_regex || false,
+    apply_to_field: data.apply_to_field || 'output'
+  });
+  
+  // Debug output to see what we're working with
+  useEffect(() => {
+    console.log("TransformNode data from ReactFlow:", data);
+    console.log("TransformNode localConfig:", localConfig);
+  }, [data, localConfig]);
+  
+  // Update our parent when local config changes
+  const updateParent = (updatedConfig) => {
+    // Only update if we have the callback
+    if (onConfigChange) {
+      // Create complete updated config
+      const completeConfig = {
+        ...data,
+        ...updatedConfig
+      };
+      console.log("TransformNode: Sending update to parent:", completeConfig);
+      onConfigChange(completeConfig);
+    }
+  };
   // Regex test status and error
   const [regexStatus, setRegexStatus] = useState({
     isValid: true,
@@ -27,6 +55,7 @@ const TransformNode = ({
   // Update preview output when input or transform configs change
   useEffect(() => {
     try {
+      // Use the values from our local state
       const { pattern, replacement, is_regex } = localConfig;
       
       if (!pattern) {
@@ -64,22 +93,56 @@ const TransformNode = ({
   
   // Handle field selection
   const handleFieldChange = (fieldName) => {
-    updateConfig({ apply_to_field: fieldName });
+    // Update local state
+    setLocalConfig(prev => ({
+      ...prev,
+      apply_to_field: fieldName
+    }));
+    
+    // Send update to parent
+    updateParent({ apply_to_field: fieldName });
   };
   
   // Handle pattern change
   const handlePatternChange = (e) => {
-    updateConfig({ pattern: e.target.value });
+    const value = e.target.value;
+    
+    // Update local state
+    setLocalConfig(prev => ({
+      ...prev,
+      pattern: value
+    }));
+    
+    // Send update to parent
+    updateParent({ pattern: value });
   };
   
   // Handle replacement change
   const handleReplacementChange = (e) => {
-    updateConfig({ replacement: e.target.value });
+    const value = e.target.value;
+    
+    // Update local state
+    setLocalConfig(prev => ({
+      ...prev,
+      replacement: value
+    }));
+    
+    // Send update to parent
+    updateParent({ replacement: value });
   };
   
   // Toggle regex mode
   const handleRegexToggle = () => {
-    updateConfig({ is_regex: !localConfig.is_regex });
+    const newValue = !localConfig.is_regex;
+    
+    // Update local state
+    setLocalConfig(prev => ({
+      ...prev,
+      is_regex: newValue
+    }));
+    
+    // Send update to parent
+    updateParent({ is_regex: newValue });
   };
   
   // Handle preview input change
@@ -114,7 +177,7 @@ const TransformNode = ({
         className="w-3 h-3 bg-orange-500"
       />
       
-      <h3 className="font-medium text-lg">{nodeConfig?.name || 'Transform Node'}</h3>
+      <h3 className="font-medium text-lg">{data?.name || data?.label || 'Transform Node'}</h3>
       
       {/* Apply to field selection */}
       <div className="space-y-2">
@@ -209,13 +272,6 @@ const TransformNode = ({
   );
 };
 
-// Define default config for TransformNode
-const getDefaultTransformConfig = () => ({
-  pattern: '',
-  replacement: '',
-  is_regex: false,
-  apply_to_field: 'output'
-});
-
-// Wrap with HOC
-export default withNodeWrapper(TransformNode, getDefaultTransformConfig);
+// Export the direct component
+const TransformNode = TransformNodeInner;
+export default TransformNode;

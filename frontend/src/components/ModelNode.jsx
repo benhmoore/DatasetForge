@@ -9,16 +9,48 @@ import withNodeWrapper from './withNodeWrapper';
 /**
  * ModelNode component for configuring a model node in a workflow
  */
-const ModelNode = ({ 
-  nodeConfig, 
-  localConfig, 
-  updateConfig,
+const ModelNodeInner = ({ 
+  data, // Pass raw data from ReactFlow
   disabled = false,
   availableTemplates = [],
   isConnectable = true
 }) => {
+  // Destructure the necessary values directly from data prop
+  const { onConfigChange } = data;
+  // Create local state for our models fetch
   const [models, setModels] = useState([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
+  
+  // Create local state for handling our configuration
+  const [localConfig, setLocalConfig] = useState({
+    model: data.model || '',
+    system_instruction: data.system_instruction || '',
+    model_parameters: data.model_parameters || {
+      temperature: 0.7,
+      top_p: 1.0,
+      max_tokens: 1000
+    }
+  });
+  
+  // Debug output to see what we're working with
+  useEffect(() => {
+    console.log("ModelNode data from ReactFlow:", data);
+    console.log("ModelNode localConfig:", localConfig);
+  }, [data, localConfig]);
+  
+  // Update our parent when local config changes
+  const updateParent = (updatedConfig) => {
+    // Only update if we have the callback
+    if (onConfigChange) {
+      // Create complete updated config
+      const completeConfig = {
+        ...data,
+        ...updatedConfig
+      };
+      console.log("ModelNode: Sending update to parent:", completeConfig);
+      onConfigChange(completeConfig);
+    }
+  };
   
   // Fetch available models on component mount
   useEffect(() => {
@@ -40,22 +72,58 @@ const ModelNode = ({
   
   // Handle model selection
   const handleModelChange = (modelName) => {
-    updateConfig({ model: modelName });
+    // Update our local state
+    setLocalConfig(prev => ({
+      ...prev,
+      model: modelName
+    }));
+    
+    // Send update to parent
+    updateParent({ model: modelName });
   };
   
   // Handle system instruction change
   const handleInstructionChange = (e) => {
-    console.log('ModelNode: handleInstructionChange', e.target.value);
-    updateConfig({ system_instruction: e.target.value });
+    const newValue = e.target.value;
+    console.log('ModelNode: handleInstructionChange', newValue);
+    
+    // Update our local state
+    setLocalConfig(prev => ({
+      ...prev,
+      system_instruction: newValue
+    }));
+    
+    // Send update to parent
+    updateParent({ system_instruction: newValue });
+    
+    // Debug output on blur
+    e.target.onblur = () => {
+      console.log("CURRENT SYSTEM INSTRUCTION:", localConfig.system_instruction);
+      console.log("DATA SYSTEM INSTRUCTION:", data.system_instruction);
+    };
   };
   
   // Handle parameter changes
   const handleParameterChange = (param, value) => {
-    updateConfig({ 
-      model_parameters: {
-        ...localConfig.model_parameters,
+    // Update our local state
+    setLocalConfig(prev => {
+      const updatedParams = {
+        ...prev.model_parameters,
         [param]: value
-      }
+      };
+      
+      // Update local state
+      const newConfig = {
+        ...prev,
+        model_parameters: updatedParams
+      };
+      
+      // Send update to parent
+      updateParent({ 
+        model_parameters: updatedParams
+      });
+      
+      return newConfig;
     });
   };
   
@@ -87,7 +155,7 @@ const ModelNode = ({
         className="w-3 h-3 bg-blue-500"
       />
       
-      <h3 className="font-medium text-lg">{nodeConfig?.name || 'Model Node'}</h3>
+      <h3 className="font-medium text-lg">{data?.name || data?.label || 'Model Node'}</h3>
       
       {/* Model selection */}
       <div className="space-y-2">
@@ -102,6 +170,8 @@ const ModelNode = ({
           isLoading={isLoadingModels}
           disabled={disabled}
         />
+        {/* Debug */}
+        <div className="text-xs mt-1 text-gray-400">Data Model: {data.model || 'none'}</div>
       </div>
       
       {/* Template selection removed - now handled by separate TemplateNode */}
@@ -115,10 +185,12 @@ const ModelNode = ({
           className="w-full h-24 p-2 border rounded text-sm"
           value={localConfig.system_instruction || ''}
           onChange={handleInstructionChange}
-          onBlur={() => console.log("CURRENT NODE CONFIG:", nodeConfig)}
+          onBlur={() => console.log("CURRENT DATA:", data)}
           placeholder="Enter system instructions for the model..."
           disabled={disabled}
         />
+        {/* Debug */}
+        <div className="text-xs mt-1 text-gray-400">Data instruction: {(data.system_instruction || '').substring(0, 20)}...</div>
       </div>
       
       {/* Model parameters */}
@@ -177,16 +249,6 @@ const ModelNode = ({
   );
 };
 
-// Define default config for ModelNode
-const getDefaultModelConfig = () => ({
-  model: '',
-  system_instruction: '',
-  model_parameters: {
-    temperature: 0.7,
-    top_p: 1.0,
-    max_tokens: 1000
-  }
-});
-
-// Wrap with HOC
-export default withNodeWrapper(ModelNode, getDefaultModelConfig);
+// Export the direct component
+const ModelNode = ModelNodeInner;
+export default ModelNode;

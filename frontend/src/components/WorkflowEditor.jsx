@@ -87,9 +87,53 @@ const WorkflowEditor = ({
   onExport, // Callback for export action
   disabled = false // Disable editing controls
 }) => {
+  // State to track if there are unsaved changes
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const reactFlowWrapper = useRef(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  
+  // Reference to the ReactFlow instance
+  const reactFlowInstance = useRef(null);
+  
+  // Node change handler that marks position changes as unsaved
+  const handleNodesChange = useCallback((changes) => {
+    console.log("Node changes:", changes);
+    
+    // Let ReactFlow update its internal state
+    onNodesChange(changes);
+    
+    // Check if there are meaningful changes (position changes, additions, or removals)
+    const hasPositionChanges = changes.some(change => 
+      change.type === 'position' || 
+      (change.type === 'dimensions') || // Also track dimension changes
+      change.type === 'add' || 
+      change.type === 'remove'
+    );
+    
+    // Look specifically for position changes for debugging
+    changes.forEach(change => {
+      if (change.type === 'position' && change.position) {
+        console.log(`Node ${change.id} moved to:`, change.position);
+      }
+    });
+    
+    // If there are changes, mark that we have unsaved changes
+    if (hasPositionChanges) {
+      setHasUnsavedChanges(true);
+    }
+  }, [onNodesChange, setHasUnsavedChanges]);
+  
+  // Simple edge change handler
+  const handleEdgesChange = useCallback((changes) => {
+    // Let ReactFlow update its internal state
+    onEdgesChange(changes);
+    
+    // Mark that we have unsaved changes if there are any changes
+    if (changes.length > 0) {
+      setHasUnsavedChanges(true);
+    }
+  }, [onEdgesChange, setHasUnsavedChanges]);
   const [selectedNode, setSelectedNode] = useState(null); // For potential future inspector panel
   const [selectedNodeType, setSelectedNodeType] = useState('model'); // Default node type to add
   const [workflowName, setWorkflowName] = useState(workflow?.name || 'New Workflow');
@@ -135,7 +179,7 @@ const WorkflowEditor = ({
           id: node.id,
           type: nodeType,
           name: label || nodeConfig.name || 'Untitled Node',
-          position: node.position,
+          position: { ...node.position }, // Clone position to avoid reference issues
           ...configToSave
         };
       });
@@ -260,12 +304,13 @@ const WorkflowEditor = ({
       console.log("Skipping updateWorkflowObject: internal update from prop loading in progress.");
       return;
     }
-    console.log("Internal state change detected. Running updateWorkflowObject.");
+    console.log("Running updateWorkflowObject to save current state.");
     
-    // Log all nodes for debugging
-    console.log("Current nodes:", nodesRef.current);
+    // Important: We need to get the absolute latest node positions and state
+    // Read from nodesRef BUT also make sure to capture the latest positions
+    console.log("Latest nodes with positions:", nodesRef.current);
 
-    // Read current state from refs
+    // Read current state directly from refs
     const currentNodes = nodesRef.current;
     const currentEdges = edgesRef.current;
     const currentWorkflowName = workflowNameRef.current;
@@ -362,22 +407,160 @@ const WorkflowEditor = ({
   // Only depend on the setWorkflow prop function itself (and potentially previousWorkflowRef if needed, but likely stable)
   }, [setWorkflow]); 
 
-  // useEffect to trigger the STABLE updateWorkflowObject when internal state changes
+  // Update our hasUnsavedChanges flag when state changes, but don't auto-save
   useEffect(() => {
-    // Check the flag *before* calling updateWorkflowObject
-    if (!isInternalUpdateRef.current) {
-      // Call the stable update function
-      updateWorkflowObject(); 
-    } else {
-       console.log("Skipping updateWorkflowObject call from internal state effect due to flag.");
+    // Skip if the update was triggered by loading from props
+    if (isInternalUpdateRef.current) {
+      console.log("Skipping unsaved changes tracking due to loading from props");
+      return;
     }
-  // Depend on the actual state variables + the stable callback instance
-  }, [nodes, edges, workflowName, workflowDescription, updateWorkflowObject]); 
+    
+    // Mark that we have unsaved changes
+    setHasUnsavedChanges(true);
+    console.log("Marked workflow as having unsaved changes");
+    
+  // Depend on the actual state variables
+  }, [nodes, edges, workflowName, workflowDescription]); 
+  
+  // Direct function to save the current workflow - completely rewritten for maximum reliability
+  const handleSaveWorkflow = useCallback(() => {
+    if (disabled) return;
+    
+    console.log("=== SAVING WORKFLOW ===");
+    
+    // Get the latest nodes from the React Flow instance if available
+    let currentNodes = nodes;
+    
+    // If we have access to the ReactFlow instance, use it to get the most up-to-date nodes
+    // This ensures we have the final positions after dragging stops
+    if (reactFlowInstance.current) {
+      const rfNodes = reactFlowInstance.current.getNodes();
+      if (rfNodes && rfNodes.length > 0) {
+        console.log("Using nodes directly from ReactFlow instance:", rfNodes);
+        currentNodes = rfNodes;
+      }
+    }
+    
+    console.log("Current nodes at save time:", currentNodes);
+    
+    // Create workflow object directly from current state
+    const workflowNodes = {};
+    
+    // Process each node to capture its current state completely
+    currentNodes.forEach(node => {
+      // Extract node data and show what we're working with
+      const { data, id, type, position, dragging, selected } = node;
+      console.log(`Saving node ${id} (${type}) at position:`, position);
+      
+      // Determine internal node type from React Flow type
+      let nodeType;
+      Object.entries(nodeComponentMap).forEach(([internalType, componentType]) => {
+        if (type === componentType) {
+          nodeType = internalType;
+        }
+      });
+      nodeType = nodeType || 'model'; // Fallback
+      
+      // Remove function properties that can't be saved
+      const { onConfigChange, ...nodeData } = data;
+      
+      // Build the complete node object with all properties
+      const nodeObject = {
+        id,
+        type: nodeType,
+        name: data.label || data.name || 'Untitled Node',
+        // CRITICAL: Always save the current position
+        position: {
+          x: position.x, 
+          y: position.y
+        },
+        ...nodeData // Include ALL data properties from the node
+      };
+      
+      // Double-check model node specific properties
+      if (nodeType === 'model') {
+        // Make sure we log these explicitly for debugging
+        console.log(`  - model: "${data.model}"`);
+        console.log(`  - system_instruction: "${data.system_instruction}"`);
+        console.log(`  - model_parameters:`, data.model_parameters);
+        
+        // Make sure they're included in the saved object
+        nodeObject.model = data.model;
+        nodeObject.system_instruction = data.system_instruction;
+        nodeObject.model_parameters = data.model_parameters || {
+          temperature: 0.7,
+          top_p: 1.0,
+          max_tokens: 1000
+        };
+      }
+      
+      // Save to our nodes map
+      workflowNodes[id] = nodeObject;
+      console.log(`Final node object for ${id}:`, nodeObject);
+    });
+    
+    // Process edges
+    const workflowConnections = edges.map(edge => ({
+      source_node_id: edge.source,
+      target_node_id: edge.target,
+      source_handle: edge.sourceHandle,
+      target_handle: edge.targetHandle
+    }));
+    
+    // Create the full workflow object
+    const updatedWorkflow = {
+      id: workflow?.id || `workflow-${Date.now()}`,
+      name: workflowName,
+      description: workflowDescription,
+      nodes: workflowNodes,
+      connections: workflowConnections,
+      updated_at: new Date().toISOString()
+    };
+    
+    console.log("Complete workflow object:", updatedWorkflow);
+    
+    // CRITICAL VERIFICATION: Check that positions were preserved
+    Object.keys(workflowNodes).forEach(nodeId => {
+      const node = workflowNodes[nodeId];
+      const originalNode = currentNodes.find(n => n.id === nodeId);
+      
+      console.log(`POSITION CHECK - Node ${nodeId}:`);
+      console.log(`  Original: ${JSON.stringify(originalNode.position)}`);
+      console.log(`  Saved:    ${JSON.stringify(node.position)}`);
+      
+      // Verify the position is correct (should be identical)
+      if (originalNode && 
+          (originalNode.position.x !== node.position.x || 
+           originalNode.position.y !== node.position.y)) {
+        console.error(`Position mismatch for node ${nodeId}!`);
+      }
+    });
+    
+    // Direct sanity check for first node
+    if (Object.keys(workflowNodes).length > 0) {
+      const firstNodeId = Object.keys(workflowNodes)[0];
+      const firstNode = workflowNodes[firstNodeId];
+      if (firstNode.type === 'model') {
+        console.log("VERIFICATION - First node system_instruction:", firstNode.system_instruction);
+      }
+    }
+    
+    // Send to parent
+    setWorkflow(updatedWorkflow);
+    
+    // Reset the unsaved changes flag
+    setHasUnsavedChanges(false);
+    
+    // Show success message
+    toast.success("Workflow saved successfully");
+  }, [disabled, nodes, edges, workflowName, workflowDescription, workflow?.id, setWorkflow, nodeComponentMap]);
 
   // --- React Flow Handlers ---
 
   const onConnect = useCallback((params) => {
     if (disabled) return;
+    
+    // Add the edge to the React Flow state
     setEdges((eds) => addEdge({ 
       ...params, 
       type: 'smoothstep', 
@@ -385,7 +568,10 @@ const WorkflowEditor = ({
       style: { stroke: '#3b82f6' },
       markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#3b82f6' } 
     }, eds));
-  }, [setEdges, disabled]);
+    
+    // Mark that we have unsaved changes
+    setHasUnsavedChanges(true);
+  }, [setEdges, disabled, setHasUnsavedChanges]);
 
   const onNodesDelete = useCallback((deletedNodes) => {
     if (disabled) return;
@@ -409,10 +595,9 @@ const WorkflowEditor = ({
   const handleNodeConfigChange = (nodeId, updatedConfig) => {
     if (disabled) return;
     
-    console.log('WorkflowEditor: handleNodeConfigChange CALLED for node', nodeId, 'with config:', updatedConfig);
-    console.log('CRITICAL CHECK - system_instruction:', updatedConfig.system_instruction);
+    console.log('WorkflowEditor: Node config change for node', nodeId, 'with config:', updatedConfig);
     
-    // Use a direct state update to ensure it's immediately applied
+    // Use a direct state update
     setNodes(prevNodes => {
       // Find the node we need to update
       const nodeIndex = prevNodes.findIndex(n => n.id === nodeId);
@@ -426,23 +611,17 @@ const WorkflowEditor = ({
       
       // Get the target node
       const targetNode = prevNodes[nodeIndex];
-      console.log('WorkflowEditor: Current node data before update:', targetNode.data);
       
-      // Create a new data object with all properties
+      // Create a new data object with the updated configuration
       const newData = {
         ...targetNode.data,
         ...updatedConfig,
-        // Ensure important fields are explicitly included
-        system_instruction: updatedConfig.system_instruction,
-        model_parameters: updatedConfig.model_parameters,
         // Update label if name changes
         label: updatedConfig.name !== undefined ? updatedConfig.name : targetNode.data.label,
       };
       
-      // Preserve the callback
+      // Make sure to preserve the callback
       newData.onConfigChange = targetNode.data.onConfigChange;
-      
-      console.log('WorkflowEditor: New node data after update:', newData);
       
       // Create a new node with updated data
       newNodes[nodeIndex] = {
@@ -450,17 +629,11 @@ const WorkflowEditor = ({
         data: newData
       };
       
-      // Force immediate workflow update
-      setTimeout(() => {
-        console.log('WorkflowEditor: Force updating workflow with:', newNodes);
-        // Directly update the nodes ref
-        nodesRef.current = newNodes;
-        // Call update function immediately
-        updateWorkflowObject();
-      }, 0);
-      
       return newNodes;
     });
+    
+    // Mark that we have unsaved changes
+    setHasUnsavedChanges(true);
   };
 
   // Handler to add a new node to the canvas
@@ -540,9 +713,10 @@ const WorkflowEditor = ({
     
     setNodes(nds => [...nds, newNode]); // Add the new node to state
     setSelectedNode(newNode); // Optionally select the new node
+    setHasUnsavedChanges(true); // Mark that we have unsaved changes
 
     // Provide guidance if adding the first non-IO node
-    if (nodesRef.current.length === 0 && !['input', 'output'].includes(selectedNodeType)) {
+    if (nodes.length === 0 && !['input', 'output'].includes(selectedNodeType)) {
       toast.info('Remember to add Input and Output nodes to complete the workflow.');
     }
   };
@@ -558,6 +732,7 @@ const WorkflowEditor = ({
     setNodes(nds => nds.filter(n => n.id !== selectedNode.id));
     setEdges(eds => eds.filter(e => e.source !== selectedNode.id && e.target !== selectedNode.id));
     setSelectedNode(null); // Deselect after deletion
+    setHasUnsavedChanges(true); // Mark that we have unsaved changes
   };
 
   // --- Render ---
@@ -603,6 +778,22 @@ const WorkflowEditor = ({
         >
            <Icon name="trash" className="inline-block mr-1 h-4 w-4" /> Delete
         </button>
+        
+        {/* Save Button */}
+        <button 
+          onClick={handleSaveWorkflow}
+          className={`px-3 py-1 rounded text-sm ${
+            hasUnsavedChanges 
+              ? "bg-green-600 text-white hover:bg-green-700" 
+              : "bg-gray-200 text-gray-500"
+          } ml-4 disabled:opacity-50`}
+          disabled={disabled || !hasUnsavedChanges}
+          title={hasUnsavedChanges ? "Save workflow changes" : "No unsaved changes"}
+        >
+          <Icon name="save" className="inline-block mr-1 h-4 w-4" /> 
+          {hasUnsavedChanges ? "Save*" : "Saved"}
+        </button>
+
         {/* Import/Export Buttons */}
         {onImport && (
           <button 
@@ -631,12 +822,37 @@ const WorkflowEditor = ({
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
+          onInit={(instance) => {
+            // Save the ReactFlow instance so we can access it later
+            reactFlowInstance.current = instance;
+            console.log("ReactFlow instance initialized");
+          }}
+          onNodesChange={handleNodesChange} // Use our custom handler
+          onEdgesChange={handleEdgesChange} // Use our custom handler
           onConnect={onConnect}
           onNodeClick={onNodeClick}
           onNodesDelete={onNodesDelete}
           onEdgesDelete={onEdgesDelete}
+          onNodeDragStop={(event, node) => {
+            // Make sure we mark changes as unsaved when dragging stops
+            setHasUnsavedChanges(true);
+            console.log("Node drag stopped, final position:", node.position);
+            
+            // CRITICAL FIX: Directly update the node with its new position in React Flow state
+            setNodes(nds => 
+              nds.map(n => {
+                if (n.id === node.id) {
+                  console.log(`Explicitly updating node ${n.id} position to:`, node.position);
+                  // Create a new node object with the updated position
+                  return { 
+                    ...n, 
+                    position: { ...node.position } 
+                  };
+                }
+                return n;
+              })
+            );
+          }}
           nodeTypes={nodeTypes} // Use the mapped components
           fitView
           className="bg-gradient-to-br from-gray-50 to-gray-100" // Subtle background
