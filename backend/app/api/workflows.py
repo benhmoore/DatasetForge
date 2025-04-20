@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/workflows/execute", response_model=WorkflowExecutionResult)
+@router.post("/workflow/execute", response_model=WorkflowExecutionResult)
 async def execute_workflow(
     request: Dict[str, Any],  # Accept raw JSON to allow client-defined workflow
     user: User = Depends(get_current_user),
@@ -82,7 +82,7 @@ async def execute_workflow(
             detail=f"Error executing workflow: {str(e)}"
         )
 
-@router.post("/workflows/execute/stream")
+@router.post("/workflow/execute/stream")
 async def execute_workflow_stream(
     request: Dict[str, Any],
     user: User = Depends(get_current_user),
@@ -219,7 +219,7 @@ async def execute_workflow_stream(
         media_type="text/event-stream"
     )
 
-@router.post("/workflows/execute_step")
+@router.post("/workflow/execute_step")
 async def execute_workflow_step(
     request: Dict[str, Any],
     user: User = Depends(get_current_user),

@@ -230,6 +230,12 @@ class OutputNodeConfig(BaseNodeConfig):
     field: str = "output"
 
 
+class TemplateNodeConfig(BaseNodeConfig):
+    type: str = "template"
+    template_id: int
+    instruction: Optional[str] = None  # Additional instruction to add to the template's system prompt
+
+
 class NodeConnection(BaseModel):
     source_node_id: str
     target_node_id: str

@@ -32,6 +32,7 @@ class WorkflowExecutor:
             "transform": self._execute_transform_node,
             "input": self._execute_input_node,
             "output": self._execute_output_node,
+            "template": self._execute_template_node,
         }
     
     def _get_timestamp(self) -> str:
@@ -275,24 +276,185 @@ class WorkflowExecutor:
     async def _execute_model_node(self, node_config: Dict[str, Any], 
                            node_inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute a model node.
-        
-        This is a placeholder implementation - the actual model execution will be implemented later.
+        Execute a model node by calling the Ollama API directly.
         
         Args:
-            node_config: The node configuration
+            node_config: The node configuration including model, system instruction, etc.
             node_inputs: The inputs for the node
             
         Returns:
             Dict[str, Any]: The outputs from the node
         """
-        # For now, just return a placeholder result
-        # In the future, this will call the LLM API
-        return {
-            "output": f"Model output for {node_config.get('name')} with inputs: {node_inputs.get('slots')}",
-            "model": node_config.get("model", "placeholder-model"),
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        from ..api.generate import call_ollama_generate
+        
+        try:
+            # Extract model parameters
+            model = node_config.get("model")
+            if not model:
+                raise ValueError("Model node requires a model name")
+                
+            system_prompt = node_config.get("system_instruction", "")
+            
+            # Prepare user prompt - use the input value if available
+            input_value = ""
+            for key in ["output", "user_prompt", "text"]:
+                if key in node_inputs:
+                    input_value = node_inputs.get(key, "")
+                    break
+                    
+            # If no input found, try using slots
+            if not input_value and "slots" in node_inputs:
+                slots_str = ", ".join([f"{k}: {v}" for k, v in node_inputs.get("slots", {}).items()])
+                input_value = f"Process the following input: {slots_str}"
+                
+            # Get model parameters if specified
+            model_parameters = None
+            if node_config.get("model_parameters"):
+                from ..api.schemas import ModelParameters
+                model_parameters = ModelParameters.parse_obj(node_config.get("model_parameters"))
+                
+            # Call Ollama API
+            result = await call_ollama_generate(
+                model=model,
+                system_prompt=system_prompt,
+                user_prompt=input_value,
+                template_params=model_parameters,
+                template=None,  # No template used directly
+                user_prefs={},  # No user prefs needed
+                is_tool_calling=False  # Tool calling not supported in direct model nodes
+            )
+            
+            # Extract response
+            output_text = result.get("response", "").strip()
+            
+            # Return result with standard fields
+            return {
+                "output": output_text,
+                "model": model,
+                "system_prompt": system_prompt,
+                "input": input_value,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.exception(f"Error executing model node: {str(e)}")
+            raise ValueError(f"Model execution failed: {str(e)}")
+            
+    async def _execute_template_node(self, node_config: Dict[str, Any], 
+                           node_inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute a template node using the DatasetForge template system.
+        
+        Args:
+            node_config: The node configuration including template_id
+            node_inputs: The inputs for the node
+            
+        Returns:
+            Dict[str, Any]: The outputs from the node
+        """
+        from ..api.generate import call_ollama_generate
+        from sqlmodel import Session, select
+        from ..db import get_session_context
+        from ..api.models import Template
+        
+        try:
+            # Extract template ID
+            template_id = node_config.get("template_id")
+            if not template_id:
+                raise ValueError("Template node requires a template_id")
+                
+            # Get slots from input
+            slots = node_inputs.get("slots", {})
+            if not slots and "seed_data" in node_inputs:
+                # Try to extract from seed_data if available
+                seed_data = node_inputs.get("seed_data", {})
+                slots = seed_data.get("slots", {})
+                
+            # Get template from database
+            async with get_session_context() as session:
+                # Get the template
+                template = session.get(Template, template_id)
+                if not template:
+                    raise ValueError(f"Template with ID {template_id} not found")
+                    
+                # Check if all required slots are provided
+                for slot in template.slots:
+                    if slot not in slots:
+                        raise ValueError(f"Missing value for slot '{slot}' in template")
+                        
+                # Replace slots in the template
+                user_prompt = template.user_prompt
+                for slot, value in slots.items():
+                    pattern = "{" + slot + "}"
+                    user_prompt = user_prompt.replace(pattern, value)
+                    
+                # Get model
+                model = template.model_override
+                if not model:
+                    raise ValueError("Template does not have a model specified")
+                    
+                # Extract template-specific model parameters
+                template_model_params = None
+                if template.model_parameters:
+                    from ..api.schemas import ModelParameters
+                    try:
+                        template_model_params = ModelParameters.parse_obj(template.model_parameters)
+                    except Exception as e:
+                        logger.warning(f"Failed to parse model_parameters for template {template.id}: {e}")
+                        
+                # Optional additional instruction from workflow
+                instruction = node_config.get("instruction", "")
+                system_prompt = template.system_prompt
+                if instruction and instruction.strip():
+                    # Add instruction to system prompt if provided
+                    if "Additional instruction:" not in system_prompt:
+                        system_prompt = f"{template.system_prompt}\n\nAdditional instruction: {instruction.strip()}"
+                
+                # Call Ollama generate
+                ollama_response = await call_ollama_generate(
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    template=template,
+                    template_params=template_model_params,
+                    user_prefs={},  # No user prefs needed
+                    is_tool_calling=template.is_tool_calling_template,
+                    tools=template.tool_definitions if template.is_tool_calling_template else None,
+                )
+                
+                # Extract response
+                output = ollama_response.get("response", "").strip()
+                
+                # Handle tool calls if any
+                tool_calls = None
+                if template.is_tool_calling_template:
+                    # Check for structured tool calls
+                    structured_tool_calls = ollama_response.get("tool_calls")
+                    if structured_tool_calls and isinstance(structured_tool_calls, list) and len(structured_tool_calls) > 0:
+                        tool_calls = structured_tool_calls
+                    else:
+                        # Try extracting from text
+                        from ..api.generate import extract_tool_calls_from_text
+                        extracted_calls = extract_tool_calls_from_text(output)
+                        if extracted_calls:
+                            tool_calls = extracted_calls
+                
+                # Return result with standard fields
+                return {
+                    "output": output,
+                    "model": model,
+                    "system_prompt": system_prompt,
+                    "user_prompt": user_prompt,
+                    "processed_prompt": user_prompt,
+                    "slots": slots,
+                    "template_id": template_id,
+                    "tool_calls": tool_calls,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+        except Exception as e:
+            logger.exception(f"Error executing template node: {str(e)}")
+            raise ValueError(f"Template execution failed: {str(e)}")
     
     async def _execute_transform_node(self, node_config: Dict[str, Any], 
                                node_inputs: Dict[str, Any]) -> Dict[str, Any]:

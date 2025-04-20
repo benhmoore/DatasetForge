@@ -14,6 +14,7 @@ import '@xyflow/react/dist/style.css';
 import { toast } from 'react-toastify';
 import ModelNode from './ModelNode';
 import TransformNode from './TransformNode';
+import TemplateNode from './TemplateNode';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
 
@@ -21,6 +22,7 @@ import Icon from './Icons';
 const NODE_TYPES = {
   model: 'Model',
   transform: 'Transform',
+  template: 'Template',
   filter: 'Filter',
   custom: 'Custom Function',
   input: 'Input',
@@ -159,6 +161,40 @@ const OutputNodeComponent = ({ data, isConnectable }) => {
   );
 };
 
+const TemplateNodeComponent = ({ data, isConnectable }) => {
+  return (
+    <div className="bg-white shadow-lg rounded-lg p-3 border-2 border-indigo-500 min-w-[250px] relative">
+      {/* Input handle */}
+      <Handle
+        type="target"
+        position="left"
+        style={{ background: '#6366f1', width: '12px', height: '12px' }}
+        isConnectable={isConnectable}
+      />
+      
+      <h4 className="font-medium text-sm mb-2 text-indigo-700">{data.label}</h4>
+      <div className="text-xs">
+        <div className="mb-1">
+          <span className="font-medium">Template ID:</span> {data.template_id || 'Not set'}
+        </div>
+        {data.instruction && (
+          <div className="mb-1 truncate max-w-xs">
+            <span className="font-medium">Additional Instruction:</span> {data.instruction.substring(0, 30)}...
+          </div>
+        )}
+      </div>
+      
+      {/* Output handle */}
+      <Handle
+        type="source"
+        position="right"
+        style={{ background: '#6366f1', width: '12px', height: '12px' }}
+        isConnectable={isConnectable}
+      />
+    </div>
+  );
+};
+
 /**
  * WorkflowEditor component for visual workflow editing
  */
@@ -218,6 +254,9 @@ const WorkflowEditor = ({
                 break;
               case 'transform':
                 nodeComponent = 'transformNode';
+                break;
+              case 'template':
+                nodeComponent = 'templateNode';
                 break;
               case 'input':
                 nodeComponent = 'inputNode';
@@ -306,6 +345,9 @@ const WorkflowEditor = ({
           break;
         case 'transformNode':
           nodeType = 'transform';
+          break;
+        case 'templateNode':
+          nodeType = 'template';
           break;
         case 'inputNode':
           nodeType = 'input';
@@ -450,6 +492,14 @@ const WorkflowEditor = ({
           replacement: '',
           is_regex: false,
           apply_to_field: 'output'
+        };
+        break;
+      case 'template':
+        nodeType = 'templateNode';
+        nodeData = {
+          ...nodeData,
+          template_id: null,
+          instruction: ''
         };
         break;
       case 'input':
@@ -675,6 +725,7 @@ const WorkflowEditor = ({
   const nodeTypes = {
     modelNode: ModelNodeComponent,
     transformNode: TransformNodeComponent,
+    templateNode: TemplateNodeComponent,
     inputNode: InputNodeComponent,
     outputNode: OutputNodeComponent,
   };
@@ -812,6 +863,15 @@ const WorkflowEditor = ({
                   nodeConfig={selectedNode.data}
                   onConfigChange={(config) => handleNodeConfigChange(selectedNode.id, config)}
                   disabled={disabled}
+                />
+              )}
+              
+              {selectedNode.type === 'templateNode' && (
+                <TemplateNode
+                  nodeConfig={selectedNode.data}
+                  onConfigChange={(config) => handleNodeConfigChange(selectedNode.id, config)}
+                  disabled={disabled}
+                  availableTemplates={availableTemplates}
                 />
               )}
             </div>
