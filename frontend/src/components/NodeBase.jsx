@@ -16,7 +16,7 @@ const NodeBase = ({
   children, // Node-specific content
   nodeType = 'default', // e.g., 'model', 'transform' for styling handles
   iconName = 'box', // Default icon
-  // Define input handles as an array of objects { id: string, position: Position, label?: string }
+  // Define input handles as an array of objects { id: string, position: Position, label?: string, style?: object }
   inputHandles = [{ id: 'input', position: Position.Left }],
   // Define output handles similarly
   outputHandles = [{ id: 'output', position: Position.Right }]
@@ -75,35 +75,86 @@ const NodeBase = ({
     }
   };
 
+  // Filter handles to separate visible and invisible ones
+  const visibleInputHandles = inputHandles.filter(h => !h.style || h.style.opacity !== 0);
+  const invisibleInputHandles = inputHandles.filter(h => h.style && h.style.opacity === 0);
+  
+  const visibleOutputHandles = outputHandles.filter(h => !h.style || h.style.opacity !== 0);
+  const invisibleOutputHandles = outputHandles.filter(h => h.style && h.style.opacity === 0);
+
   return (
     <div className={`bg-white rounded border border-gray-200 shadow-sm min-w-[250px] ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}>
-      {/* Input Handles */}
-      {inputHandles.map((handle, index) => (
+      {/* Visible Input Handles */}
+      {visibleInputHandles.map((handle, index) => (
         <Handle
-          key={handle.id}
+          key={`visible-input-${handle.id}`}
           type="target"
           position={handle.position}
           id={handle.id}
           isConnectable={isConnectable && !disabled}
           className={`!w-3 !h-3 ${handleColorClass}`}
-          // Add vertical offset for multiple handles
-          style={{ top: `${(index + 1) * (100 / (inputHandles.length + 1))}%` }}
+          // Add vertical offset for multiple handles - space them evenly
+          style={{
+            ...handle.style,
+            top: `${(index + 1) * (100 / (visibleInputHandles.length + 1))}%`
+          }}
           title={handle.label || handle.id} // Add tooltip for handle ID/label
         />
       ))}
       
-      {/* Output Handles */}
-      {outputHandles.map((handle, index) => (
+      {/* Invisible Input Handles (for compatibility) */}
+      {invisibleInputHandles.map((handle, index) => (
         <Handle
-          key={handle.id}
+          key={`invisible-input-${handle.id}`}
+          type="target"
+          position={handle.position}
+          id={handle.id}
+          isConnectable={isConnectable && !disabled}
+          style={{
+            ...handle.style,
+            // Place invisible handles in a non-interfering position
+            top: '5px',
+            left: '5px',
+            width: '1px',
+            height: '1px'
+          }}
+        />
+      ))}
+      
+      {/* Visible Output Handles */}
+      {visibleOutputHandles.map((handle, index) => (
+        <Handle
+          key={`visible-output-${handle.id}`}
           type="source"
           position={handle.position}
           id={handle.id}
           isConnectable={isConnectable && !disabled}
           className={`!w-3 !h-3 ${handleColorClass}`}
-          // Add vertical offset for multiple handles
-          style={{ top: `${(index + 1) * (100 / (outputHandles.length + 1))}%` }}
+          // Add vertical offset for multiple handles - space them evenly
+          style={{
+            ...handle.style,
+            top: `${(index + 1) * (100 / (visibleOutputHandles.length + 1))}%`
+          }}
           title={handle.label || handle.id} // Add tooltip for handle ID/label
+        />
+      ))}
+      
+      {/* Invisible Output Handles (for compatibility) */}
+      {invisibleOutputHandles.map((handle, index) => (
+        <Handle
+          key={`invisible-output-${handle.id}`}
+          type="source"
+          position={handle.position}
+          id={handle.id}
+          isConnectable={isConnectable && !disabled}
+          style={{
+            ...handle.style,
+            // Place invisible handles in a non-interfering position
+            top: '5px',
+            right: '5px',
+            width: '1px',
+            height: '1px'
+          }}
         />
       ))}
       

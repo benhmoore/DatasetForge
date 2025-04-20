@@ -229,9 +229,27 @@ const WorkflowEditor = ({
     
     console.log("Creating new edge:", params);
     
+    // Clean up handle IDs - convert legacy format (inputN) to new format (input_N)
+    // This standardizes all handle IDs to the underscore format
+    const standardizeHandleId = (handleId) => {
+      if (!handleId) return null;
+      
+      // Handle legacy format conversion (inputN → input_N)
+      if (handleId.match(/^input\d+$/)) {
+        return handleId.replace(/^input(\d+)$/, 'input_$1');
+      }
+      return handleId;
+    };
+    
+    // Apply standardized handle IDs
+    const sourceHandle = standardizeHandleId(params.sourceHandle);
+    const targetHandle = standardizeHandleId(params.targetHandle);
+    
     const newEdge = { 
       ...params, 
-      id: `edge-${params.source}-${params.sourceHandle || 'default'}-${params.target}-${params.targetHandle || 'default'}`,
+      sourceHandle,
+      targetHandle,
+      id: `edge-${params.source}-${sourceHandle || 'default'}-${params.target}-${targetHandle || 'default'}`,
       type: 'smoothstep',
       animated: true,
       style: { stroke: '#3b82f6' },

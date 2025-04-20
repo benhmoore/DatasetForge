@@ -380,6 +380,7 @@ class WorkflowExecutor:
                         initial_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Determine the inputs for a node based on connections and previous outputs.
+        Simplifies connection handling by collecting all inputs into an array.
         
         Args:
             node_id: The ID of the node
@@ -388,7 +389,7 @@ class WorkflowExecutor:
             initial_data: Initial data for the workflow
             
         Returns:
-            Dict[str, Any]: The inputs for the node
+            Dict[str, Any]: The inputs for the node, with 'inputs' key containing an array of all inputs
         """
         # Special case for input nodes: give them template_output directly
         if node_id.startswith("input"):
@@ -407,13 +408,18 @@ class WorkflowExecutor:
                 node_inputs["template_output"] = template_output
                 node_inputs["output"] = template_output
                 
+                # Also provide it as first element in inputs array for consistency
+                node_inputs["inputs"] = [template_output]
+                
                 if self.debug_mode:
                     logger.debug(f"Providing template_output to input node {node_id}")
                     
             return node_inputs
         
-        # For all other nodes, start with an empty dict - they get NOTHING by default
-        node_inputs = {}
+        # For all non-input nodes, initialize with a simple structure
+        node_inputs = {
+            "inputs": []  # All inputs will be collected in this array
+        }
         
         # Find connections where this node is the target
         input_connections = [
@@ -421,40 +427,55 @@ class WorkflowExecutor:
             if conn.get("target_node_id") == node_id
         ]
         
-        # Add inputs from connected nodes (only if there are connections)
+        # Sort connections to ensure deterministic execution
+        # This ensures inputs are ordered consistently
+        input_connections.sort(key=lambda x: (
+            x.get("source_node_id", ""), 
+            x.get("source_handle", ""),
+            x.get("target_handle", "")
+        ))
+        
+        # Add inputs from connected nodes
         connected_input = False
         for connection in input_connections:
             source_id = connection.get("source_node_id")
             source_handle = connection.get("source_handle", "output")
-            target_handle = connection.get("target_handle", "input")
             
             if source_id in node_outputs:
                 connected_input = True
                 source_output = node_outputs[source_id]
                 
-                # Handle named connections - map the source handle output to the target handle input
-                if source_handle and target_handle:
-                    # If the source node's output has exactly this field, use it
-                    if source_handle in source_output:
-                        node_inputs[target_handle] = source_output[source_handle]
-                        if self.debug_mode:
-                            logger.debug(f"Connected {source_id}.{source_handle} → {node_id}.{target_handle}")
-                    # Otherwise, try to connect the whole output object
-                    else:
-                        node_inputs[target_handle] = source_output
-                        if self.debug_mode:
-                            logger.debug(f"Connected {source_id} (whole output) → {node_id}.{target_handle}")
-                # For default connections without explicit handles, use the 'output' field from source
+                # Extract output value from source node
+                output_value = None
+                
+                # Get output from source_handle if it exists
+                if source_handle in source_output:
+                    output_value = source_output[source_handle]
+                # Or use 'output' field as default
+                elif "output" in source_output:
+                    output_value = source_output["output"]
+                # Or use entire source output as fallback
                 else:
-                    if "output" in source_output:
-                        node_inputs["input"] = source_output["output"]
-                        if self.debug_mode:
-                            logger.debug(f"Connected {source_id}.output → {node_id}.input (default connection)")
+                    output_value = source_output
+                
+                # For string outputs, ensure proper type
+                if not isinstance(output_value, str) and isinstance(output_value, dict) and "output" in output_value:
+                    output_value = output_value["output"]
+                    
+                # Add to the inputs array
+                node_inputs["inputs"].append(output_value)
+                
+                if self.debug_mode:
+                    if isinstance(output_value, str):
+                        preview = output_value[:30] + "..." if len(output_value) > 30 else output_value
                     else:
-                        # If no output field, use the entire output object
-                        node_inputs["input"] = source_output
-                        if self.debug_mode:
-                            logger.debug(f"Connected {source_id} (whole object) → {node_id}.input (default connection)")
+                        preview = f"(non-string value): {type(output_value).__name__}"
+                    logger.debug(f"Added input from {source_id}.{source_handle} as inputs[{len(node_inputs['inputs'])-1}] with value: {preview}")
+        
+        # Also add 'input' for backwards compatibility
+        # Use the first input as the default 'input' value
+        if node_inputs["inputs"]:
+            node_inputs["input"] = node_inputs["inputs"][0]
         
         # Log a warning for non-input nodes with no connections
         if not connected_input and not input_connections:
@@ -466,11 +487,11 @@ class WorkflowExecutor:
                            node_inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a model node by calling the Ollama API directly.
-        Handles multiple inputs referenced in system_instruction.
+        Handles multiple inputs using the simplified array-based approach.
         
         Args:
             node_config: The node configuration including model, system_instruction, etc.
-            node_inputs: The inputs for the node, with keys matching input handle IDs
+            node_inputs: The inputs for the node, with 'inputs' array containing all inputs
                 
         Returns:
             Dict[str, Any]: The outputs from the node
@@ -487,81 +508,62 @@ class WorkflowExecutor:
             # Get system instruction directly from node config
             system_instruction = node_config.get("system_instruction", "")
             
-            # Get defined inputs from node config
-            inputs = node_config.get("inputs", [])
+            # Get input array from node_inputs (added by _get_node_inputs)
+            input_array = node_inputs.get("inputs", [])
             
-            # Collect all input texts from connected nodes
-            input_texts = {}
-            for input_config in inputs:
-                input_id = input_config.get("id")
-                if input_id and input_id in node_inputs:
-                    # Get the value from connected node output
-                    value = node_inputs[input_id]
-                    if not isinstance(value, str):
-                        # Handle non-string inputs (convert or extract output field)
-                        if isinstance(value, dict) and "output" in value:
-                            value = value["output"]
-                        else:
-                            value = str(value)
-                    
-                    input_texts[input_id] = value
-                    if self.debug_mode:
-                        logger.debug(f"Model node {node_config.get('id')}: Using input '{input_id}' with text length {len(value)}")
+            # Log available inputs for debugging
+            if self.debug_mode:
+                logger.debug(f"Model node {node_config.get('id')}: Received {len(input_array)} inputs")
             
-            # If there are no inputs, log a notice and use an empty user prompt
-            user_prompt = "Say hello!"
-            if not input_texts:
-                logger.info(f"Model node {node_config.get('id')} has no connected inputs - using empty user prompt")
-                # Use empty string for user_prompt, rely only on system_instruction
+            # If there are no inputs, use empty user prompt
+            user_prompt = ""
+            if not input_array:
+                logger.info(f"Model node {node_config.get('id')} has no inputs - using empty user prompt")
+                user_prompt = ""
             else:
-                # If there is only one input, use it directly as user prompt
-                if len(input_texts) == 1:
-                    # With one input, use it directly as the user prompt
-                    user_prompt = next(iter(input_texts.values()))
+                # With single input, use it directly as user prompt
+                if len(input_array) == 1:
+                    user_prompt = str(input_array[0])
                     if self.debug_mode:
-                        logger.debug(f"Model node {node_config.get('id')}: Using single input directly as user prompt")
+                        logger.debug(f"Model node {node_config.get('id')}: Using single input as user prompt")
                 else:
-                    # With multiple inputs, substitute them into the system instruction
-                    # First check if system_instruction has placeholders
-                    placeholders = set(re.findall(r"\{([^{}]+)\}", system_instruction))
+                    # If system instruction has input_X placeholders, substitute them
+                    # Check for {input_0}, {input_1}, etc. placeholders
+                    placeholders = set(re.findall(r"\{input_(\d+)\}", system_instruction))
                     
                     if placeholders:
-                        # Prepare substitution dictionary
-                        substitutions = {}
-                        missing_inputs = []
-                        
-                        # Check for placeholders that match our input IDs
-                        for placeholder in placeholders:
-                            if placeholder in input_texts:
-                                substitutions[placeholder] = input_texts[placeholder]
-                            else:
-                                missing_inputs.append(placeholder)
-                                logger.warning(f"Model node {node_config.get('id')}: Missing input for placeholder '{{{placeholder}}}' referenced in system instruction")
-                                substitutions[placeholder] = f"[MISSING: {placeholder}]"
-                        
                         # Process system instruction - replace placeholders with input values
                         processed_system = system_instruction
-                        for key, value in substitutions.items():
-                            placeholder = f"{{{key}}}"
-                            processed_system = processed_system.replace(placeholder, value)
+                        
+                        for idx_str in placeholders:
+                            try:
+                                idx = int(idx_str)
+                                if idx < len(input_array):
+                                    # Replace {input_X} with actual input value
+                                    placeholder = f"{{input_{idx}}}"
+                                    input_value = str(input_array[idx])
+                                    processed_system = processed_system.replace(placeholder, input_value)
+                                else:
+                                    # Missing input for this index
+                                    placeholder = f"{{input_{idx}}}"
+                                    missing_msg = f"[MISSING INPUT {idx}]"
+                                    processed_system = processed_system.replace(placeholder, missing_msg)
+                                    logger.warning(f"Model node {node_config.get('id')}: Missing input for placeholder '{placeholder}'")
+                            except ValueError:
+                                logger.warning(f"Model node {node_config.get('id')}: Invalid input index '{idx_str}'")
                         
                         # Update system instruction with processed version
                         system_instruction = processed_system
                         
                         if self.debug_mode:
-                            logger.debug(f"Model node {node_config.get('id')}: Processed system instruction with substitutions")
+                            logger.debug(f"Model node {node_config.get('id')}: Processed system instruction with input substitutions")
                     
-                    # Combine any inputs not referenced in system instruction as user prompt
-                    unreferenced_inputs = []
-                    for input_id, text in input_texts.items():
-                        if input_id not in placeholders:
-                            unreferenced_inputs.append(text)
+                    # Use the first input as user prompt if no other is specified
+                    # This maintains backward compatibility
+                    user_prompt = str(input_array[0])
                     
-                    # Join unreferenced inputs as user prompt
-                    if unreferenced_inputs:
-                        user_prompt = "\n\n".join(unreferenced_inputs)
-                        if self.debug_mode:
-                            logger.debug(f"Model node {node_config.get('id')}: Combined {len(unreferenced_inputs)} unreferenced inputs as user prompt")
+                    if self.debug_mode:
+                        logger.debug(f"Model node {node_config.get('id')}: Using first input as user prompt")
             
             # Process model parameters - convert dict to ModelParameters if needed
             model_parameters = node_config.get("model_parameters")
@@ -594,7 +596,7 @@ class WorkflowExecutor:
                 "model": model,
                 "system_instruction": system_instruction,
                 "user_prompt": user_prompt,
-                "inputs_provided": list(input_texts.keys()),
+                "input_count": len(input_array),
                 "timestamp": datetime.utcnow().isoformat()
             }
             
@@ -603,7 +605,8 @@ class WorkflowExecutor:
             error_details = {
                 "error": str(e),
                 "model": node_config.get("model"),
-                "inputs_available": list(node_inputs.keys())
+                "inputs_available": list(node_inputs.keys()),
+                "input_count": len(node_inputs.get("inputs", []))
             }
             raise ValueError(f"Model execution failed: {json.dumps(error_details)}")
 
