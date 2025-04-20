@@ -774,114 +774,49 @@ class WorkflowExecutor:
         """
         Execute an input node - passes through the template generation output.
         
-        The Input node is the entry point for workflows. In the frontend, the generation process
-        is run as normal (with templates and the Ollama API), and the output of that process
-        is provided as template_output to this node.
+        The Input node is the entry point for workflows. It simply passes
+        the template output from the template generation process downstream.
         
         Args:
             node_config: The node configuration
             node_inputs: The inputs for the node (contains template generation output)
             
         Returns:
-            Dict[str, Any]: The processed template output to pass to downstream nodes
+            Dict[str, Any]: Just the output as a simple structure
         """
-        if self.debug_mode:
-            debug_data = {
-                'keys_available': list(node_inputs.keys()),
-                'slots_available': list(node_inputs.get('slots', {}).keys()),
-                'has_template_output': 'template_output' in node_inputs,
-                'has_output': 'output' in node_inputs
-            }
-            
-            # Add type info separately to avoid syntax errors
-            if 'template_output' in node_inputs:
-                debug_data['template_output_type'] = type(node_inputs.get('template_output')).__name__
-                
-            logger.debug(f"Input node received raw inputs: {json.dumps(debug_data, indent=2)}")
+        # Extract template output from input - this should be in the slots
+        template_output = node_inputs.get("slots", {}).get("template_output", "")
         
-        # We expect template_output to be provided directly by the frontend as a string
-        # This is the output from the template+seed+model generation process
-        if 'template_output' in node_inputs and isinstance(node_inputs['template_output'], str):
-            # Store the template output as 'output' - the standard field for node outputs
-            output_text = node_inputs['template_output']
-            logger.info(f"Input node using template_output as workflow input (length: {len(output_text)})")
-            
-            # Make sure we have the template output in both original and standard fields
-            node_inputs['output'] = output_text
-            node_inputs['original_template_output'] = output_text  # Preserve the original for downstream nodes
+        if not template_output and "template_output" in node_inputs:
+            # Direct access as fallback
+            template_output = node_inputs["template_output"]
         
-        # If not found in template_output, look for it in the 'output' field
-        elif 'output' in node_inputs and node_inputs['output']:
-            # Output already available, nothing to do
-            logger.info("Input node using existing output field")
-            pass
-        
-        # Check other possible locations as fallbacks
-        elif isinstance(node_inputs.get('template_output'), dict) and 'output' in node_inputs['template_output']:
-            # If template_output is a dict with output field, use that
-            node_inputs['output'] = node_inputs['template_output']['output']
-            logger.info(f"Using template_output.output as the input to workflow")
-        
-        elif 'generation_output' in node_inputs:
-            # Try to use generation_output as fallback
-            node_inputs['output'] = node_inputs['generation_output']
-            logger.info(f"Using generation_output as fallback for workflow input")
-        
+        # Log appropriate information
+        if template_output:
+            output_length = len(template_output) if isinstance(template_output, str) else 0
+            logger.info(f"Input node passing through template output (length: {output_length})")
         else:
-            # Ensure we have an output field, even if empty
-            logger.warning("Input node received no template output data - using empty string")
-            node_inputs['output'] = ""
+            logger.warning("Input node received no template output - using empty string")
+            template_output = ""
         
-        # Mark the source as the input node
-        result = node_inputs.copy()
-        result["_node_info"] = {
-            "type": "input",
-            "id": node_config.get("id", "input-node"),
-            "source": "template_output",
-            "timestamp": datetime.utcnow().isoformat()
+        # Return a minimal clean result
+        result = {
+            "output": template_output,
+            "_node_info": {
+                "type": "input",
+                "id": node_config.get("id", "input-node"),
+                "timestamp": datetime.utcnow().isoformat()
+            }
         }
         
-        # Add more detailed debug info
+        # Add debug info only in debug mode
         if self.debug_mode:
-            output_value = result.get('output', '')
-            
-            # Prepare a preview of the output
-            if isinstance(output_value, str):
-                if len(output_value) > 100:
-                    output_preview = output_value[:100] + '...'
-                else:
-                    output_preview = output_value
-            else:
-                output_preview = str(output_value)
-            
-            # Determine the input source
-            if isinstance(node_inputs.get('template_output'), str):
-                input_source = "direct_template_output"
-            elif isinstance(node_inputs.get('template_output'), dict):
-                input_source = "object_template_output"
-            elif 'output' in node_inputs:
-                input_source = "output_field"
-            elif 'generation_output' in node_inputs:
-                input_source = "generation_output"
-            else:
-                input_source = "none"
-            
-            # Create the debug info object
-            debug_info = {
-                "input_source": input_source,
-                "output_length": len(output_value) if isinstance(output_value, str) else 0,
-                "output_preview": output_preview
+            result["_debug"] = {
+                "output_length": len(template_output) if isinstance(template_output, str) else 0
             }
-            
-            # Add type info separately to avoid syntax errors
-            if 'template_output' in node_inputs:
-                debug_info["template_output_type"] = type(node_inputs.get('template_output')).__name__
-            
-            result["_debug"] = debug_info
-            logger.debug(f"Input node producing output: {json.dumps(debug_info, indent=2)}")
         
         return result
-        
+    
     async def _execute_output_node(self, node_config: Dict[str, Any], 
                             node_inputs: Dict[str, Any]) -> Dict[str, Any]:
         """

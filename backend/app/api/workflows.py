@@ -118,8 +118,6 @@ async def execute_workflow_stream(
         try:
             # Extract workflow definition and input data from request
             workflow_definition = request.get("workflow")
-            input_data = request.get("input_data", {})
-            seed_data_dict = request.get("seed_data", {})  # For backwards compatibility
             template_output = request.get("template_output", "")
             debug_mode = request.get("debug_mode", False)
             
@@ -131,37 +129,13 @@ async def execute_workflow_stream(
                 yield f"{error_msg}\n"
                 return
             
-            # Handle input data - first try legacy seed_data format
-            if seed_data_dict and not input_data:
-                try:
-                    seed_data = SeedData.parse_obj(seed_data_dict)
-                except Exception as e:
-                    error_msg = json.dumps({
-                        "type": "error",
-                        "error": f"Invalid seed data format: {str(e)}"
-                    })
-                    yield f"{error_msg}\n"
-                    return
-            else:
-                # Create a simplified SeedData object
-                seed_data = SeedData(slots={})
+            # Create a simplified SeedData object with minimal required data
+            seed_data = SeedData(slots={})
                 
-            # Add template output to the input data and seed_data.slots
-            # This ensures the input node will have access to the template output
+            # Add template output directly to slots in a clean way
             if template_output:
-                # Store the raw template output for processing by the input node
-                input_data["template_output"] = template_output
-                # Also add to the root level for consistent access
-                input_data["output"] = template_output
-                # And add to slots for convenience
                 seed_data.slots["template_output"] = template_output
-                
                 logger.info(f"Received template output for workflow streaming: type={type(template_output).__name__}, length={len(template_output) if isinstance(template_output, str) else 'not-string'}")
-                
-            # Add any input data to what we pass to the executor
-            if input_data and isinstance(input_data, dict):
-                for key, value in input_data.items():
-                    seed_data.slots[key] = value
             
             # Setup workflow executor with progress callback
             # Always enable debug mode for streaming to diagnose issues
