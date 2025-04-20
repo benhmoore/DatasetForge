@@ -11,7 +11,7 @@ import ParaphraseModal from './ParaphraseModal';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons'; // Import Icon component
 import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch
-import WorkflowManager from './WorkflowManager'; // Import WorkflowManager component
+import WorkflowModal from './WorkflowModal'; // Import our new WorkflowModal component
 
 const Generate = ({ context }) => {
   const { selectedDataset } = context;
@@ -38,7 +38,10 @@ const Generate = ({ context }) => {
   const [paraphraseSourceId, setParaphraseSourceId] = useState(null);
   
   // Workflow related state
-  const [workflowEnabled, setWorkflowEnabled] = useState(false);
+  const [workflowEnabled, setWorkflowEnabled] = useState(() => {
+    const savedState = localStorage.getItem('datasetforge_workflowEnabled');
+    return savedState ? savedState === 'true' : false; // Correctly parse boolean
+  });
   const [currentWorkflow, setCurrentWorkflow] = useState(null);
   const [isExecutingWorkflow, setIsExecutingWorkflow] = useState(false);
   const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false); 
@@ -359,7 +362,11 @@ const Generate = ({ context }) => {
         console.error('Template generation failed before workflow:', error);
         toast.error(`Template generation failed: ${error.message}`);
       }
-      return;
+      // Ensure workflow execution stops if template generation fails
+      setIsExecutingWorkflow(false); // Stop execution state
+      // Update variations to show error and stop generating state
+      setVariations(prev => prev.map(v => v.isGenerating ? { ...v, isGenerating: false, error: `Template generation failed: ${error.message}` } : v));
+      return; // Exit the function
     }
     
     // At this point, our variations should have template outputs
@@ -373,7 +380,11 @@ const Generate = ({ context }) => {
       for (let variationIndex = 0; variationIndex < data.count; variationIndex++) {
         if (signal.aborted) {
           console.log("Skipping workflow execution for aborted request.");
-          return;
+          // Ensure workflow execution stops if aborted
+          setIsExecutingWorkflow(false); // Stop execution state
+          // Update variations to show cancelled state
+          setVariations(prev => prev.map(v => v.isGenerating ? { ...v, isGenerating: false, error: 'Cancelled by user' } : v));
+          return; // Exit the function
         }
         
         try {
@@ -456,7 +467,7 @@ const Generate = ({ context }) => {
                 // Set all nodes to queued initially, including the node name
                 nodeIds.forEach(nodeId => {
                   const node = currentWorkflow?.nodes?.[nodeId];
-                  const nodeName = node?.name || nodeId; // Get name or fallback to ID
+                  const nodeName = node?.data?.name || nodeId; // Get name from node data or fallback to ID
                   console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node?.data, `Derived Name: ${nodeName}`); // Added logging
                   nodeStatusMap[variationKey][nodeId] = { 
                     status: 'queued',
@@ -541,13 +552,18 @@ const Generate = ({ context }) => {
                     const targetIndex = updated.findIndex(v => v.id === origVariationId);
                     
                     if (targetIndex !== -1) {
+                      const baseVariation = updated[targetIndex];
                       // Extract the output content
                       const finalOutput = progressData.result?.final_output?.output || '';
+                      // Extract node info if available
+                      const outputNode = outputNodeResults[0];
+                      const nodeId = outputNode?.node_id || 'unknown_output';
+                      const nodeName = outputNode?.node_name || nodeId;
                       
                       updated[targetIndex] = {
                         ...baseVariation,
-                        output: outputContent,
-                        variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
+                        output: finalOutput, // Use final_output if only one output node
+                        variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`, // Update name
                         isGenerating: false,
                         error: null,
                         template_id: data.template_id,
@@ -561,29 +577,8 @@ const Generate = ({ context }) => {
                           status: 'complete'
                         }
                       };
-                    } else {
-                      // Create new variations for additional outputs
-                      const newVariationId = `${origVariationId}-output-${nodeId}-${Date.now()}`;
-                      
-                      newVariations.push({
-                        ...baseVariation,
-                        id: newVariationId,
-                        output: outputContent,
-                        variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
-                        isGenerating: false,
-                        error: null,
-                        template_id: data.template_id,
-                        _source: 'workflow_output',
-                        _output_node_id: nodeId,
-                        _output_node_name: nodeName,
-                        workflow_results: progressData.result,
-                        workflow_progress: {
-                          ...baseVariation.workflow_progress,
-                          completed_at: new Date().toISOString(),
-                          status: 'complete'
-                        }
-                      });
                     }
+                    return updated;
                   });
                 } else {
                   // Multiple output nodes - create multiple variation cards
@@ -598,7 +593,7 @@ const Generate = ({ context }) => {
                       // Process each output node result
                       outputNodeResults.forEach((nodeResult, index) => {
 
-                        console.log("GIVEN NODE RESULT:", nodeResult);
+                        console.log("Processing output node result:", nodeResult);
                         // Extract node info and output
                         const nodeId = nodeResult.node_id;
                         const nodeName = nodeResult?.node_name || nodeId; // Fallback to ID if name is not available
@@ -649,7 +644,9 @@ const Generate = ({ context }) => {
                       });
                       
                       // Add all new variations to the updated array
-                      return [...updated, ...newVariations];
+                      // Insert new variations right after the original one
+                      updated.splice(targetIndex + 1, 0, ...newVariations);
+                      return updated;
                     }
                     return updated;
                   });
@@ -688,7 +685,11 @@ const Generate = ({ context }) => {
         } catch (error) {
           if (error.name === 'AbortError') {
             console.log("Workflow execution aborted.");
-            return;
+            // Ensure workflow execution stops if aborted during API call
+            setIsExecutingWorkflow(false); // Stop execution state
+            // Update variations to show cancelled state
+            setVariations(prev => prev.map(v => v.isGenerating ? { ...v, isGenerating: false, error: 'Cancelled by user' } : v));
+            return; // Exit the function
           }
           
           console.error(`Workflow execution failed for seed ${seedIndex}, variation ${variationIndex}:`, error);
@@ -718,7 +719,10 @@ const Generate = ({ context }) => {
       }
     }
     
-    setIsExecutingWorkflow(false);
+    // Only set isExecutingWorkflow to false if the process wasn't aborted
+    if (!signal.aborted) {
+      setIsExecutingWorkflow(false);
+    }
   };
 
   const handleSelect = (id) => {
@@ -1495,9 +1499,10 @@ const Generate = ({ context }) => {
     toast.success(`Workflow "${workflow.name}" imported`);
   };
 
-  const handleWorkflowExport = () => {
-    toast.success('Workflow exported');
-  };
+  // Remove handleWorkflowExport as it's likely handled within WorkflowManager now
+  // const handleWorkflowExport = () => {
+  //   toast.success('Workflow exported');
+  // };
 
   // Handler to open the workflow modal
   const handleOpenWorkflowModal = useCallback(() => {
@@ -1549,6 +1554,19 @@ const Generate = ({ context }) => {
         variationId={paraphraseSourceId}
         onEdit={handleEdit}
         onAddVariations={handleAddVariations}
+      />
+      
+      {/* Workflow Modal - now using the extracted component */}
+      <WorkflowModal
+        isOpen={isWorkflowModalOpen}
+        onClose={handleCloseWorkflowModal}
+        workflow={currentWorkflow}
+        setWorkflow={setCurrentWorkflow} // Pass setCurrentWorkflow directly
+        saveRequest={workflowSaveRequest}
+        isGenerating={isGenerating}
+        isParaphrasing={isParaphrasing}
+        isExecutingWorkflow={isExecutingWorkflow}
+        // onImport={handleWorkflowImport} // Pass import handler if needed, or handle inside WorkflowModal
       />
       
       <div className="grid grid-cols-1 md:grid-cols-[500px_1fr] gap-6">
@@ -1680,57 +1698,6 @@ const Generate = ({ context }) => {
           )}
         </div>
       </div>
-      
-      {/* Workflow Manager Modal */}
-      {isWorkflowModalOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-y-auto p-12 h-full w-full"
-          onClick={handleCloseWorkflowModal} // Close on backdrop click
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="workflow-manager-title"
-        >
-          <div 
-            className="bg-white rounded-lg w-full h-full shadow-xl flex flex-col animate-fadeIn" // Use w-full and h-full to fill the padded area
-            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
-          >
-            {/* Modal Header */}
-            <div className="flex justify-between items-center p-5 border-b border-gray-200 flex-shrink-0">
-              <h2 id="workflow-manager-title" className="text-xl font-semibold flex items-center">
-                <Icon name="workflow" className="h-5 w-5 mr-2 text-blue-600" />
-                Workflow Manager
-              </h2>
-              <button
-                className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
-                onClick={handleCloseWorkflowModal}
-                aria-label="Close workflow manager"
-                title="Close"
-              >
-                <Icon name="close" className="h-5 w-5" />
-              </button>
-            </div>
-            
-            {/* Modal Body - WorkflowManager component */}
-            <div className="flex-grow overflow-y-auto p-1"> {/* Reduced padding for more space */}
-              <WorkflowManager
-                // Pass necessary props to WorkflowManager
-                visible={isWorkflowModalOpen} // Keep visible prop for internal logic if needed
-                workflow={currentWorkflow}
-                setWorkflow={setCurrentWorkflow}
-                onImport={handleWorkflowImport}
-                onExport={handleWorkflowExport}
-                disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
-                saveRequest={workflowSaveRequest} // Add this new prop
-              />
-            </div>
-            
-            {/* Optional Modal Footer (can add buttons here if needed) */}
-            {/* <div className="flex justify-end space-x-2 p-4 border-t border-gray-200 flex-shrink-0 bg-gray-50">
-              <button onClick={handleCloseWorkflowModal} className="...">Close</button>
-            </div> */}
-          </div>
-        </div>
-      )}
 
       {selectedDataset && (
         <div className="border-t pt-6 w-full">

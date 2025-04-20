@@ -189,9 +189,8 @@ const WorkflowManager = ({
   if (!visible) return null;
 
   return (
-    <div className="bg-white space-y-4">
+    <div className="p-3 bg-white space-y-4">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-medium">Workflow Editor</h2>
         <div className="flex space-x-2">
           <button
             className={`px-3 py-1 ${showJsonEditor ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'} hover:bg-blue-700 hover:text-white rounded transition`}

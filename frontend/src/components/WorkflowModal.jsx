@@ -1,38 +1,36 @@
 import React from 'react';
 import Icon from './Icons';
-import WorkflowManager from './WorkflowManager';
+import WorkflowManager from './WorkflowManager'; // Import WorkflowManager component
 
-const WorkflowModal = ({ 
-  isOpen, 
-  onClose, 
-  workflow, 
-  setWorkflow, 
+const WorkflowModal = ({
+  isOpen,
+  onClose,
+  workflow,
+  setWorkflow,
   saveRequest,
   isGenerating,
   isParaphrasing,
-  isExecutingWorkflow
+  isExecutingWorkflow,
 }) => {
   if (!isOpen) return null;
 
-  const handleImport = (importedWorkflow) => {
+  // Handler for workflow import (can be passed down or handled here)
+  const handleWorkflowImport = (importedWorkflow) => {
     setWorkflow(importedWorkflow);
-  };
-
-  const handleExport = () => {
-    // You can add any export-specific logic here
-    console.log('Workflow exported');
+    // Optionally add toast notification here if needed
+    // toast.success(`Workflow "${importedWorkflow.name}" imported`);
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-y-auto p-12 h-full w-full"
       onClick={onClose} // Close on backdrop click
       role="dialog"
       aria-modal="true"
       aria-labelledby="workflow-manager-title"
     >
-      <div 
-        className="bg-white rounded-lg w-full h-full shadow-xl flex flex-col animate-fadeIn"
+      <div
+        className="bg-white rounded-lg w-full h-full shadow-xl flex flex-col animate-fadeIn" // Use w-full and h-full to fill the padded area
         onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
       >
         {/* Modal Header */}
@@ -50,19 +48,24 @@ const WorkflowModal = ({
             <Icon name="close" className="h-5 w-5" />
           </button>
         </div>
-        
+
         {/* Modal Body - WorkflowManager component */}
         <div className="flex-grow overflow-y-auto p-1"> {/* Reduced padding for more space */}
           <WorkflowManager
-            visible={isOpen}
+            visible={isOpen} // Pass visibility state
             workflow={workflow}
             setWorkflow={setWorkflow}
-            onImport={handleImport}
-            onExport={handleExport}
+            onImport={handleWorkflowImport} // Pass import handler
+            // onExport can be handled internally by WorkflowManager or passed if needed
             disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
-            saveRequest={saveRequest}
+            saveRequest={saveRequest} // Pass save request trigger
           />
         </div>
+
+        {/* Optional Modal Footer (can add buttons here if needed) */}
+        {/* <div className="flex justify-end space-x-2 p-4 border-t border-gray-200 flex-shrink-0 bg-gray-50">
+          <button onClick={onClose} className="...">Close</button>
+        </div> */}
       </div>
     </div>
   );
