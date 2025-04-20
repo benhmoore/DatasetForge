@@ -1,14 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import ReactFlow, { 
+import { 
+  ReactFlow, 
   Background, 
   Controls, 
   MiniMap, 
   addEdge, 
   useNodesState, 
   useEdgesState,
-  MarkerType
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+  MarkerType 
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { toast } from 'react-toastify';
 import ModelNode from './ModelNode';
 import TransformNode from './TransformNode';
