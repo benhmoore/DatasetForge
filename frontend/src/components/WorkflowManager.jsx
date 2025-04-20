@@ -44,7 +44,24 @@ const WorkflowManager = ({
   // Update JSON when workflow changes
   useEffect(() => {
     console.log("WorkflowManager: workflow updated", workflow?.id);
+    
     if (workflow) {
+      // Log workflow for debugging
+      console.log("WorkflowManager: full workflow object:", workflow);
+      
+      // Check for specific fields in the first node if any nodes exist
+      if (workflow.nodes && Object.keys(workflow.nodes).length > 0) {
+        const firstNodeId = Object.keys(workflow.nodes)[0];
+        const firstNode = workflow.nodes[firstNodeId];
+        console.log(`WorkflowManager: First node (${firstNodeId}) details:`, firstNode);
+        
+        if (firstNode.type === 'model') {
+          console.log("  - model:", firstNode.model);
+          console.log("  - system_instruction:", firstNode.system_instruction);
+          console.log("  - model_parameters:", firstNode.model_parameters);
+        }
+      }
+      
       setWorkflowJson(JSON.stringify(workflow, null, 2));
     } else {
       setWorkflowJson('');

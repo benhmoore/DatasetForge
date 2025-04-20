@@ -1,29 +1,24 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import { Handle } from '@xyflow/react';
 import CustomSelect from './CustomSelect';
 import CustomSlider from './CustomSlider';
 import api from '../api/apiClient';
+import withNodeWrapper from './withNodeWrapper';
 
 /**
  * ModelNode component for configuring a model node in a workflow
  */
 const ModelNode = ({ 
   nodeConfig, 
-  onConfigChange,
+  localConfig, 
+  updateConfig,
   disabled = false,
-  availableTemplates = []
+  availableTemplates = [],
+  isConnectable = true
 }) => {
   const [models, setModels] = useState([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
-  const [localConfig, setLocalConfig] = useState({
-    model: nodeConfig.model || '',
-    system_instruction: nodeConfig.system_instruction || '',
-    model_parameters: nodeConfig.model_parameters || {
-      temperature: 0.7,
-      top_p: 1.0,
-      max_tokens: 1000
-    }
-  });
   
   // Fetch available models on component mount
   useEffect(() => {
@@ -43,43 +38,25 @@ const ModelNode = ({
     fetchModels();
   }, []);
   
-  // Update parent when local config changes
-  useEffect(() => {
-    onConfigChange({
-      ...nodeConfig,
-      model: localConfig.model,
-      system_instruction: localConfig.system_instruction,
-      model_parameters: localConfig.model_parameters
-    });
-  }, [localConfig, nodeConfig, onConfigChange]);
-  
   // Handle model selection
   const handleModelChange = (modelName) => {
-    setLocalConfig(prev => ({
-      ...prev,
-      model: modelName
-    }));
+    updateConfig({ model: modelName });
   };
-  
-  // No longer needed - template handling is now in TemplateNode component
   
   // Handle system instruction change
   const handleInstructionChange = (e) => {
-    setLocalConfig(prev => ({
-      ...prev,
-      system_instruction: e.target.value
-    }));
+    console.log('ModelNode: handleInstructionChange', e.target.value);
+    updateConfig({ system_instruction: e.target.value });
   };
   
   // Handle parameter changes
   const handleParameterChange = (param, value) => {
-    setLocalConfig(prev => ({
-      ...prev,
+    updateConfig({ 
       model_parameters: {
-        ...prev.model_parameters,
+        ...localConfig.model_parameters,
         [param]: value
       }
-    }));
+    });
   };
   
   // Model options for dropdown
@@ -91,8 +68,26 @@ const ModelNode = ({
   // No longer needed - template handling is now in TemplateNode component
   
   return (
-    <div className="p-4 space-y-4 bg-white rounded border border-gray-200">
-      <h3 className="font-medium text-lg">{nodeConfig.name || 'Model Node'}</h3>
+    <div className="p-4 space-y-4 bg-white rounded border border-gray-200 relative">
+      {/* Input handle */}
+      <Handle 
+        type="target" 
+        position="left" 
+        id="input" 
+        isConnectable={isConnectable} 
+        className="w-3 h-3 bg-blue-500"
+      />
+      
+      {/* Output handle */}
+      <Handle 
+        type="source" 
+        position="right" 
+        id="output" 
+        isConnectable={isConnectable} 
+        className="w-3 h-3 bg-blue-500"
+      />
+      
+      <h3 className="font-medium text-lg">{nodeConfig?.name || 'Model Node'}</h3>
       
       {/* Model selection */}
       <div className="space-y-2">
@@ -120,6 +115,7 @@ const ModelNode = ({
           className="w-full h-24 p-2 border rounded text-sm"
           value={localConfig.system_instruction || ''}
           onChange={handleInstructionChange}
+          onBlur={() => console.log("CURRENT NODE CONFIG:", nodeConfig)}
           placeholder="Enter system instructions for the model..."
           disabled={disabled}
         />
@@ -181,4 +177,16 @@ const ModelNode = ({
   );
 };
 
-export default ModelNode;
+// Define default config for ModelNode
+const getDefaultModelConfig = () => ({
+  model: '',
+  system_instruction: '',
+  model_parameters: {
+    temperature: 0.7,
+    top_p: 1.0,
+    max_tokens: 1000
+  }
+});
+
+// Wrap with HOC
+export default withNodeWrapper(ModelNode, getDefaultModelConfig);

@@ -1,22 +1,19 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import { Handle } from '@xyflow/react';
 import CustomSelect from './CustomSelect';
+import withNodeWrapper from './withNodeWrapper';
 
 /**
  * TransformNode component for configuring a text transformation node in a workflow
  */
 const TransformNode = ({ 
-  nodeConfig, 
-  onConfigChange,
-  disabled = false
+  nodeConfig,
+  localConfig,
+  updateConfig,
+  disabled = false,
+  isConnectable = true
 }) => {
-  const [localConfig, setLocalConfig] = useState({
-    pattern: nodeConfig.pattern || '',
-    replacement: nodeConfig.replacement || '',
-    is_regex: nodeConfig.is_regex || false,
-    apply_to_field: nodeConfig.apply_to_field || 'output'
-  });
-  
   // Regex test status and error
   const [regexStatus, setRegexStatus] = useState({
     isValid: true,
@@ -26,17 +23,6 @@ const TransformNode = ({
   // Preview states
   const [previewInput, setPreviewInput] = useState('Hello world! This is a test input.');
   const [previewOutput, setPreviewOutput] = useState('');
-  
-  // Update parent when local config changes
-  useEffect(() => {
-    onConfigChange({
-      ...nodeConfig,
-      pattern: localConfig.pattern,
-      replacement: localConfig.replacement,
-      is_regex: localConfig.is_regex,
-      apply_to_field: localConfig.apply_to_field
-    });
-  }, [localConfig, nodeConfig, onConfigChange]);
   
   // Update preview output when input or transform configs change
   useEffect(() => {
@@ -78,34 +64,22 @@ const TransformNode = ({
   
   // Handle field selection
   const handleFieldChange = (fieldName) => {
-    setLocalConfig(prev => ({
-      ...prev,
-      apply_to_field: fieldName
-    }));
+    updateConfig({ apply_to_field: fieldName });
   };
   
   // Handle pattern change
   const handlePatternChange = (e) => {
-    setLocalConfig(prev => ({
-      ...prev,
-      pattern: e.target.value
-    }));
+    updateConfig({ pattern: e.target.value });
   };
   
   // Handle replacement change
   const handleReplacementChange = (e) => {
-    setLocalConfig(prev => ({
-      ...prev,
-      replacement: e.target.value
-    }));
+    updateConfig({ replacement: e.target.value });
   };
   
   // Toggle regex mode
   const handleRegexToggle = () => {
-    setLocalConfig(prev => ({
-      ...prev,
-      is_regex: !prev.is_regex
-    }));
+    updateConfig({ is_regex: !localConfig.is_regex });
   };
   
   // Handle preview input change
@@ -121,8 +95,26 @@ const TransformNode = ({
   ];
   
   return (
-    <div className="p-4 space-y-4 bg-white rounded border border-gray-200">
-      <h3 className="font-medium text-lg">{nodeConfig.name || 'Transform Node'}</h3>
+    <div className="p-4 space-y-4 bg-white rounded border border-gray-200 relative">
+      {/* Input handle */}
+      <Handle 
+        type="target" 
+        position="left" 
+        id="input" 
+        isConnectable={isConnectable} 
+        className="w-3 h-3 bg-orange-500"
+      />
+      
+      {/* Output handle */}
+      <Handle 
+        type="source" 
+        position="right" 
+        id="output" 
+        isConnectable={isConnectable} 
+        className="w-3 h-3 bg-orange-500"
+      />
+      
+      <h3 className="font-medium text-lg">{nodeConfig?.name || 'Transform Node'}</h3>
       
       {/* Apply to field selection */}
       <div className="space-y-2">
@@ -217,4 +209,13 @@ const TransformNode = ({
   );
 };
 
-export default TransformNode;
+// Define default config for TransformNode
+const getDefaultTransformConfig = () => ({
+  pattern: '',
+  replacement: '',
+  is_regex: false,
+  apply_to_field: 'output'
+});
+
+// Wrap with HOC
+export default withNodeWrapper(TransformNode, getDefaultTransformConfig);
