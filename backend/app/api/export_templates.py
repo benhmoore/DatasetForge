@@ -28,30 +28,10 @@ async def get_export_templates(
     """
     Get all export templates (global templates + user's custom templates)
     """
-    # Global templates (no owner_id) and user's templates
-    query = select(ExportTemplate).where(
-        (ExportTemplate.owner_id == None) | (ExportTemplate.owner_id == user.id)
-    )
+    query = build_export_templates_query(user.id, include_archived, format_name)
+    total_query = build_export_templates_count_query(user.id, include_archived, format_name)
     
-    # Filter by archived status if not including archived
-    if not include_archived:
-        query = query.where(ExportTemplate.archived == False)
-    
-    # Filter by format_name if provided
-    if format_name:
-        query = query.where(ExportTemplate.format_name == format_name)
-    
-    # Count total for pagination
-    total_query = select(col(ExportTemplate.id)).where(
-        (ExportTemplate.owner_id == None) | (ExportTemplate.owner_id == user.id)
-    )
-    
-    if not include_archived:
-        total_query = total_query.where(ExportTemplate.archived == False)
-    
-    if format_name:
-        total_query = total_query.where(ExportTemplate.format_name == format_name)
-    
+    # Get the total count for pagination
     total = len(session.exec(total_query).all())
     
     # Add pagination
@@ -75,19 +55,9 @@ async def create_export_template(
     """
     Create a new export template
     """
-    # If marking as default, unmark any other default templates with the same format_name
+    # If marking as default, unmark any other default templates
     if template.is_default:
-        existing_defaults = session.exec(
-            select(ExportTemplate).where(
-                (ExportTemplate.format_name == template.format_name) &
-                (ExportTemplate.is_default == True) &
-                ((ExportTemplate.owner_id == user.id) | (ExportTemplate.owner_id == None))
-            )
-        ).all()
-        
-        for existing in existing_defaults:
-            existing.is_default = False
-            session.add(existing)
+        unmark_existing_default_templates(session, template.format_name, user.id)
     
     # Create the new template
     db_template = ExportTemplate(
@@ -145,45 +115,13 @@ async def update_export_template(
     """
     Update an export template
     """
-    db_template = session.get(ExportTemplate, template_id)
+    db_template = get_template_with_owner_check(session, template_id, user.id)
     
-    if not db_template:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Export template not found"
-        )
-    
-    # Check ownership - only the owner can update
-    if db_template.owner_id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to modify this template"
-        )
-    
-    # Update template fields
-    update_data = template_update.dict(exclude_unset=True)
-    
-    # If making this template the default, unmark other defaults with the same format_name
-    if update_data.get("is_default") and update_data["is_default"] and not db_template.is_default:
-        # Get the format name (either from the update or the existing template)
-        format_name = update_data.get("format_name", db_template.format_name)
-        
-        existing_defaults = session.exec(
-            select(ExportTemplate).where(
-                (ExportTemplate.format_name == format_name) &
-                (ExportTemplate.is_default == True) &
-                (ExportTemplate.id != template_id) &
-                ((ExportTemplate.owner_id == user.id) | (ExportTemplate.owner_id == None))
-            )
-        ).all()
-        
-        for existing in existing_defaults:
-            existing.is_default = False
-            session.add(existing)
+    # Update default status if needed
+    update_default_status(session, db_template, template_update)
     
     # Update fields
-    for key, value in update_data.items():
-        setattr(db_template, key, value)
+    update_template_fields(db_template, template_update)
     
     session.add(db_template)
     session.commit()
@@ -201,20 +139,7 @@ async def archive_export_template(
     """
     Archive (or unarchive) an export template
     """
-    template = session.get(ExportTemplate, template_id)
-    
-    if not template:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Export template not found"
-        )
-    
-    # Check ownership - only the owner can archive/unarchive
-    if template.owner_id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to modify this template"
-        )
+    template = get_template_with_owner_check(session, template_id, user.id)
     
     # Toggle archive status
     template.archived = not template.archived
@@ -227,3 +152,112 @@ async def archive_export_template(
     session.commit()
     
     return {"success": True}
+
+
+# Helper Functions
+
+def build_export_templates_query(user_id: int, include_archived: bool, format_name: Optional[str]):
+    """Build the query for retrieving export templates."""
+    # Global templates (no owner_id) and user's templates
+    query = select(ExportTemplate).where(
+        (ExportTemplate.owner_id == None) | (ExportTemplate.owner_id == user_id)
+    )
+    
+    # Filter by archived status if not including archived
+    if not include_archived:
+        query = query.where(ExportTemplate.archived == False)
+    
+    # Filter by format_name if provided
+    if format_name:
+        query = query.where(ExportTemplate.format_name == format_name)
+    
+    return query
+
+
+def build_export_templates_count_query(user_id: int, include_archived: bool, format_name: Optional[str]):
+    """Build the query for counting export templates."""
+    # Start with the base condition for access control
+    count_query = select(col(ExportTemplate.id)).where(
+        (ExportTemplate.owner_id == None) | (ExportTemplate.owner_id == user_id)
+    )
+    
+    # Add filters
+    if not include_archived:
+        count_query = count_query.where(ExportTemplate.archived == False)
+    
+    if format_name:
+        count_query = count_query.where(ExportTemplate.format_name == format_name)
+    
+    return count_query
+
+
+def unmark_existing_default_templates(session: Session, format_name: str, user_id: int):
+    """Unmark existing default templates with the same format name."""
+    existing_defaults = session.exec(
+        select(ExportTemplate).where(
+            (ExportTemplate.format_name == format_name) &
+            (ExportTemplate.is_default == True) &
+            ((ExportTemplate.owner_id == user_id) | (ExportTemplate.owner_id == None))
+        )
+    ).all()
+    
+    for existing in existing_defaults:
+        existing.is_default = False
+        session.add(existing)
+
+
+def get_template_with_owner_check(session: Session, template_id: int, user_id: int) -> ExportTemplate:
+    """Get a template and check that the user is the owner."""
+    template = session.get(ExportTemplate, template_id)
+    
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Export template not found"
+        )
+    
+    # Check ownership - only the owner can update/archive
+    if template.owner_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to modify this template"
+        )
+    
+    return template
+
+
+def update_default_status(session: Session, db_template: ExportTemplate, template_update: ExportTemplateUpdate):
+    """Update the default status of a template, handling related templates."""
+    update_data = template_update.dict(exclude_unset=True)
+    
+    # If making this template the default, unmark other defaults with the same format_name
+    if update_data.get("is_default") and update_data["is_default"] and not db_template.is_default:
+        # Get the format name (either from the update or the existing template)
+        format_name = update_data.get("format_name", db_template.format_name)
+        
+        unmark_other_default_templates(session, format_name, db_template.id, db_template.owner_id)
+
+
+def unmark_other_default_templates(session: Session, format_name: str, current_id: int, owner_id: int):
+    """Unmark other default templates with the same format name."""
+    existing_defaults = session.exec(
+        select(ExportTemplate).where(
+            (ExportTemplate.format_name == format_name) &
+            (ExportTemplate.is_default == True) &
+            (ExportTemplate.id != current_id) &
+            ((ExportTemplate.owner_id == owner_id) | (ExportTemplate.owner_id == None))
+        )
+    ).all()
+    
+    for existing in existing_defaults:
+        existing.is_default = False
+        session.add(existing)
+
+
+def update_template_fields(db_template: ExportTemplate, template_update: ExportTemplateUpdate):
+    """Update template fields from the update request."""
+    update_data = template_update.dict(exclude_unset=True)
+    
+    # Update fields
+    for key, value in update_data.items():
+        setattr(db_template, key, value)

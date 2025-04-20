@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
@@ -52,14 +52,7 @@ async def get_template(
     """
     Get a specific template by ID
     """
-    template = session.get(Template, template_id)
-    
-    if not template or template.archived:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Template not found"
-        )
-    
+    template = get_template_or_404(session, template_id)
     return template
 
 
@@ -73,24 +66,11 @@ async def update_template(
     """
     Update a template
     """
-    db_template = session.get(Template, template_id)
-    
-    if not db_template or db_template.archived:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Template not found"
-        )
+    db_template = get_template_or_404(session, template_id)
     
     # Update fields if provided
-    template_data = template_update.dict(exclude_unset=True)
+    update_template_fields(db_template, template_update)
     
-    for key, value in template_data.items():
-        setattr(db_template, key, value)
-    
-    # Explicitly handle None for model_override if provided
-    if template_update.model_override is None and 'model_override' in template_update.__fields_set__:
-        db_template.model_override = None
-
     session.add(db_template)
     session.commit()
     session.refresh(db_template)
@@ -132,8 +112,38 @@ async def get_template_history(
     """
     Get recent system prompts used with this template (last 10, deduped)
     """
-    # Here we would typically fetch examples associated with this template
-    # In the current architecture, examples are associated with datasets, not templates
-    # So we'll return a placeholder (this would need to be revisited later)
+    # Ensure template exists
+    get_template_or_404(session, template_id)
     
-    return ["Example system prompt for history"]  # Placeholder
+    # Placeholder for future implementation that would retrieve history
+    return ["Example system prompt for history"]
+
+
+def get_template_or_404(session: Session, template_id: int) -> Template:
+    """
+    Get a template by ID or raise a 404 exception if not found or archived
+    """
+    template = session.get(Template, template_id)
+    
+    if not template or template.archived:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Template not found"
+        )
+    
+    return template
+
+
+def update_template_fields(db_template: Template, template_update: TemplateUpdate) -> None:
+    """
+    Update template fields from the update request
+    """
+    # Update fields if provided
+    template_data = template_update.dict(exclude_unset=True)
+    
+    for key, value in template_data.items():
+        setattr(db_template, key, value)
+    
+    # Explicitly handle None for model_override if provided
+    if template_update.model_override is None and 'model_override' in template_update.__fields_set__:
+        db_template.model_override = None

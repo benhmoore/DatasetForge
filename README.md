@@ -198,7 +198,7 @@ To run the test suite locally:
     pytest tests/ -v
 
     # Run specific test file
-    pytest tests/test_health.py
+    pytest tests/*.py
 
     # Run tests matching a specific pattern
     pytest tests/ -k "template or dataset"

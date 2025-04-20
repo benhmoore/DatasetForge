@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlmodel import Session, select
+from sqlmodel import Session, select, inspect
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -8,7 +8,6 @@ from ..core.security import authenticate_user, logout_user, get_current_user
 from ..db import get_session, engine
 from ..api.models import User
 from ..core.config import settings
-from sqlalchemy import inspect
 
 router = APIRouter()
 
@@ -34,8 +33,6 @@ async def get_setup_status(session: Session = Depends(get_session)):
         # Log the error for debugging
         print(f"Error checking setup status: {e}") 
         # In case of DB error, assume setup might be needed or something is wrong
-        # Returning users_exist: True prevents blocking login if DB is temporarily down
-        # but ideally, a more specific error should be handled by the frontend.
         # For now, let's default to assuming users exist to avoid blocking login on DB error.
         return {"users_exist": True, "needs_setup": False, "error": str(e)}
 
@@ -60,21 +57,17 @@ async def login(
         )
     
     # Check if any users exist in the system
-    from sqlmodel import text
     user_count = session.exec(select(User)).first()
     if user_count is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No users found in system. Please run 'python backend/app/cli.py create-user' to create a user.",
-            headers={"X-Error-Code": "no_users_exist"},  # Removed WWW-Authenticate header
+            headers={"X-Error-Code": "no_users_exist"},
         )
     
-    try:
-        user = authenticate_user(credentials, session)
-        return {"message": "Login successful"}
-    except HTTPException as e:
-        # Re-raise the exception from authenticate_user
-        raise e
+    # Attempt to authenticate user
+    user = authenticate_user(credentials, session)
+    return {"message": "Login successful"}
 
 
 @router.post("/logout")
