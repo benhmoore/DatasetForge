@@ -141,7 +141,10 @@ async def execute_workflow_stream(
             yield f"{init_data}\n"
             await asyncio.sleep(0.1)  # Small delay to allow client to process
             
-            # Set up progress callback
+            # Create a queue to communicate between callbacks and the generator
+            progress_queue = asyncio.Queue()
+            
+            # Set up progress callback that puts data in the queue
             async def progress_callback(node_id: str, status: str, progress: float, result: NodeExecutionResult = None):
                 progress_data = {
                     "type": "progress",
@@ -153,25 +156,54 @@ async def execute_workflow_stream(
                 
                 if result:
                     progress_data["result"] = result.dict()
-                    
-                yield json.dumps(progress_data) + "\n"
-                await asyncio.sleep(0.05)  # Small delay between progress updates
+                
+                # Put the formatted data in the queue
+                await progress_queue.put(json.dumps(progress_data) + "\n")
             
-            # Execute the workflow with progress updates
-            result = await executor.execute_workflow_with_progress(
-                workflow_id=workflow_id,
-                workflow_data=workflow_definition,
-                seed_data=seed_data,
-                progress_callback=progress_callback
+            # Start the workflow execution in a background task
+            execution_task = asyncio.create_task(
+                executor.execute_workflow_with_progress(
+                    workflow_id=workflow_id,
+                    workflow_data=workflow_definition,
+                    seed_data=seed_data,
+                    progress_callback=progress_callback
+                )
             )
             
-            # Send the final result
-            final_data = json.dumps({
-                "type": "complete",
-                "result": result.dict(),
-                "timestamp": executor._get_timestamp()
-            })
-            yield f"{final_data}\n"
+            # Yield data from the queue as it becomes available
+            try:
+                # Keep yielding data until the execution task is done
+                while not execution_task.done() or not progress_queue.empty():
+                    try:
+                        # Wait for data with a timeout to prevent blocking forever
+                        data = await asyncio.wait_for(progress_queue.get(), 0.5)
+                        yield data
+                    except asyncio.TimeoutError:
+                        # No data available yet, just continue the loop
+                        if execution_task.done():
+                            # If the execution task is done and no more data is coming, break
+                            if progress_queue.empty():
+                                break
+                        continue
+                
+                # Get the final result from the completed task
+                result = await execution_task
+                
+                # Send the final result
+                final_data = json.dumps({
+                    "type": "complete",
+                    "result": result.dict(),
+                    "timestamp": executor._get_timestamp()
+                })
+                yield f"{final_data}\n"
+            except Exception as e:
+                logger.exception(f"Error in workflow execution task: {e}")
+                error_msg = json.dumps({
+                    "type": "error",
+                    "error": f"Workflow execution failed: {str(e)}",
+                    "timestamp": executor._get_timestamp()
+                })
+                yield f"{error_msg}\n"
             
         except Exception as e:
             logger.exception(f"Error executing workflow stream: {e}")
