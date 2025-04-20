@@ -50,12 +50,12 @@ const WorkflowModal = ({
         </div>
 
         {/* Modal Body - WorkflowManager component */}
-        <div className="flex-grow overflow-y-auto"> {/* Reduced padding for more space */}
+        <div className="flex-grow overflow-y-auto flex flex-col"> {/* Ensure flex-col for child height */}
           <WorkflowManager
             visible={isOpen} // Pass visibility state
             workflow={workflow}
             setWorkflow={setWorkflow}
-            onImport={handleWorkflowImport} // Pass import handler
+            // onImport={handleWorkflowImport} // Import is handled internally now
             // onExport can be handled internally by WorkflowManager or passed if needed
             disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
             saveRequest={saveRequest} // Pass save request trigger

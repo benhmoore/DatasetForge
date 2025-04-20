@@ -135,7 +135,7 @@ const WorkflowManager = ({
   if (!visible) return null;
 
   return (
-    <div className="p-0 bg-white">
+    <div className="p-0 bg-white h-full flex flex-col"> {/* Added h-full and flex flex-col */}
       <ReactFlowProvider>
         <WorkflowEditor
           ref={workflowEditorRef}

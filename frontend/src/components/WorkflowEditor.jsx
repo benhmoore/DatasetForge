@@ -832,9 +832,9 @@ const WorkflowEditor = forwardRef(({
 
 
   return (
-    <div className="flex flex-col h-[70vh] m-0 overflow-hidden">
+    <div className="flex flex-col h-full border rounded-lg overflow-hidden"> {/* Changed h-[70vh] to h-full */}
       {/* Toolbar */}
-      <div className="p-2 border-b bg-gray-50 flex items-center space-x-4 justify-between">
+      <div className="p-2 border-b bg-gray-50 flex items-center space-x-4 justify-between flex-shrink-0"> {/* Added flex-shrink-0 */}
         {/* Left Group: Workflow Info */}
         <div className="flex items-center space-x-2 flex-grow mr-4">
            <input
@@ -939,18 +939,18 @@ const WorkflowEditor = forwardRef(({
 
       {/* Conditional Rendering: React Flow Canvas or JSON Editor */}
       {showJsonEditor ? (
-        <div className="flex-grow p-3 space-y-3 overflow-auto">
-          <p className="text-sm text-gray-500">
+        <div className="flex-grow p-3 space-y-3 overflow-auto flex flex-col"> {/* Added flex flex-col */}
+          <p className="text-sm text-gray-500 flex-shrink-0"> {/* Added flex-shrink-0 */}
             Edit the workflow JSON directly. Be careful to maintain valid JSON format. Saving here will update the workflow and switch back to the visual editor. Undo/Redo history is not tracked while editing JSON.
           </p>
           <textarea
-            className="w-full h-[calc(100%-80px)] p-2 font-mono text-sm border rounded focus:ring-blue-500 focus:border-blue-500"
+            className="w-full flex-grow p-2 font-mono text-sm border rounded focus:ring-blue-500 focus:border-blue-500" // Changed height to flex-grow
             value={workflowJson}
             onChange={handleJsonChange}
             disabled={disabled}
             spellCheck="false"
           />
-          <div className="flex justify-end space-x-2">
+          <div className="flex justify-end space-x-2 flex-shrink-0"> {/* Added flex-shrink-0 */}
             <button
               className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded transition text-sm"
               onClick={() => {
