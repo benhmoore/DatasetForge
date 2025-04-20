@@ -20,6 +20,7 @@ const VariationCard = ({
   tool_calls = null,
   processed_prompt = null,
   workflow_results = null, // New prop for workflow results
+  workflow_progress = null, // New prop for streaming workflow progress
   onToolCallsChange
 }) => {
   // State management
@@ -406,6 +407,90 @@ const VariationCard = ({
   }, [isGenerating, isParaphrasing, id, output, onOpenParaphraseModal]);
   
 
+  // Render workflow progress indicators
+  const renderWorkflowProgress = useCallback(() => {
+    if (!workflow_progress || !workflow_progress.node_statuses) return null;
+    
+    const nodeStatuses = workflow_progress.node_statuses;
+    const executionOrder = workflow_progress.execution_order || Object.keys(nodeStatuses);
+    
+    return (
+      <div className="mt-3 space-y-2 animate-fadeIn">
+        <div className="text-xs font-medium text-gray-700 mb-1 flex justify-between">
+          <span>Workflow Progress</span>
+          {workflow_progress.status === 'complete' && 
+            <span className="text-green-600">Complete</span>
+          }
+        </div>
+        
+        <div className="space-y-2">
+          {executionOrder.map((nodeId) => {
+            const nodeStatus = nodeStatuses[nodeId] || { status: 'queued', progress: 0 };
+            const status = nodeStatus.status;
+            const progress = nodeStatus.progress || 0;
+            
+            // Determine status color
+            let statusColor = 'bg-gray-200'; // default for queued
+            let textColor = 'text-gray-600';
+            
+            if (status === 'running') {
+              statusColor = 'bg-blue-100';
+              textColor = 'text-blue-700';
+            } else if (status === 'success') {
+              statusColor = 'bg-green-100';
+              textColor = 'text-green-700';
+            } else if (status === 'error') {
+              statusColor = 'bg-red-100';
+              textColor = 'text-red-700';
+            }
+            
+            return (
+              <div key={nodeId} className="flex flex-col space-y-1">
+                <div className="flex justify-between items-center text-xs">
+                  <span className={`font-medium ${textColor}`}>
+                    {nodeId}
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded-full text-xs ${textColor} ${statusColor}`}>
+                    {status === 'running' && (
+                      <Icon name="spinner" className="animate-spin h-3 w-3 inline-block mr-1" aria-hidden="true" />
+                    )}
+                    {status === 'success' && (
+                      <Icon name="check" className="h-3 w-3 inline-block mr-1" aria-hidden="true" />
+                    )}
+                    {status === 'error' && (
+                      <Icon name="alert" className="h-3 w-3 inline-block mr-1" aria-hidden="true" />
+                    )}
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </span>
+                </div>
+                
+                {/* Progress bar */}
+                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      status === 'success' ? 'bg-green-500' : 
+                      status === 'error' ? 'bg-red-500' : 
+                      status === 'running' ? 'bg-blue-500' : 
+                      'bg-gray-400'
+                    }`}
+                    style={{ width: `${progress * 100}%` }}
+                  />
+                </div>
+                
+                {/* Display error if there is one */}
+                {status === 'error' && nodeStatus.error && (
+                  <div className="text-xs text-red-600 bg-red-50 p-1 rounded mt-1">
+                    {nodeStatus.error}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }, [workflow_progress]);
+
   // Conditional rendering for loading state
   if (isGenerating) {
     return (
@@ -418,14 +503,25 @@ const VariationCard = ({
               className="animate-spin h-4 w-4 text-primary-500 mr-1"
               aria-hidden="true"
             />
-            <span className="text-gray-500">Generating...</span>
+            <span className="text-gray-500">
+              {workflow_progress ? 'Processing workflow...' : 'Generating...'}
+            </span>
           </div>
         </div>
-        <div className="w-full h-32 bg-gray-100 rounded overflow-hidden">
-          <div className="h-full w-full relative">
-            <div className="animate-pulse absolute inset-0 bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 bg-[length:400%_100%] animate-shimmer"></div>
+        
+        {workflow_progress ? (
+          // Show workflow progress indicators
+          <div className="w-full">
+            {renderWorkflowProgress()}
           </div>
-        </div>
+        ) : (
+          // Default loading indicator
+          <div className="w-full h-32 bg-gray-100 rounded overflow-hidden">
+            <div className="h-full w-full relative">
+              <div className="animate-pulse absolute inset-0 bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 bg-[length:400%_100%] animate-shimmer"></div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

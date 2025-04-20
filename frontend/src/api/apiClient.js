@@ -295,7 +295,7 @@ const api = {
     inputs
   }).then(response => response.data),
   
-  // Streaming workflow execution (similar to generate)
+  // Streaming workflow execution
   executeWorkflowWithStream: async (workflow, seedData, onData, signal, debugMode = false) => {
     console.log('Sending workflow execution request:', {
       workflow: workflow.id || 'unnamed-workflow',
@@ -304,7 +304,7 @@ const api = {
     });
     
     // Use fetch API for streaming
-    const response = await fetch('/api/workflow/execute', {
+    const response = await fetch('/api/workflow/execute/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -329,12 +329,91 @@ const api = {
       throw new Error(`Workflow execution failed: ${response.status} ${errorText || response.statusText}`);
     }
 
-    // For now, return the entire result at once (will implement streaming in future)
-    const result = await response.json();
-    if (onData) {
-      onData(result);
+    if (!response.body) {
+      throw new Error('Response body is null');
     }
-    return result;
+
+    // Process the stream
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult = null;
+
+    try {
+      while (true) {
+        // Check if aborted before reading
+        if (signal?.aborted) {
+          console.log('Workflow execution stream aborted during processing.');
+          reader.cancel('Aborted by user'); // Cancel the reader
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        
+        // Check if aborted after reading
+        if (signal?.aborted) {
+          console.log('Workflow execution stream aborted after read.');
+          reader.cancel('Aborted by user');
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep the last partial line in the buffer
+
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const jsonData = JSON.parse(line);
+              
+              // Store final result if we get a complete message
+              if (jsonData.type === 'complete') {
+                finalResult = jsonData.result;
+              }
+              
+              if (onData) {
+                onData(jsonData); // Call the callback with the parsed JSON object
+              }
+            } catch (e) {
+              console.error('Failed to parse JSON line:', line, e);
+              if (onData) {
+                onData({ type: 'error', error: `Failed to parse stream data: ${line}` });
+              }
+            }
+          }
+        }
+      }
+      
+      // Process any remaining data in the buffer
+      if (buffer.trim()) {
+        try {
+          const jsonData = JSON.parse(buffer);
+          if (jsonData.type === 'complete') {
+            finalResult = jsonData.result;
+          }
+          if (onData) {
+            onData(jsonData);
+          }
+        } catch (e) {
+          console.error('Failed to parse final JSON buffer:', buffer, e);
+          if (onData) {
+            onData({ type: 'error', error: `Failed to parse final stream data: ${buffer}` });
+          }
+        }
+      }
+      
+      return finalResult;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('Workflow execution fetch aborted successfully.');
+        throw error; // Rethrow AbortError
+      }
+      console.error('Workflow execution stream failed:', error);
+      throw new Error(`Workflow execution stream failed: ${error.message}`);
+    }
   }
 };
 

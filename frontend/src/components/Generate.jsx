@@ -291,11 +291,21 @@ const Generate = ({ context }) => {
   const handleExecuteWorkflow = async (data, initialVariations, signal) => {
     setIsExecutingWorkflow(true);
     
+    // Create a map of variations by seed/variation index for easy reference
+    const variationMap = {};
+    initialVariations.forEach(v => {
+      const key = `${v.seed_index}_${v.variation_index}`;
+      variationMap[key] = v;
+    });
+    
+    // Track node statuses for progress visualization
+    const nodeStatusMap = {};
+    
     // Process each seed through the workflow
     for (let seedIndex = 0; seedIndex < data.seeds.length; seedIndex++) {
       const seedData = data.seeds[seedIndex];
       
-      // Process each variation for this seed
+      // Process multiple variations for this seed
       for (let variationIndex = 0; variationIndex < data.count; variationIndex++) {
         if (signal.aborted) {
           console.log("Skipping workflow execution for aborted request.");
@@ -303,41 +313,158 @@ const Generate = ({ context }) => {
         }
         
         try {
-          // Execute workflow for this seed/variation
-          const result = await api.executeWorkflow(
+          // Create a variation key for lookup
+          const variationKey = `${seedIndex}_${variationIndex}`;
+          
+          // Find target variation
+          const targetVariation = variationMap[variationKey];
+          if (!targetVariation) {
+            console.error(`Variation not found for seed ${seedIndex}, variation ${variationIndex}`);
+            continue;
+          }
+          
+          // Reset node status map for this variation
+          nodeStatusMap[variationKey] = {};
+          
+          // Execute workflow with streaming for this seed/variation
+          await api.executeWorkflowWithStream(
             currentWorkflow,
             seedData,
+            (progressData) => {
+              // Handle progress updates
+              if (progressData.type === 'init') {
+                // Initialize node statuses
+                const nodeIds = progressData.execution_order || [];
+                
+                // Set all nodes to queued initially
+                nodeIds.forEach(nodeId => {
+                  nodeStatusMap[variationKey][nodeId] = { 
+                    status: 'queued',
+                    progress: 0,
+                    started_at: null,
+                    completed_at: null
+                  };
+                });
+                
+                // Update variation with workflow structure
+                setVariations(prevVariations => {
+                  const updated = [...prevVariations];
+                  const targetIndex = updated.findIndex(v => v.id === targetVariation.id);
+                  
+                  if (targetIndex !== -1) {
+                    updated[targetIndex] = {
+                      ...updated[targetIndex],
+                      workflow_progress: {
+                        node_statuses: {...nodeStatusMap[variationKey]},
+                        execution_order: progressData.execution_order,
+                        started_at: new Date().toISOString()
+                      }
+                    };
+                  }
+                  return updated;
+                });
+              }
+              else if (progressData.type === 'progress') {
+                // Update node status
+                const { node_id, status, progress, result } = progressData;
+                
+                if (nodeStatusMap[variationKey][node_id]) {
+                  nodeStatusMap[variationKey][node_id] = {
+                    ...nodeStatusMap[variationKey][node_id],
+                    status: status,
+                    progress: progress,
+                    result: result || null,
+                    started_at: status === 'running' && progress === 0 
+                      ? new Date().toISOString() 
+                      : nodeStatusMap[variationKey][node_id].started_at,
+                    completed_at: (status === 'success' || status === 'error') && progress === 1 
+                      ? new Date().toISOString() 
+                      : nodeStatusMap[variationKey][node_id].completed_at
+                  };
+                  
+                  // Update variation with progress
+                  setVariations(prevVariations => {
+                    const updated = [...prevVariations];
+                    const targetIndex = updated.findIndex(v => v.id === targetVariation.id);
+                    
+                    if (targetIndex !== -1) {
+                      updated[targetIndex] = {
+                        ...updated[targetIndex],
+                        workflow_progress: {
+                          ...updated[targetIndex].workflow_progress,
+                          node_statuses: {...nodeStatusMap[variationKey]}
+                        }
+                      };
+                    }
+                    return updated;
+                  });
+                }
+              }
+              else if (progressData.type === 'complete') {
+                // Update variation with final results
+                setVariations(prevVariations => {
+                  const updated = [...prevVariations];
+                  const targetIndex = updated.findIndex(v => v.id === targetVariation.id);
+                  
+                  if (targetIndex !== -1) {
+                    // Extract the final output from workflow result
+                    const workflowOutput = progressData.result?.final_output?.output || "No output from workflow";
+                    
+                    updated[targetIndex] = {
+                      ...updated[targetIndex],
+                      output: workflowOutput,
+                      processed_prompt: data.instruction || "",
+                      isGenerating: false,
+                      error: null,
+                      template_id: data.template_id,
+                      _source: 'workflow',
+                      workflow_results: progressData.result,
+                      workflow_progress: {
+                        ...updated[targetIndex].workflow_progress,
+                        completed_at: new Date().toISOString(),
+                        status: 'complete'
+                      }
+                    };
+                  }
+                  return updated;
+                });
+              }
+              else if (progressData.type === 'error') {
+                // Update variation with error
+                setVariations(prevVariations => {
+                  const updated = [...prevVariations];
+                  const targetIndex = updated.findIndex(v => v.id === targetVariation.id);
+                  
+                  if (targetIndex !== -1) {
+                    updated[targetIndex] = {
+                      ...updated[targetIndex],
+                      output: `[Error: Workflow execution failed - ${progressData.error}]`,
+                      isGenerating: false,
+                      error: `Workflow execution failed: ${progressData.error}`,
+                      template_id: data.template_id,
+                      _source: 'workflow_error',
+                      workflow_progress: {
+                        ...updated[targetIndex].workflow_progress,
+                        status: 'error',
+                        error: progressData.error,
+                        completed_at: new Date().toISOString()
+                      }
+                    };
+                  }
+                  return updated;
+                });
+              }
+            },
+            signal,
             data.debug_mode || false
           );
           
-          // Update the variation with workflow results
-          setVariations(prevVariations => {
-            const updated = [...prevVariations];
-            const targetIndex = updated.findIndex(v =>
-              v.seed_index === seedIndex &&
-              v.variation_index === variationIndex &&
-              v.isGenerating && v.id.startsWith('temp-')
-            );
-
-            if (targetIndex !== -1) {
-              // Extract the final output from workflow result
-              const workflowOutput = result.final_output?.output || "No output from workflow";
-              
-              updated[targetIndex] = {
-                ...updated[targetIndex],
-                output: workflowOutput,
-                processed_prompt: data.instruction || "",
-                isGenerating: false,
-                error: null,
-                template_id: data.template_id,
-                _source: 'workflow',
-                workflow_results: result  // Store the full workflow results for reference
-              };
-            }
-            return updated;
-          });
-          
         } catch (error) {
+          if (error.name === 'AbortError') {
+            console.log("Workflow execution aborted.");
+            return;
+          }
+          
           console.error(`Workflow execution failed for seed ${seedIndex}, variation ${variationIndex}:`, error);
           
           // Update the variation with error
@@ -488,44 +615,167 @@ const Generate = ({ context }) => {
       // Use workflow if enabled
       if (workflowEnabled && currentWorkflow) {
         try {
-          const result = await api.executeWorkflow(
-            currentWorkflow,
-            { slots: slotData },
-            false
-          );
+          // First set up progress tracking
+          const nodeStatusMap = {};
           
-          // Update the variation with workflow results
+          // Reset workflow progress
           setVariations(prevVariations => {
             const updated = [...prevVariations];
-            const targetIndex = updated.findIndex(v => v.id === id);
-
-            if (targetIndex !== -1) {
-              // Extract the final output from workflow result
-              const workflowOutput = result.final_output?.output || "No output from workflow";
-              
-              updated[targetIndex] = {
-                ...updated[targetIndex],
-                output: workflowOutput,
-                processed_prompt: instruction || "",
-                isGenerating: false,
-                error: null,
-                template_id: selectedTemplate.id,
-                _source: 'workflow_regen',
-                workflow_results: result  // Store the full workflow results for reference
+            const index = updated.findIndex(v => v.id === id);
+            if (index !== -1) {
+              // Reset workflow_progress
+              updated[index] = {
+                ...updated[index],
+                workflow_progress: {
+                  node_statuses: {},
+                  started_at: new Date().toISOString()
+                }
               };
-              
-              // Deselect item if it was selected, as it has been regenerated
-              if (selectedVariations.has(id)) {
-                setSelectedVariations(prevSelected => {
-                  const newSelected = new Set(prevSelected);
-                  newSelected.delete(id);
-                  return newSelected;
-                });
-                toast.info("Deselected item due to regeneration.");
-              }
             }
             return updated;
           });
+          
+          // Use streaming API for progress updates
+          await api.executeWorkflowWithStream(
+            currentWorkflow,
+            { slots: slotData },
+            (progressData) => {
+              // Handle progress updates
+              if (progressData.type === 'init') {
+                // Initialize node statuses
+                const nodeIds = progressData.execution_order || [];
+                
+                // Set all nodes to queued initially
+                nodeIds.forEach(nodeId => {
+                  nodeStatusMap[nodeId] = { 
+                    status: 'queued',
+                    progress: 0,
+                    started_at: null,
+                    completed_at: null
+                  };
+                });
+                
+                // Update variation with workflow structure
+                setVariations(prevVariations => {
+                  const updated = [...prevVariations];
+                  const targetIndex = updated.findIndex(v => v.id === id);
+                  
+                  if (targetIndex !== -1) {
+                    updated[targetIndex] = {
+                      ...updated[targetIndex],
+                      workflow_progress: {
+                        node_statuses: {...nodeStatusMap},
+                        execution_order: progressData.execution_order,
+                        started_at: new Date().toISOString()
+                      }
+                    };
+                  }
+                  return updated;
+                });
+              }
+              else if (progressData.type === 'progress') {
+                // Update node status
+                const { node_id, status, progress, result } = progressData;
+                
+                if (nodeStatusMap[node_id]) {
+                  nodeStatusMap[node_id] = {
+                    ...nodeStatusMap[node_id],
+                    status: status,
+                    progress: progress,
+                    result: result || null,
+                    started_at: status === 'running' && progress === 0 
+                      ? new Date().toISOString() 
+                      : nodeStatusMap[node_id].started_at,
+                    completed_at: (status === 'success' || status === 'error') && progress === 1 
+                      ? new Date().toISOString() 
+                      : nodeStatusMap[node_id].completed_at
+                  };
+                  
+                  // Update variation with progress
+                  setVariations(prevVariations => {
+                    const updated = [...prevVariations];
+                    const targetIndex = updated.findIndex(v => v.id === id);
+                    
+                    if (targetIndex !== -1) {
+                      updated[targetIndex] = {
+                        ...updated[targetIndex],
+                        workflow_progress: {
+                          ...updated[targetIndex].workflow_progress,
+                          node_statuses: {...nodeStatusMap}
+                        }
+                      };
+                    }
+                    return updated;
+                  });
+                }
+              }
+              else if (progressData.type === 'complete') {
+                // Update variation with final results
+                setVariations(prevVariations => {
+                  const updated = [...prevVariations];
+                  const targetIndex = updated.findIndex(v => v.id === id);
+                  
+                  if (targetIndex !== -1) {
+                    // Extract the final output from workflow result
+                    const workflowOutput = progressData.result?.final_output?.output || "No output from workflow";
+                    
+                    updated[targetIndex] = {
+                      ...updated[targetIndex],
+                      output: workflowOutput,
+                      processed_prompt: instruction || "",
+                      isGenerating: false,
+                      error: null,
+                      template_id: selectedTemplate.id,
+                      _source: 'workflow_regen',
+                      workflow_results: progressData.result,
+                      workflow_progress: {
+                        ...updated[targetIndex].workflow_progress,
+                        completed_at: new Date().toISOString(),
+                        status: 'complete'
+                      }
+                    };
+                    
+                    // Deselect item if it was selected, as it has been regenerated
+                    if (selectedVariations.has(id)) {
+                      setSelectedVariations(prevSelected => {
+                        const newSelected = new Set(prevSelected);
+                        newSelected.delete(id);
+                        return newSelected;
+                      });
+                      toast.info("Deselected item due to regeneration.");
+                    }
+                  }
+                  return updated;
+                });
+              }
+              else if (progressData.type === 'error') {
+                // Update variation with error
+                setVariations(prevVariations => {
+                  const updated = [...prevVariations];
+                  const targetIndex = updated.findIndex(v => v.id === id);
+                  
+                  if (targetIndex !== -1) {
+                    updated[targetIndex] = {
+                      ...updated[targetIndex],
+                      output: `[Error: Workflow execution failed - ${progressData.error}]`,
+                      isGenerating: false,
+                      error: `Workflow execution failed: ${progressData.error}`,
+                      _source: 'workflow_regen_error',
+                      workflow_progress: {
+                        ...updated[targetIndex].workflow_progress,
+                        status: 'error',
+                        error: progressData.error,
+                        completed_at: new Date().toISOString()
+                      }
+                    };
+                  }
+                  return updated;
+                });
+              }
+            },
+            null, // no signal for regeneration
+            false // no debug mode
+          );
         } catch (error) {
           console.error('Workflow regeneration failed:', error);
           setVariations(prevVariations => {
@@ -976,6 +1226,7 @@ const Generate = ({ context }) => {
                   isParaphrasing={isParaphrasing}
                   error={variation.error || null}
                   workflow_results={variation.workflow_results} // Pass workflow results if available
+                  workflow_progress={variation.workflow_progress} // Pass workflow progress if available
                   onSelect={() => handleSelect(variation.id)} // Use select handler
                   onEdit={(output) => handleEdit(variation.id, output)}
                   onRegenerate={(instruction) => handleRegenerate(variation.id, instruction)}

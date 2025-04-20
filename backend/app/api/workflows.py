@@ -1,7 +1,10 @@
-from typing import Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Dict, Any, AsyncGenerator
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 import logging
+import json
+import asyncio
 
 from ..db import get_session
 from ..core.security import get_current_user
@@ -9,7 +12,8 @@ from ..api.models import User, Template
 from ..api.schemas import (
     WorkflowExecuteRequest, 
     WorkflowExecutionResult,
-    SeedData
+    SeedData,
+    NodeExecutionResult
 )
 from ..core.workflow_executor import WorkflowExecutor
 
@@ -77,6 +81,111 @@ async def execute_workflow(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error executing workflow: {str(e)}"
         )
+
+@router.post("/workflow/execute/stream")
+async def execute_workflow_stream(
+    request: Dict[str, Any],
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    """
+    Execute a workflow with streaming progress updates.
+    Returns a streaming response with node execution progress and results.
+    """
+    async def generate_workflow_progress() -> AsyncGenerator[str, None]:
+        try:
+            # Extract workflow definition and seed data from request
+            workflow_definition = request.get("workflow")
+            seed_data_dict = request.get("seed_data")
+            debug_mode = request.get("debug_mode", False)
+            
+            if not workflow_definition or not seed_data_dict:
+                error_msg = json.dumps({
+                    "type": "error",
+                    "error": "Workflow definition and seed data are required"
+                })
+                yield f"{error_msg}\n"
+                return
+            
+            # Convert seed data to SeedData model
+            try:
+                seed_data = SeedData.parse_obj(seed_data_dict)
+            except Exception as e:
+                error_msg = json.dumps({
+                    "type": "error",
+                    "error": f"Invalid seed data format: {str(e)}"
+                })
+                yield f"{error_msg}\n"
+                return
+            
+            # Setup workflow executor with progress callback
+            workflow_id = workflow_definition.get("id", "temp-workflow")
+            executor = WorkflowExecutor(debug_mode=debug_mode)
+            
+            # Initial workflow structure info
+            nodes = workflow_definition.get("nodes", {})
+            connections = workflow_definition.get("connections", [])
+            
+            # Build dependency graph and determine execution order
+            dependency_graph = executor._build_dependency_graph(nodes, connections)
+            execution_order = executor._determine_execution_order(dependency_graph)
+            
+            # Send the initial workflow structure and execution plan
+            init_data = json.dumps({
+                "type": "init",
+                "workflow_id": workflow_id,
+                "node_count": len(nodes),
+                "execution_order": execution_order,
+                "timestamp": executor._get_timestamp()
+            })
+            yield f"{init_data}\n"
+            await asyncio.sleep(0.1)  # Small delay to allow client to process
+            
+            # Set up progress callback
+            async def progress_callback(node_id: str, status: str, progress: float, result: NodeExecutionResult = None):
+                progress_data = {
+                    "type": "progress",
+                    "node_id": node_id,
+                    "status": status,  # "queued", "running", "success", "error"
+                    "progress": progress,  # 0.0 to 1.0
+                    "timestamp": executor._get_timestamp()
+                }
+                
+                if result:
+                    progress_data["result"] = result.dict()
+                    
+                yield json.dumps(progress_data) + "\n"
+                await asyncio.sleep(0.05)  # Small delay between progress updates
+            
+            # Execute the workflow with progress updates
+            result = await executor.execute_workflow_with_progress(
+                workflow_id=workflow_id,
+                workflow_data=workflow_definition,
+                seed_data=seed_data,
+                progress_callback=progress_callback
+            )
+            
+            # Send the final result
+            final_data = json.dumps({
+                "type": "complete",
+                "result": result.dict(),
+                "timestamp": executor._get_timestamp()
+            })
+            yield f"{final_data}\n"
+            
+        except Exception as e:
+            logger.exception(f"Error executing workflow stream: {e}")
+            error_msg = json.dumps({
+                "type": "error",
+                "error": f"Error executing workflow: {str(e)}",
+                "timestamp": executor._get_timestamp() if 'executor' in locals() else None
+            })
+            yield f"{error_msg}\n"
+    
+    return StreamingResponse(
+        generate_workflow_progress(),
+        media_type="text/event-stream"
+    )
 
 @router.post("/workflow/execute_step")
 async def execute_workflow_step(

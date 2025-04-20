@@ -1,8 +1,9 @@
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Callable, Awaitable, AsyncGenerator
 import logging
 import time
 import json
 import re
+import asyncio
 from datetime import datetime
 
 from ..api.schemas import (
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 class WorkflowExecutor:
     """
     Executes workflows by processing nodes in the correct order based on connections.
-    This is a placeholder implementation - the actual node execution will be implemented later.
+    Supports both standard execution and streaming with progress updates.
     """
     
     def __init__(self, debug_mode: bool = False):
@@ -30,6 +31,10 @@ class WorkflowExecutor:
             "model": self._execute_model_node,
             "transform": self._execute_transform_node,
         }
+    
+    def _get_timestamp(self) -> str:
+        """Helper method to get consistent timestamp format for progress updates."""
+        return datetime.utcnow().isoformat()
     
     async def execute_workflow(self, 
                         workflow_id: str, 
@@ -332,3 +337,168 @@ class WorkflowExecutor:
         }
         
         return result
+    
+    async def execute_workflow_with_progress(
+        self,
+        workflow_id: str,
+        workflow_data: Dict[str, Any],
+        seed_data: SeedData,
+        progress_callback: Callable[[str, str, float, Optional[NodeExecutionResult]], Awaitable[None]]
+    ) -> WorkflowExecutionResult:
+        """
+        Execute a workflow with progress updates sent via callback.
+        
+        Args:
+            workflow_id: The ID of the workflow
+            workflow_data: The workflow configuration
+            seed_data: The seed data for the workflow
+            progress_callback: Async callback function that receives progress updates
+                Arguments: node_id, status, progress (0-1), result (optional)
+                
+        Returns:
+            WorkflowExecutionResult: The final workflow execution result
+        """
+        logger.info(f"Starting workflow execution with progress for workflow {workflow_id}")
+        start_time = time.time()
+        
+        # Extract nodes and connections
+        nodes = workflow_data.get("nodes", {})
+        connections = workflow_data.get("connections", [])
+        
+        # Build dependency graph and determine execution order
+        dependency_graph = self._build_dependency_graph(nodes, connections)
+        execution_order = self._determine_execution_order(dependency_graph)
+        
+        # Send initial queued status for all nodes
+        for node_id in execution_order:
+            await progress_callback(node_id, "queued", 0.0)
+            # Small delay to ensure messages are processed in order
+            await asyncio.sleep(0.05)
+        
+        # Execute nodes in order with progress updates
+        node_results = []
+        node_outputs = {}
+        
+        # Initialize with seed data
+        initial_data = {
+            "seed_data": seed_data.dict(),
+            "slots": seed_data.slots
+        }
+        
+        # Track the final output node
+        final_node_id = execution_order[-1] if execution_order else None
+        final_output = {}
+        
+        for index, node_id in enumerate(execution_order):
+            node_config = nodes.get(node_id)
+            if not node_config:
+                logger.error(f"Node {node_id} not found in workflow configuration")
+                await progress_callback(node_id, "error", 0.0)
+                continue
+            
+            # Signal that node execution is starting
+            await progress_callback(node_id, "running", 0.0)
+            
+            # Get node inputs
+            node_inputs = self._get_node_inputs(node_id, connections, node_outputs, initial_data)
+            
+            # Get the right executor
+            node_type = node_config.get("type")
+            executor = self.node_executors.get(node_type)
+            
+            if not executor:
+                error_msg = f"No executor found for node type: {node_type}"
+                logger.error(error_msg)
+                node_result = NodeExecutionResult(
+                    node_id=node_id,
+                    node_type=node_type or "unknown",
+                    input=node_inputs,
+                    output={},
+                    execution_time=0,
+                    status="error",
+                    error_message=error_msg
+                )
+                await progress_callback(node_id, "error", 1.0, node_result)
+                node_results.append(node_result)
+                continue
+            
+            # Execute the node with progress updates
+            try:
+                # Signal 25% progress
+                await progress_callback(node_id, "running", 0.25)
+                await asyncio.sleep(0.1)  # Delay for visual feedback
+                
+                node_start_time = time.time()
+                
+                # Signal 50% progress
+                await progress_callback(node_id, "running", 0.5)
+                node_output = await executor(node_config, node_inputs)
+                
+                # Signal 75% progress
+                await progress_callback(node_id, "running", 0.75)
+                await asyncio.sleep(0.1)  # Delay for visual feedback
+                
+                node_execution_time = time.time() - node_start_time
+                
+                # Store the output
+                node_outputs[node_id] = node_output
+                
+                # Update final output if this is the last node
+                if node_id == final_node_id:
+                    final_output = node_output
+                
+                # Create and store the result
+                node_result = NodeExecutionResult(
+                    node_id=node_id,
+                    node_type=node_type,
+                    input=node_inputs,
+                    output=node_output,
+                    execution_time=node_execution_time,
+                    status="success"
+                )
+                node_results.append(node_result)
+                
+                # Signal completion (100% progress)
+                await progress_callback(node_id, "success", 1.0, node_result)
+                
+            except Exception as e:
+                logger.exception(f"Error executing node {node_id}: {str(e)}")
+                node_execution_time = time.time() - node_start_time
+                
+                node_result = NodeExecutionResult(
+                    node_id=node_id,
+                    node_type=node_type or "unknown",
+                    input=node_inputs,
+                    output={},
+                    execution_time=node_execution_time,
+                    status="error",
+                    error_message=str(e)
+                )
+                node_results.append(node_result)
+                
+                # Signal error
+                await progress_callback(node_id, "error", 1.0, node_result)
+        
+        # Calculate overall execution time and status
+        total_execution_time = time.time() - start_time
+        
+        if all(result.status == "success" for result in node_results):
+            status = "success"
+        elif any(result.status == "success" for result in node_results):
+            status = "partial_success"
+        else:
+            status = "error"
+        
+        # Create the final result
+        workflow_result = WorkflowExecutionResult(
+            workflow_id=workflow_id,
+            results=node_results,
+            seed_data=seed_data,
+            final_output=final_output,
+            execution_time=total_execution_time,
+            status=status
+        )
+        
+        logger.info(f"Workflow execution with progress completed in {total_execution_time:.2f}s with status: {status}")
+        
+        return workflow_result

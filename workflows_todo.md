@@ -18,7 +18,7 @@
 - [x] Create `TransformNode` component
   - [x] Implement backend `TransformNodeExecutor`
   - [x] Add regex config UI
-- [ ] Add streaming progress indicators in `WorkflowRunner`
+- [x] Add streaming progress indicators in `WorkflowRunner`
 - [x] Basic validation for node configuration
 
 ## Phase 3: Visual Editor
@@ -40,7 +40,7 @@
 ## Backend API
 - [x] `POST /api/workflow/execute_step`
 - [x] `POST /api/workflow/execute`
-- [ ] Streaming response support with error fallback
+- [x] Streaming response support with error fallback
 - [x] Centralized `NodeExecutorFactory`
 
 ## Integration Tasks
@@ -52,14 +52,14 @@
   - [x] Show processing history if available
 - [x] Extend API client
   - [x] Add methods to call workflow endpoints
-  - [ ] Support streaming and error reporting
+  - [x] Support streaming and error reporting
 
 ## Technical Considerations
 - [x] Use consistent data format across nodes
 - [x] Preserve `original` vs `output` in node flow
 - [x] Track processing history with timestamps and status
 - [x] Support graceful error recovery and skip-on-error options
-- [ ] Implement cancellation for long-running workflows
+- [x] Implement cancellation for long-running workflows
 - [x] Visual progress for each node during execution
 
 ## UX Considerations
