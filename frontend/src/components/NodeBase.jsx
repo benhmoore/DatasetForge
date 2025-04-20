@@ -16,7 +16,7 @@ const NodeBase = ({
   children, // Node-specific content
   nodeType = 'default', // e.g., 'model', 'transform' for styling handles
   iconName = 'box', // Default icon
-  // Define input handles as an array of objects { id: string, position: Position, label?: string, style?: object }
+  // Define input handles as an array of objects { id: string, position: Position, label?: string, style?: object, onConnect?: function }
   inputHandles = [{ id: 'input', position: Position.Left }],
   // Define output handles similarly
   outputHandles = [{ id: 'output', position: Position.Right }]
@@ -99,6 +99,7 @@ const NodeBase = ({
             top: `${(index + 1) * (100 / (visibleInputHandles.length + 1))}%`
           }}
           title={handle.label || handle.id} // Add tooltip for handle ID/label
+          onConnect={handle.onConnect} // Pass the onConnect callback from the handle definition
         />
       ))}
       
@@ -136,6 +137,7 @@ const NodeBase = ({
             top: `${(index + 1) * (100 / (visibleOutputHandles.length + 1))}%`
           }}
           title={handle.label || handle.id} // Add tooltip for handle ID/label
+          onConnect={handle.onConnect} // Pass the onConnect callback from the handle definition
         />
       ))}
       

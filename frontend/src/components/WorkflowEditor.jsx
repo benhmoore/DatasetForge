@@ -229,27 +229,23 @@ const WorkflowEditor = ({
     
     console.log("Creating new edge:", params);
     
-    // Clean up handle IDs - convert legacy format (inputN) to new format (input_N)
-    // This standardizes all handle IDs to the underscore format
+    // Standardize handle IDs
     const standardizeHandleId = (handleId) => {
       if (!handleId) return null;
-      
-      // Handle legacy format conversion (inputN → input_N)
       if (handleId.match(/^input\d+$/)) {
         return handleId.replace(/^input(\d+)$/, 'input_$1');
       }
       return handleId;
     };
-    
-    // Apply standardized handle IDs
     const sourceHandle = standardizeHandleId(params.sourceHandle);
     const targetHandle = standardizeHandleId(params.targetHandle);
     
+    // Create and add the new edge
     const newEdge = { 
       ...params, 
       sourceHandle,
       targetHandle,
-      id: `edge-${params.source}-${sourceHandle || 'default'}-${params.target}-${targetHandle || 'default'}`,
+      id: `edge-${params.source}-${sourceHandle || 'default'}-${params.target}-${targetHandle || 'default'}`, // Ensure unique ID
       type: 'smoothstep',
       animated: true,
       style: { stroke: '#3b82f6' },
@@ -257,7 +253,48 @@ const WorkflowEditor = ({
     };
     setEdges((eds) => addEdge(newEdge, eds));
     setHasUnsavedChanges(true);
-  }, [setEdges, disabled]);
+
+    // --- Logic to update target ModelNode's handle count --- 
+    // Check if the target handle matches the pattern 'input_X'
+    const match = targetHandle?.match(/^input_(\d+)$/);
+    if (match) {
+      const inputIndex = parseInt(match[1], 10);
+      const targetNodeId = params.target;
+
+      // Update the nodes state
+      setNodes(prevNodes =>
+        prevNodes.map(node => {
+          // Find the target node and check if it's a model node
+          if (node.id === targetNodeId && node.type === 'modelNode') {
+            // Read the current count from data, default to 1 if not present
+            const currentCount = node.data._visibleHandleCount || 1; 
+            // Calculate the required count based on the connected index
+            const requiredCount = inputIndex + 2; // Need one more than the connected index
+            // Determine the next count, capped at 5
+            const nextCount = Math.min(Math.max(currentCount, requiredCount), 5);
+
+            // Only update if the count needs to increase
+            if (nextCount > currentCount) {
+              console.log(`WorkflowEditor: Updating node ${targetNodeId} data._visibleHandleCount from ${currentCount} to ${nextCount}`);
+              // Return a *new* node object with the updated data
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  _visibleHandleCount: nextCount // Store the new count in data
+                }
+              };
+            } else {
+              console.log(`WorkflowEditor: Node ${targetNodeId} handle count (${currentCount}) already sufficient for index ${inputIndex}.`);
+            }
+          }
+          return node; // Return unchanged node
+        })
+      );
+    }
+    // --- End handle count update logic ---
+
+  }, [setEdges, setNodes, disabled]); // Added setNodes dependency back
 
   // --- Workflow Actions ---
 

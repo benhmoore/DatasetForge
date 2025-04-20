@@ -9,6 +9,7 @@ import NodeBase from './NodeBase';
 /**
  * ModelNode component for configuring a model node in a workflow
  * Uses indexed inputs (input_0, input_1, etc.) instead of named inputs
+ * Reads the required handle count from data._visibleHandleCount
  */
 const ModelNode = ({ 
   data,
@@ -16,22 +17,22 @@ const ModelNode = ({
   disabled = false,
   isConnectable = true
 }) => {
-  // Destructure config and callback from data
+  // Destructure config, callback, and the handle count from data
   const { 
     onConfigChange, 
     model = '', 
     system_instruction = '',
-    model_parameters = { temperature: 0.7, top_p: 1.0, max_tokens: 1000 }
+    model_parameters = { temperature: 0.7, top_p: 1.0, max_tokens: 1000 },
+    _visibleHandleCount = 1 // Read count from data, default to 1
   } = data;
 
   // State for models and loading status
   const [models, setModels] = useState([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   
-  // Track input connections - always start with one visible handle
-  const [visibleHandleCount, setVisibleHandleCount] = useState(1);
+  // REMOVED local visibleHandleCount state - rely solely on data prop
   
-  // This hook forces React Flow to update handles when they change
+  // Hook to notify React Flow about internal changes (like adding/removing handles)
   const updateNodeInternals = useUpdateNodeInternals();
 
   // Fetch available models on component mount
@@ -49,7 +50,14 @@ const ModelNode = ({
       }
     };
     fetchModels();
-  }, []); // Run only once on mount
+  }, []);
+
+  // Effect to update React Flow internals when the handle count prop changes
+  useEffect(() => {
+    // Call this whenever the number of handles derived from props changes
+    console.log(`ModelNode (${id}): data._visibleHandleCount changed to ${_visibleHandleCount}. Updating internals.`);
+    updateNodeInternals(id);
+  }, [_visibleHandleCount, id, updateNodeInternals]); // Depend on the prop value
 
   // Handle model selection
   const handleModelChange = (selectedModelName) => {
@@ -79,33 +87,20 @@ const ModelNode = ({
     }
   };
 
-  // Add a new input handle when a connection is made
-  const handleConnect = useCallback((inputIndex) => {
-    console.log(`ModelNode (${id}): Input ${inputIndex} connected`);
-    
-    // When an input is connected, make sure we have one more for future connections
-    setVisibleHandleCount(prev => {
-      // Always provide one more than the highest connected index
-      const nextCount = Math.max(prev, inputIndex + 2);
-      // Cap at a reasonable maximum (5 handles)
-      return Math.min(nextCount, 5);
-    });
-
-    // Force React Flow to update the node with new handles
-    updateNodeInternals(id);
-  }, [id, updateNodeInternals]);
-
-  // Create only the visible input handles we need
+  // --- Generate Input Handles --- 
   const inputHandles = [];
+  // Create only the visible handles based on the prop value
+  // Ensure count is at least 1
+  const handleCountToRender = Math.max(1, _visibleHandleCount);
+  console.log(`ModelNode (${id}): Rendering ${handleCountToRender} handles.`);
   
-  // Create the visible handles (always show at least 1)
-  for (let i = 0; i < visibleHandleCount; i++) {
+  for (let i = 0; i < handleCountToRender; i++) {
     inputHandles.push({
-      id: `input_${i}`,
+      id: `input_${i}`, // Use the standardized ID format
       type: 'target',
       position: Position.Left,
       label: `Input ${i}`,
-      onConnect: () => handleConnect(i)
+      // No onConnect needed here anymore
     });
   }
 
@@ -123,7 +118,8 @@ const ModelNode = ({
       disabled={disabled} 
       nodeType="model"
       iconName="cpu"
-      inputHandles={inputHandles}
+      // Pass the dynamically generated handles based on the prop
+      inputHandles={inputHandles} 
     >
       {/* Model selection */}
       <div className="space-y-2">
