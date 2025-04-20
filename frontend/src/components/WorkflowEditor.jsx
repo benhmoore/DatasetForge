@@ -1,27 +1,33 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
-import { 
-  ReactFlow, 
-  Background, 
-  Controls, 
-  MiniMap, 
-  addEdge, 
-  useNodesState, 
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  addEdge,
+  useNodesState,
   useEdgesState,
   MarkerType,
   Handle,
-  Position // Import Position
+  Position,
+  useReactFlow, // <-- Import useReactFlow
+  Panel, // <-- Import Panel for potential paste target info
+  useStoreApi, // <-- Import useStoreApi
+  useNodesInitialized, // <-- Import useNodesInitialized
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { toast } from 'react-toastify';
-import isEqual from 'lodash/isEqual'; // Keep for comparing workflow prop content
-import ModelNode from './ModelNode'; // Direct import
-import TransformNode from './TransformNode'; // Direct import
-import InputNode from './InputNode'; // Import the new InputNode
-import OutputNode from './OutputNode'; // Import the new OutputNode
-import TextNode from './TextNode'; // Import the new TextNode
+import isEqual from 'lodash/isEqual';
+import cloneDeep from 'lodash/cloneDeep'; // <-- Import cloneDeep for copying
+import debounce from 'lodash/debounce'; // <-- Import debounce
+import ModelNode from './ModelNode';
+import TransformNode from './TransformNode';
+import InputNode from './InputNode';
+import OutputNode from './OutputNode';
+import TextNode from './TextNode';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
-import ConfirmationModal from './ConfirmationModal'; // Import the modal
+import ConfirmationModal from './ConfirmationModal';
 
 // Define node types for selection dropdown and internal logic
 const NODE_TYPES = {
@@ -29,7 +35,7 @@ const NODE_TYPES = {
   transform: 'Transform',
   input: 'Input',
   output: 'Output',
-  text: 'Text' // Add Text node type
+  text: 'Text'
 };
 
 // Define the mapping from internal type to React Flow component type
@@ -38,145 +44,228 @@ const nodeComponentMap = {
   transform: 'transformNode',
   input: 'inputNode',
   output: 'outputNode',
-  text: 'textNode' // Add Text node mapping
+  text: 'textNode'
 };
-
-// --- Node Components ---
 
 // Map internal types to actual components for React Flow
-// Use direct components, including the new Input/Output nodes
-const nodeTypes = { 
-  modelNode: ModelNode, 
+const nodeTypes = {
+  modelNode: ModelNode,
   transformNode: TransformNode,
-  inputNode: InputNode, // Use imported InputNode
-  outputNode: OutputNode, // Use imported OutputNode
-  textNode: TextNode // Add TextNode component
+  inputNode: InputNode,
+  outputNode: OutputNode,
+  textNode: TextNode
 };
+
+const MAX_HISTORY_SIZE = 50; // Limit history size
 
 /**
  * WorkflowEditor component for visual workflow editing
  * Using forwardRef to expose the saveWorkflow method
  */
-const WorkflowEditor = forwardRef(({ 
-  workflow, 
+const WorkflowEditor = forwardRef(({
+  workflow,
   setWorkflow, // Callback to update the parent's workflow state
-  onImport, // Callback for import action (now provided by WorkflowManager)
-  onExport, // Callback for export action (now provided by WorkflowManager)
-  onNew, // Callback for creating a new workflow
-  disabled = false // Disable editing controls
+  onImport,
+  onExport,
+  onNew,
+  disabled = false
 }, ref) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [workflowName, setWorkflowName] = useState('');
   const [workflowDescription, setWorkflowDescription] = useState('');
-  const [selectedNodeType, setSelectedNodeType] = useState('model'); // Default node type to add
-  const [selectedNodeId, setSelectedNodeId] = useState(null); // Track selected node ID
+  const [selectedNodeType, setSelectedNodeType] = useState('model');
+  const [selectedNodeId, setSelectedNodeId] = useState(null); // Keep track of selection
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isNewConfirmOpen, setIsNewConfirmOpen] = useState(false); // State for the confirmation modal
+  const [isNewConfirmOpen, setIsNewConfirmOpen] = useState(false);
+  const [copiedNodes, setCopiedNodes] = useState(null); // <-- State for copied nodes
+
+  // --- Undo/Redo State ---
+  const [history, setHistory] = useState([]); // Array of past states { nodes, edges, name, description }
+  const [historyIndex, setHistoryIndex] = useState(-1); // Pointer to current state in history (-1 means initial state)
+  const isRestoringHistory = useRef(false); // Flag to prevent saving history during undo/redo actions
 
   const reactFlowWrapper = useRef(null);
-  const nodeIdCounterRef = useRef(1); // Counter for generating unique node IDs
-  const previousWorkflowRef = useRef(null); // Ref to store previous workflow prop instance
+  const nodeIdCounterRef = useRef(1);
+  const previousWorkflowRef = useRef(null);
+  const { project, getNodes } = useReactFlow(); // <-- Get React Flow instance methods
+  const store = useStoreApi(); // Access internal store
+  const nodesInitialized = useNodesInitialized(); // Check if nodes are ready
+
+  // --- History Management ---
+
+  // Function to save the current state to history
+  const saveHistorySnapshot = useCallback(() => {
+    // Don't save if disabled, restoring history, or nodes not yet initialized
+    if (disabled || isRestoringHistory.current || !nodesInitialized) {
+        // console.log("Skipping history save:", { disabled, isRestoring: isRestoringHistory.current, nodesInitialized });
+        return;
+    }
+
+    // Get current state (ensure nodes/edges are fully updated)
+    const currentState = {
+        nodes: store.getState().nodes,
+        edges: store.getState().edges,
+        name: workflowName,
+        description: workflowDescription,
+    };
+
+    // console.log("Saving history snapshot. Current index:", historyIndex);
+
+    // Clear the "future" history if we are branching off
+    const newHistory = history.slice(0, historyIndex + 1);
+
+    // Avoid saving if the new state is identical to the last saved state
+    if (newHistory.length > 0 && isEqual(newHistory[newHistory.length - 1], currentState)) {
+        // console.log("Skipping history save: State identical to previous.");
+        return;
+    }
+
+    // Add the new state
+    newHistory.push(cloneDeep(currentState)); // Deep clone
+
+    // Limit history size
+    if (newHistory.length > MAX_HISTORY_SIZE) {
+      newHistory.shift(); // Remove the oldest entry
+    }
+
+    setHistory(newHistory);
+    const newIndex = newHistory.length - 1;
+    setHistoryIndex(newIndex);
+    setHasUnsavedChanges(true); // Any action saved to history implies unsaved changes
+
+    // console.log("History updated. New index:", newIndex, "New size:", newHistory.length);
+
+  }, [history, historyIndex, workflowName, workflowDescription, store, disabled, nodesInitialized]);
+
+  // Debounce the history save function
+  const debouncedSaveHistory = useCallback(debounce(saveHistorySnapshot, 500), [saveHistorySnapshot]);
+
+
+  // --- Undo/Redo Actions ---
+  const handleUndo = useCallback(() => {
+    if (historyIndex <= 0 || disabled) {
+      return;
+    }
+
+    isRestoringHistory.current = true;
+    const previousIndex = historyIndex - 1;
+    const previousState = history[previousIndex];
+
+    // console.log("Performing UNDO to index:", previousIndex);
+
+    setNodes(cloneDeep(previousState.nodes));
+    setEdges(cloneDeep(previousState.edges));
+    setWorkflowName(previousState.name);
+    setWorkflowDescription(previousState.description);
+
+    setHistoryIndex(previousIndex);
+    setHasUnsavedChanges(true); // Undoing is a change relative to the *saved* state
+
+    setTimeout(() => { isRestoringHistory.current = false; }, 0);
+
+  }, [history, historyIndex, setNodes, setEdges, disabled]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndex >= history.length - 1 || disabled) {
+      return;
+    }
+
+    isRestoringHistory.current = true;
+    const nextIndex = historyIndex + 1;
+    const nextState = history[nextIndex];
+
+    // console.log("Performing REDO to index:", nextIndex);
+
+    setNodes(cloneDeep(nextState.nodes));
+    setEdges(cloneDeep(nextState.edges));
+    setWorkflowName(nextState.name);
+    setWorkflowDescription(nextState.description);
+
+    setHistoryIndex(nextIndex);
+    setHasUnsavedChanges(true); // Redoing is a change relative to the *saved* state
+
+    setTimeout(() => { isRestoringHistory.current = false; }, 0);
+
+  }, [history, historyIndex, setNodes, setEdges, disabled]);
+
 
   // Expose the saveWorkflow method via ref
   useImperativeHandle(ref, () => ({
     saveWorkflow: () => {
       if (hasUnsavedChanges) {
-        console.log("WorkflowEditor: Saving workflow via exposed ref method");
         saveWorkflow();
-        return true; // Return true if changes were saved
+        return true;
       }
-      return false; // Return false if no changes to save
+      return false;
     }
   }));
 
-  // --- State Synchronization ---
-
-  // Handler for changes within a node's configuration (called by child nodes)
-  // This function is passed down to each node via its `data` prop.
+  // Handler for changes within a node's configuration
   const handleNodeConfigChange = useCallback((nodeId, updatedConfig) => {
     if (disabled) return;
-    
-    console.log(`WorkflowEditor: Node config change received for node ${nodeId}`, updatedConfig);
-    
-    setNodes(prevNodes => 
+    // Save history *before* applying the change
+    saveHistorySnapshot();
+    setNodes(prevNodes =>
       prevNodes.map(node => {
         if (node.id === nodeId) {
-          // Create a new data object, merging the existing data with the updates
           const newData = {
             ...node.data,
             ...updatedConfig,
-            // Update label if name changes (ensure name exists in updatedConfig)
             label: updatedConfig.name !== undefined ? updatedConfig.name : node.data.label,
           };
-          // Return a *new* node object with the updated data
           return { ...node, data: newData };
         }
-        return node; // Return unchanged nodes
+        return node;
       })
     );
-    
-    setHasUnsavedChanges(true); // Mark changes as unsaved
-  }, [setNodes, disabled]);
+    // setHasUnsavedChanges(true); // Handled by saveHistorySnapshot
+  }, [setNodes, disabled, saveHistorySnapshot]); // <-- Add saveHistorySnapshot dependency
 
   // Effect to load workflow from props
   useEffect(() => {
-    // Only run loading logic if the workflow prop *instance* has changed
-    // Or if the workflow prop content has changed (using deep comparison)
     const incomingWorkflow = workflow || { name: 'New Workflow', description: '', nodes: {}, connections: [] };
     const previousWorkflow = previousWorkflowRef.current || { name: 'New Workflow', description: '', nodes: {}, connections: [] };
 
-    // Compare relevant parts to see if an update is needed
+    // ... (checks for changes remain the same) ...
     const nameChanged = incomingWorkflow.name !== previousWorkflow.name;
     const descriptionChanged = incomingWorkflow.description !== previousWorkflow.description;
-    // Use isEqual for deep comparison of nodes and connections objects/arrays
     const nodesChanged = !isEqual(incomingWorkflow.nodes, previousWorkflow.nodes);
     const connectionsChanged = !isEqual(incomingWorkflow.connections, previousWorkflow.connections);
 
-    if (workflow !== previousWorkflowRef.current || nameChanged || descriptionChanged || nodesChanged || connectionsChanged) {
-      console.log("Workflow prop changed or content differs. Loading into editor.");
 
+    if (workflow !== previousWorkflowRef.current || nameChanged || descriptionChanged || nodesChanged || connectionsChanged) {
       try {
         const reactFlowNodes = [];
         const reactFlowEdges = [];
-        let maxId = 0; // Track max numeric ID part
-        
+        let maxId = 0;
+
         const workflowNodes = incomingWorkflow.nodes || {};
         const workflowConnections = incomingWorkflow.connections || [];
 
         Object.entries(workflowNodes).forEach(([nodeId, nodeConfig]) => {
-          // Update counter based on existing node IDs
+          // ... (node parsing logic remains the same) ...
           const idNumber = parseInt(nodeId.replace(/[^0-9]/g, ''), 10);
           if (!isNaN(idNumber) && idNumber > maxId) {
             maxId = idNumber;
           }
-          
           const position = nodeConfig.position || { x: 100, y: 100 + reactFlowNodes.length * 150 };
-          const nodeComponentType = nodeComponentMap[nodeConfig.type] || 'modelNode'; // Fallback
-          
-          // Prepare node data, ensuring onConfigChange is attached
-          // Pass the *entire* nodeConfig from the workflow into the data object
-          // Also include the label derived from name/type
+          const nodeComponentType = nodeComponentMap[nodeConfig.type] || 'modelNode';
           const data = {
-            ...nodeConfig, // Spread the whole config here
+            ...nodeConfig,
             label: nodeConfig.name || `${NODE_TYPES[nodeConfig.type] || 'Node'}`,
             onConfigChange: handleNodeConfigChange // Pass the stable callback
           };
-          
-          reactFlowNodes.push({ 
-            id: nodeId, 
-            type: nodeComponentType, 
-            position, 
-            data // Pass the prepared data object
-          });
+          reactFlowNodes.push({ id: nodeId, type: nodeComponentType, position, data });
         });
-        
-        nodeIdCounterRef.current = maxId + 1; // Set counter after finding max ID
-        
+
+        nodeIdCounterRef.current = maxId + 1;
+
         workflowConnections.forEach((connection) => {
-          if (connection.source_node_id && connection.target_node_id) {
+          // ... (edge parsing logic remains the same) ...
+           if (connection.source_node_id && connection.target_node_id) {
             reactFlowEdges.push({
-              id: `edge-${connection.source_node_id}-${connection.source_handle || 'default'}-${connection.target_node_id}-${connection.target_handle || 'default'}`, 
+              id: `edge-${connection.source_node_id}-${connection.source_handle || 'default'}-${connection.target_node_id}-${connection.target_handle || 'default'}`,
               source: connection.source_node_id,
               target: connection.target_node_id,
               sourceHandle: connection.source_handle || null,
@@ -188,86 +277,107 @@ const WorkflowEditor = forwardRef(({
             });
           }
         });
-        
+
+        // Set editor state
         setNodes(reactFlowNodes);
         setEdges(reactFlowEdges);
         setWorkflowName(incomingWorkflow.name);
         setWorkflowDescription(incomingWorkflow.description || '');
+
+        // Initialize history with the loaded state
+        const initialState = {
+            nodes: cloneDeep(reactFlowNodes),
+            edges: cloneDeep(reactFlowEdges),
+            name: incomingWorkflow.name,
+            description: incomingWorkflow.description || '',
+        };
+        setHistory([initialState]);
+        setHistoryIndex(0); // Point to the initial state
+
         setHasUnsavedChanges(false); // Reset unsaved changes flag after loading
-        previousWorkflowRef.current = workflow; // Update the ref to the current workflow prop
-        
-        console.log("Workflow loaded into editor state:", { 
-          nodeCount: reactFlowNodes.length, 
-          edgeCount: reactFlowEdges.length,
-          name: incomingWorkflow.name
-        });
+        previousWorkflowRef.current = workflow; // Update the ref
+
+        // console.log("Workflow loaded. History initialized.");
 
       } catch (error) {
         console.error("Error loading workflow into editor:", error);
         toast.error("Failed to load workflow into editor.");
-        // Optionally reset state to a safe default
-        setNodes([]);
-        setEdges([]);
-        setWorkflowName('Error Loading');
-        setWorkflowDescription('');
+        // Reset state on error
+        setNodes([]); setEdges([]); setWorkflowName('Error Loading'); setWorkflowDescription('');
+        setHistory([]); setHistoryIndex(-1); // Clear history on error
         setHasUnsavedChanges(false);
         previousWorkflowRef.current = null;
       }
     }
-  // Depend on workflow prop instance and the stable callback
-  }, [workflow, setNodes, setEdges, handleNodeConfigChange]); 
+  }, [workflow, setNodes, setEdges, handleNodeConfigChange]); // Keep dependencies minimal for loading
 
-  // --- Modal Handlers ---
+
+  // Modal Handlers
+  // ... (openNewConfirmModal, closeNewConfirmModal, handleConfirmNew remain the same) ...
   const openNewConfirmModal = () => {
-    if (disabled) return; // Don't open if disabled
-    // Always open the modal when 'New' is clicked, regardless of unsaved changes
-    setIsNewConfirmOpen(true); 
+    if (disabled) return;
+    setIsNewConfirmOpen(true);
   };
 
   const closeNewConfirmModal = () => {
-    setIsNewConfirmOpen(false); // Close the modal
+    setIsNewConfirmOpen(false);
   };
 
   const handleConfirmNew = () => {
     if (onNew) {
-      onNew(); // Call the original onNew prop function
+      onNew();
     }
-    closeNewConfirmModal(); // Close the modal after confirmation
+    closeNewConfirmModal();
   };
 
-  // --- React Flow Handlers ---
 
-  // Handle node selection changes
+  // Handle node selection changes and movements
   const handleNodesChange = useCallback((changes) => {
-    if (disabled) return;
-    onNodesChange(changes); // Apply changes using React Flow's handler
-    
-    // Update selected node ID if a node is selected/deselected
+    if (disabled || isRestoringHistory.current) return;
+
+    // Check for significant changes (position end, dimensions change, removal)
+    const significantChange = changes.some(c =>
+        c.type === 'remove' ||
+        (c.type === 'position' && !c.dragging) || // Save on drag end
+        c.type === 'dimensions'
+    );
+
+    if (significantChange) {
+        debouncedSaveHistory(); // Use debounced save for moves/resizes
+    }
+
+    // Apply changes using React Flow's handler
+    onNodesChange(changes);
+
+    // Update selection state (no history save needed for selection itself)
     const selectionChange = changes.find(change => change.type === 'select');
     if (selectionChange) {
       setSelectedNodeId(selectionChange.selected ? selectionChange.id : null);
     }
-    
-    // Mark any node change (move, select, remove) as unsaved
-    setHasUnsavedChanges(true); 
+    // Unsaved changes are handled by the history save calls
+  }, [onNodesChange, disabled, debouncedSaveHistory]); // <-- Add debouncedSaveHistory dependency
 
-  }, [onNodesChange, disabled, setHasUnsavedChanges]); // Added setHasUnsavedChanges to dependency array
-
-  // Handle edge changes (creation, deletion)
+  // Handle edge changes (selection, removal)
   const handleEdgesChange = useCallback((changes) => {
-    if (disabled) return;
-    onEdgesChange(changes); // Apply changes using React Flow's handler
-    setHasUnsavedChanges(true); // Any edge change is considered an unsaved change
-  }, [onEdgesChange, disabled]);
+    if (disabled || isRestoringHistory.current) return;
+
+    // Save history for edge removals (creation is handled by onConnect)
+    if (changes.some(c => c.type === 'remove')) {
+      saveHistorySnapshot();
+    }
+
+    onEdgesChange(changes);
+    // Unsaved changes are handled by the history save calls
+  }, [onEdgesChange, disabled, saveHistorySnapshot]); // <-- Add saveHistorySnapshot dependency
 
   // Handle new connection creation
   const onConnect = useCallback((params) => {
     if (disabled) return;
-    
-    console.log("Creating new edge:", params);
-    
-    // Standardize handle IDs
+    // Save history *before* adding the edge
+    saveHistorySnapshot();
+
     const standardizeHandleId = (handleId) => {
+      // ... (standardizeHandleId logic) ...
       if (!handleId) return null;
       if (handleId.match(/^input\d+$/)) {
         return handleId.replace(/^input(\d+)$/, 'input_$1');
@@ -276,182 +386,329 @@ const WorkflowEditor = forwardRef(({
     };
     const sourceHandle = standardizeHandleId(params.sourceHandle);
     const targetHandle = standardizeHandleId(params.targetHandle);
-    
-    // Create and add the new edge
-    const newEdge = { 
-      ...params, 
+
+    const newEdge = {
+      ...params,
       sourceHandle,
       targetHandle,
-      id: `edge-${params.source}-${sourceHandle || 'default'}-${params.target}-${targetHandle || 'default'}`, // Ensure unique ID
+      id: `edge-${params.source}-${sourceHandle || 'default'}-${params.target}-${targetHandle || 'default'}`,
       type: 'smoothstep',
       animated: true,
       style: { stroke: '#3b82f6' },
       markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#3b82f6' },
     };
     setEdges((eds) => addEdge(newEdge, eds));
-    setHasUnsavedChanges(true);
+    // setHasUnsavedChanges(true); // Handled by saveHistorySnapshot
 
-    // --- Logic to update target ModelNode's handle count --- 
-    // Check if the target handle matches the pattern 'input_X'
+    // Logic to update target ModelNode's handle count
     const match = targetHandle?.match(/^input_(\d+)$/);
     if (match) {
       const inputIndex = parseInt(match[1], 10);
       const targetNodeId = params.target;
 
-      // Update the nodes state
       setNodes(prevNodes =>
         prevNodes.map(node => {
-          // Find the target node and check if it's a model node
           if (node.id === targetNodeId && node.type === 'modelNode') {
-            // Read the current count from data, default to 1 if not present
-            const currentCount = node.data._visibleHandleCount || 1; 
-            // Calculate the required count based on the connected index
-            const requiredCount = inputIndex + 2; // Need one more than the connected index
-            // Determine the next count, capped at 5
+            // ... (handle count logic) ...
+            const currentCount = node.data._visibleHandleCount || 1;
+            const requiredCount = inputIndex + 2;
             const nextCount = Math.min(Math.max(currentCount, requiredCount), 5);
 
-            // Only update if the count needs to increase
             if (nextCount > currentCount) {
-              console.log(`WorkflowEditor: Updating node ${targetNodeId} data._visibleHandleCount from ${currentCount} to ${nextCount}`);
-              // Return a *new* node object with the updated data
               return {
                 ...node,
                 data: {
                   ...node.data,
-                  _visibleHandleCount: nextCount // Store the new count in data
+                  _visibleHandleCount: nextCount
                 }
               };
-            } else {
-              console.log(`WorkflowEditor: Node ${targetNodeId} handle count (${currentCount}) already sufficient for index ${inputIndex}.`);
             }
           }
-          return node; // Return unchanged node
+          return node;
         })
       );
+       // Note: This node update won't be in the same history snapshot as the edge creation.
+       // This is generally acceptable, but could be combined if needed by manually creating the next state.
     }
-    // --- End handle count update logic ---
-  }, [setEdges, setNodes, disabled]); // Added setNodes dependency back
+  }, [setEdges, setNodes, disabled, saveHistorySnapshot]); // <-- Add saveHistorySnapshot dependency
 
-  // --- Workflow Actions ---
+  // --- Copy/Paste Logic ---
+
+  // Function to get the next available node ID based on type
+  const getNextNodeId = useCallback((nodeTypePrefix) => {
+      // console.log("getNextNodeId called with prefix:", nodeTypePrefix);
+      const currentNodes = getNodes(); // Get current nodes using the hook
+      let maxNum = 0;
+      currentNodes.forEach(node => {
+          if (node.id.startsWith(`${nodeTypePrefix}-`)) {
+              const numPart = node.id.split('-')[1];
+              const num = parseInt(numPart, 10);
+              if (!isNaN(num) && num > maxNum) {
+                  maxNum = num;
+              }
+          }
+      });
+      // Ensure the ref counter is also considered and updated
+      const nextNum = Math.max(nodeIdCounterRef.current, maxNum + 1);
+      nodeIdCounterRef.current = nextNum + 1; // Increment ref for next time
+      const nextId = `${nodeTypePrefix}-${nextNum}`;
+      // console.log("getNextNodeId generated ID:", nextId);
+      return nextId;
+  }, [getNodes]); // Depend on getNodes from useReactFlow
+
+
+  const handleCopy = useCallback(() => {
+    // ... (handleCopy logic remains the same) ...
+    const selectedNodes = getNodes().filter((node) => node.selected);
+    if (selectedNodes.length > 0 && !disabled) {
+      const nodesToCopy = selectedNodes.map(node => ({
+        ...cloneDeep(node),
+        selected: false,
+      }));
+      setCopiedNodes(nodesToCopy);
+      toast.info(`${selectedNodes.length} node${selectedNodes.length > 1 ? 's' : ''} copied.`);
+      // console.log("Copied nodes:", nodesToCopy);
+    }
+  }, [getNodes, disabled]); // Depend on getNodes
+
+  const handlePaste = useCallback(() => {
+    // console.log("handlePaste triggered.");
+    if (disabled || !copiedNodes || copiedNodes.length === 0) {
+      // console.log("Paste condition not met.");
+      return;
+    }
+
+    // Save history *before* pasting
+    saveHistorySnapshot();
+
+    // console.log("Pasting nodes:", copiedNodes);
+    const PADDING = 25;
+    const newNodes = copiedNodes.map((node, index) => {
+      // console.log(`Processing node ${index} for pasting:`, node);
+      let baseType = 'unknown';
+      if (node.type) {
+         const typeEntry = Object.entries(nodeComponentMap).find(([key, value]) => value === node.type);
+         if (typeEntry) baseType = typeEntry[0];
+      } else if (node.id) {
+         baseType = node.id.split('-')[0];
+      }
+      // console.log(`Determined baseType: ${baseType}`);
+
+      const newNodeId = getNextNodeId(baseType || 'node');
+      // console.log(`Generated new ID: ${newNodeId}`);
+
+      const newPosition = {
+        x: node.position.x + PADDING * (index + 1) + PADDING,
+        y: node.position.y + PADDING * (index + 1) + PADDING,
+      };
+      // console.log(`Calculated new position:`, newPosition);
+
+      const newData = {
+        ...node.data,
+        onConfigChange: handleNodeConfigChange, // Re-assign the callback
+        name: `${node.data.name || node.data.label || 'Node'} (Copy)`,
+        label: `${node.data.name || node.data.label || 'Node'} (Copy)`
+      };
+      // console.log(`Created new data object:`, newData);
+
+      const finalNewNode = {
+        ...node,
+        id: newNodeId,
+        position: newPosition,
+        data: newData,
+        selected: false,
+        // dragHandle: node.dragHandle, // Ensure dragHandle is copied if used
+      };
+      // console.log(`Final new node object for state:`, finalNewNode);
+      return finalNewNode;
+    });
+
+    // console.log("Attempting to setNodes with:", newNodes);
+    setNodes((nds) => [...nds, ...newNodes]);
+    // setHasUnsavedChanges(true); // Handled by saveHistorySnapshot
+    toast.success(`${newNodes.length} node${newNodes.length > 1 ? 's' : ''} pasted.`);
+
+  }, [copiedNodes, disabled, project, setNodes, getNextNodeId, handleNodeConfigChange, saveHistorySnapshot]); // <-- Add saveHistorySnapshot dependency
+
+  // Effect for Keyboard Shortcuts (Copy/Paste/Undo/Redo)
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const activeElement = document.activeElement;
+      const isInputFocused = activeElement.tagName === 'INPUT' ||
+                             activeElement.tagName === 'TEXTAREA' ||
+                             activeElement.isContentEditable;
+      const isFlowFocused = reactFlowWrapper.current && reactFlowWrapper.current.contains(activeElement);
+
+      // --- Undo ---
+      // Check for Undo (Cmd/Ctrl + Z, but NOT Shift + Z)
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key === 'z') {
+        if (!isInputFocused) { // Don't interfere with text input undo
+          // console.log("Handling Undo shortcut.");
+          event.preventDefault();
+          handleUndo();
+        } else {
+          // console.log("Ignoring Undo shortcut (input focused).");
+        }
+      }
+      // --- Redo ---
+      // Check for Redo (Cmd/Ctrl + Shift + Z) or (Cmd/Ctrl + Y)
+      else if (
+         ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'z') || // Cmd/Ctrl + Shift + Z
+         ((event.ctrlKey || event.metaKey) && event.key === 'y') // Cmd/Ctrl + Y (common alternative)
+        ) {
+         if (!isInputFocused) { // Don't interfere with text input redo
+            // console.log("Handling Redo shortcut.");
+            event.preventDefault();
+            handleRedo();
+         } else {
+            // console.log("Ignoring Redo shortcut (input focused).");
+         }
+      }
+      // --- Copy ---
+      else if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
+         const selectedNodes = getNodes().filter((node) => node.selected);
+         if (selectedNodes.length > 0 && !isInputFocused){
+            // console.log("Handling node copy keyboard shortcut.");
+            event.preventDefault();
+            handleCopy();
+         } else {
+            // console.log("Ignoring node copy shortcut (no selection or input focused).");
+         }
+      }
+      // --- Paste ---
+      else if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
+         if (isFlowFocused && !isInputFocused) {
+              // console.log("Handling node paste keyboard shortcut.");
+              event.preventDefault();
+              handlePaste();
+          } else {
+             // console.log("Ignoring node paste shortcut (not focused on flow or input focused).");
+          }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown); // <-- Pass handleKeyDown here
+    };
+  }, [handleCopy, handlePaste, getNodes, handleUndo, handleRedo]); // <-- Add handleUndo, handleRedo dependencies
+
+
+  // --- Original Workflow Actions ---
 
   // Add a new node to the canvas
   const addNode = useCallback(() => {
     if (disabled) return;
-    
-    const newNodeId = `${selectedNodeType}-${nodeIdCounterRef.current++}`;
-    const nodeLabel = `${NODE_TYPES[selectedNodeType]} ${nodeIdCounterRef.current - 1}`;
+    // Save history *before* adding the node
+    saveHistorySnapshot();
+
+    const newNodeId = getNextNodeId(selectedNodeType);
+    const nodeLabel = `${NODE_TYPES[selectedNodeType]} ${newNodeId.split('-').pop()}`;
     const nodeComponentType = nodeComponentMap[selectedNodeType];
-    
-    // Determine position (e.g., center of viewport or offset)
-    // This requires access to the reactFlowInstance, which might not be ready immediately.
-    // A simpler approach is a fixed offset or relative position.
-    const position = { 
-      x: Math.random() * 400 + 100, // Random position for now
-      y: Math.random() * 200 + 100 
-    }; 
-    
-    // Define default configuration based on node type
+
+    const position = project({
+        x: reactFlowWrapper.current.clientWidth / 2,
+        y: reactFlowWrapper.current.clientHeight / 3
+    });
+
     let defaultConfig = {};
-    if (selectedNodeType === 'model') {
-      defaultConfig = {
-        type: 'model',
-        name: nodeLabel,
-        model: '', // Default empty model
-        system_instruction: '',
-        model_parameters: { temperature: 0.7, top_p: 1.0, max_tokens: 1000 }
-      };
-    } else if (selectedNodeType === 'transform') {
-      defaultConfig = {
-        type: 'transform',
-        name: nodeLabel,
-        pattern: '',
-        replacement: '',
-        is_regex: false,
-        apply_to_field: 'output'
-      };
-    } else if (selectedNodeType === 'input') {
-      defaultConfig = { type: 'input', name: 'Input' };
-    } else if (selectedNodeType === 'output') {
-      defaultConfig = { type: 'output', name: 'Output' };
-    } else if (selectedNodeType === 'text') {
-      defaultConfig = { type: 'text', name: 'Text', text_content: '' };
-    } else {
-      console.error(`Unknown node type: ${selectedNodeType}`);
-      return; // Exit if type is unknown
-    }
-    
+     if (selectedNodeType === 'model') {
+       defaultConfig = { type: 'model', name: nodeLabel, model: '', system_instruction: '', model_parameters: { temperature: 0.7, top_p: 1.0, max_tokens: 1000 } };
+     } else if (selectedNodeType === 'transform') {
+       defaultConfig = { type: 'transform', name: nodeLabel, pattern: '', replacement: '', is_regex: false, apply_to_field: 'output' };
+     } else if (selectedNodeType === 'input') {
+       defaultConfig = { type: 'input', name: 'Input' };
+     } else if (selectedNodeType === 'output') {
+       defaultConfig = { type: 'output', name: 'Output' };
+     } else if (selectedNodeType === 'text') {
+       defaultConfig = { type: 'text', name: 'Text', text_content: '' };
+     } else {
+       console.error(`Unknown node type: ${selectedNodeType}`);
+       return;
+     }
+
     const newNode = {
       id: newNodeId,
       type: nodeComponentType,
       position,
       data: {
-        ...defaultConfig, // Spread the default config
-        label: nodeLabel, // Set initial label
-        onConfigChange: handleNodeConfigChange // Pass the callback
+        ...defaultConfig,
+        label: nodeLabel,
+        onConfigChange: handleNodeConfigChange
       }
     };
-    
-    console.log("Adding new node:", newNode);
+
     setNodes((nds) => nds.concat(newNode));
-    setHasUnsavedChanges(true);
-  }, [selectedNodeType, setNodes, handleNodeConfigChange, disabled]);
+    // setHasUnsavedChanges(true); // Handled by saveHistorySnapshot
+  }, [selectedNodeType, setNodes, handleNodeConfigChange, disabled, project, getNextNodeId, saveHistorySnapshot]); // <-- Add saveHistorySnapshot dependency
 
   // Save the current workflow state
   const saveWorkflow = useCallback(() => {
     if (disabled) return;
-    
-    // Transform React Flow state back into the workflow structure
+
+    // Get the current state directly from state variables
+    const currentNodes = nodes;
+    const currentEdges = edges;
+    const currentName = workflowName;
+    const currentDescription = workflowDescription;
+
     const updatedNodes = {};
-    nodes.forEach(node => {
-      // Extract the core configuration from node.data, excluding React Flow specific stuff like 'label' and 'onConfigChange'
+    currentNodes.forEach(node => {
       const { label, onConfigChange, ...configData } = node.data;
       updatedNodes[node.id] = {
-        ...configData, // The actual configuration
-        position: node.position // Save the position
+        ...configData,
+        position: node.position // Ensure latest position is saved
       };
     });
-    
-    const updatedConnections = edges.map(edge => ({
+
+    const updatedConnections = currentEdges.map(edge => ({
       source_node_id: edge.source,
-      source_handle: edge.sourceHandle || null, // Ensure null if undefined
+      source_handle: edge.sourceHandle || null,
       target_node_id: edge.target,
-      target_handle: edge.targetHandle || null // Ensure null if undefined
+      target_handle: edge.targetHandle || null
     }));
-    
+
     const updatedWorkflow = {
-      ...(workflow || {}), // Preserve existing ID and other top-level fields
-      name: workflowName,
-      description: workflowDescription,
+      ...(workflow || {}), // Preserve other potential workflow properties
+      name: currentName,
+      description: currentDescription,
       nodes: updatedNodes,
       connections: updatedConnections,
-      updated_at: new Date().toISOString() // Add/update timestamp
+      updated_at: new Date().toISOString()
     };
-    
-    console.log("Saving workflow:", { 
-      id: updatedWorkflow.id, 
-      name: updatedWorkflow.name, 
-      nodeCount: Object.keys(updatedNodes).length, 
-      connectionCount: updatedConnections.length 
-    });
-    
-    setWorkflow(updatedWorkflow); // Call the parent's update function
-    setHasUnsavedChanges(false); // Reset flag after saving
-    toast.success(`Workflow '${workflowName}' saved.`);
-    
-  }, [nodes, edges, workflowName, workflowDescription, setWorkflow, workflow, disabled]);
+
+    setWorkflow(updatedWorkflow); // Call parent update function
+
+    // Reset unsaved changes flag after successful save
+    setHasUnsavedChanges(false);
+
+    // Optional: Reset history to only contain the saved state
+    // const savedState = { nodes: cloneDeep(currentNodes), edges: cloneDeep(currentEdges), name: currentName, description: currentDescription };
+    // setHistory([savedState]);
+    // setHistoryIndex(0);
+
+    toast.success(`Workflow '${currentName}' saved.`);
+
+  }, [nodes, edges, workflowName, workflowDescription, setWorkflow, workflow, disabled]); // Dependencies reflect current state being saved
 
   // Handle workflow name change
   const handleNameChange = (e) => {
     if (disabled) return;
-    setWorkflowName(e.target.value);
-    setHasUnsavedChanges(true);
+    const newName = e.target.value;
+    // Use debounced save for text input to avoid excessive history entries
+    debouncedSaveHistory();
+    setWorkflowName(newName);
+    // setHasUnsavedChanges(true); // Handled by history save
   };
 
   // Handle workflow description change
   const handleDescriptionChange = (e) => {
     if (disabled) return;
-    setWorkflowDescription(e.target.value);
-    setHasUnsavedChanges(true);
+    const newDescription = e.target.value;
+    // Use debounced save for text input
+    debouncedSaveHistory();
+    setWorkflowDescription(newDescription);
+    // setHasUnsavedChanges(true); // Handled by history save
   };
 
   // Options for the node type selector
@@ -460,11 +717,11 @@ const WorkflowEditor = forwardRef(({
     label: label
   }));
 
-  // Define the Add Node button element to pass to CustomSelect
+  // Define the Add Node button element
   const addNodeButton = (
-    <button 
-      onClick={addNode} 
-      className="p-2 bg-blue-500 text-white rounded-r-md hover:bg-blue-600 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed" // Adjusted styling for integration
+    <button
+      onClick={addNode}
+      className="p-2 bg-blue-500 text-white rounded-r-md hover:bg-blue-600 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
       disabled={disabled}
       title="Add Selected Node Type"
     >
@@ -472,103 +729,133 @@ const WorkflowEditor = forwardRef(({
     </button>
   );
 
+
   return (
     <div className="flex flex-col h-[70vh] border rounded-lg overflow-hidden">
       {/* Toolbar */}
       <div className="p-2 border-b bg-gray-50 flex items-center space-x-4 justify-between">
         {/* Left Group: Workflow Info */}
         <div className="flex items-center space-x-2 flex-grow mr-4">
-           <input 
+           <input
              type="text"
              value={workflowName}
-             onChange={handleNameChange}
+             onChange={handleNameChange} // Now uses debouncedSaveHistory
              placeholder="Workflow Name"
              className="px-2 py-1 border rounded text-sm font-medium focus:ring-blue-500 focus:border-blue-500"
              disabled={disabled}
            />
-           <input 
+           <input
              type="text"
              value={workflowDescription}
-             onChange={handleDescriptionChange}
+             onChange={handleDescriptionChange} // Now uses debouncedSaveHistory
              placeholder="Workflow Description (optional)"
              className="px-2 py-1 border rounded text-sm flex-grow focus:ring-blue-500 focus:border-blue-500"
              disabled={disabled}
            />
         </div>
-        
-        {/* Center Group: Node Management - Combined Select and Add Button */}
+
+        {/* Center Group: Node Management */}
         <div className="flex items-center border-l border-r px-4">
           <CustomSelect
             options={nodeTypeOptions}
             value={selectedNodeType}
             onChange={setSelectedNodeType}
             disabled={disabled}
-            actionButton={addNodeButton} // Pass the button here
-            className="w-48" // Adjust width as needed, maybe wider now
+            actionButton={addNodeButton} // addNode now saves history
+            className="w-48"
           />
-          {/* Removed the standalone Add Node button */}
         </div>
-        
-        {/* Right Group: Workflow Actions */}
+
+        {/* Right Group: Workflow Actions (Add Undo/Redo) */}
         <div className="flex items-center space-x-2 pl-4">
-          {/* Save button removed as workflow will be saved automatically when modal closes */}
-          
-          {/* Action Buttons */} 
-          {onNew && (
-            <button 
-              onClick={openNewConfirmModal} // Changed onClick to open modal handler
-              className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
-              disabled={disabled}
-              title="Create New Workflow"
+            {/* Undo Button */}
+            <button
+              onClick={handleUndo}
+              className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+              disabled={disabled || historyIndex <= 0} // Disable if at start of history or disabled
+              title="Undo (Ctrl+Z)"
             >
-              New Workflow
-               {/* <span>New</span> */} {/* Optionally hide text for space */}
+               <Icon name="undo" className="w-4 h-4" />
             </button>
-          )}
-          {onImport && (
-            <button 
-              onClick={onImport} 
-              className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
-              disabled={disabled}
-              title="Import Workflow from JSON"
+             {/* Redo Button */}
+            <button
+              onClick={handleRedo}
+              className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+              disabled={disabled || historyIndex >= history.length - 1} // Disable if at end of history or disabled
+              title="Redo (Ctrl+Y)"
             >
-               <Icon name="upload" className="w-4 h-4" />
-               {/* <span>Import</span> */} {/* Optionally hide text for space */}
+               <Icon name="redo" className="w-4 h-4" />
             </button>
-          )}
-          {onExport && (
-            <button 
-              onClick={() => onExport(workflow)} 
-              className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
-              disabled={disabled || !workflow} 
-              title="Export Workflow to JSON"
-            >
-               <Icon name="download" className="w-4 h-4" />
-               {/* <span>Export</span> */} {/* Optionally hide text for space */}
-            </button>
-          )}
+
+            {/* Existing Buttons */}
+            {onNew && (
+              <button
+                onClick={openNewConfirmModal}
+                className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
+                disabled={disabled}
+                title="Create New Workflow"
+              >
+                New Workflow
+              </button>
+            )}
+            {onImport && (
+              <button
+                onClick={onImport}
+                className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
+                disabled={disabled}
+                title="Import Workflow from JSON"
+              >
+                 <Icon name="upload" className="w-4 h-4" />
+              </button>
+            )}
+            {onExport && (
+              <button
+                onClick={() => onExport(workflow)} // Export still uses the prop workflow state
+                className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
+                disabled={disabled || !workflow}
+                title="Export Workflow to JSON"
+              >
+                 <Icon name="download" className="w-4 h-4" />
+              </button>
+            )}
         </div>
       </div>
 
       {/* React Flow Canvas */}
-      <div className="flex-grow relative" ref={reactFlowWrapper}>
+      <div className="flex-grow relative" ref={reactFlowWrapper} tabIndex={0} /* Make div focusable for events */ >
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={handleNodesChange} // Use the combined handler
-          onEdgesChange={handleEdgesChange} // Use the combined handler
-          onConnect={onConnect}
+          onNodesChange={handleNodesChange} // Now calls debouncedSaveHistory for moves/resizes
+          onEdgesChange={handleEdgesChange} // Now calls saveHistorySnapshot for removals
+          onConnect={onConnect}           // Now calls saveHistorySnapshot
           nodeTypes={nodeTypes}
           fitView
-          className="bg-gradient-to-br from-blue-50 to-indigo-100" // Example background
-          deleteKeyCode={disabled ? null : 'Backspace'} // Disable delete if editor is disabled
+          className="bg-gradient-to-br from-blue-50 to-indigo-100"
+          // Let React Flow handle deletion via onNodesChange/onEdgesChange after we save history
+          deleteKeyCode={disabled ? null : 'Backspace'}
           nodesDraggable={!disabled}
           nodesConnectable={!disabled}
           elementsSelectable={!disabled}
+          selectNodesOnDrag={!disabled}
+          // Handle deletions specifically to save history *before* the change occurs
+          onNodesDelete={(deletedNodes) => {
+              if (!disabled && !isRestoringHistory.current && deletedNodes.length > 0) {
+                  // console.log("Handling node delete for history.");
+                  saveHistorySnapshot(); // Save state *before* deletion is applied by onNodesChange
+              }
+          }}
+          onEdgesDelete={(deletedEdges) => {
+               if (!disabled && !isRestoringHistory.current && deletedEdges.length > 0) {
+                  // console.log("Handling edge delete for history.");
+                  saveHistorySnapshot(); // Save state *before* deletion is applied by onEdgesChange
+              }
+          }}
         >
           <Controls showInteractive={!disabled} />
           <MiniMap nodeStrokeWidth={3} zoomable pannable />
           <Background variant="dots" gap={16} size={1} color="#ccc" />
+          {/* <Panel position="top-right">History Index: {historyIndex}</Panel> */}
         </ReactFlow>
       </div>
 
@@ -580,7 +867,7 @@ const WorkflowEditor = forwardRef(({
         title="Discard Unsaved Changes?"
         message="Creating a new workflow will discard any unsaved changes to the current one. Consider exporting first if you want to save it."
         confirmButtonText="Discard and Create New"
-        confirmButtonVariant="danger" // Use danger variant for discarding
+        confirmButtonVariant="danger"
       />
     </div>
   );

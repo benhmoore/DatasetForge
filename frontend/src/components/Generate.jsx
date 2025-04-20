@@ -1684,14 +1684,14 @@ const Generate = ({ context }) => {
       {/* Workflow Manager Modal */}
       {isWorkflowModalOpen && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-y-auto p-4"
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-y-auto p-12 h-full w-full"
           onClick={handleCloseWorkflowModal} // Close on backdrop click
           role="dialog"
           aria-modal="true"
           aria-labelledby="workflow-manager-title"
         >
           <div 
-            className="bg-white rounded-lg w-full max-w-6xl shadow-xl max-h-[90vh] flex flex-col animate-fadeIn"
+            className="bg-white rounded-lg w-full h-full shadow-xl flex flex-col animate-fadeIn" // Use w-full and h-full to fill the padded area
             onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
           >
             {/* Modal Header */}

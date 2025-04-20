@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import api from '../api/apiClient'; // Correct: Import the default export 'api'
 import AiSeedModal from './AiSeedModal'; // Import the new modal component
 import SeedBankModal from './SeedBankModal'; // Import the seed bank modal
+import SlotEditModal from './SlotEditModal'; // Import the slot edit modal
 import Icon from './Icons'; // Import the Icon component
 import CustomSlider from './CustomSlider'; // Import the new CustomSlider component
 import FileImportButton from './FileImportButton'; // Import the new FileImportButton component
@@ -98,6 +99,8 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
   const [validationErrors, setValidationErrors] = useState({}); // { seedIndex: { slotName: true } }
   const [isInitialized, setIsInitialized] = useState(false); // Track if initial load/reset is done
   const [isPreviewCollapsed, setIsPreviewCollapsed] = useState(true); // State for prompt preview collapse
+  const [isSlotEditModalOpen, setIsSlotEditModalOpen] = useState(false); // State for slot edit modal
+  const [editingSlotData, setEditingSlotData] = useState({ slotName: null }); // State for slot edit modal data
 
   // Determine disabled state based on generation, paraphrasing, or archived dataset
   const isDisabled = isGenerating || isParaphrasing || !!selectedDataset?.archived;
@@ -235,6 +238,10 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
     if (isDisabled) return; // Prevent changes if disabled
     setSeedList(prevList => {
       const newList = [...prevList];
+      // Ensure the seed object exists at the current index
+      if (!newList[currentSeedIndex]) {
+        newList[currentSeedIndex] = createInitialSeed(template?.slots); // Create if missing
+      }
       newList[currentSeedIndex] = {
         ...newList[currentSeedIndex],
         [slot]: value
@@ -257,7 +264,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
       }
       return prevErrors;
     });
-  }, [currentSeedIndex, isDisabled]);
+  }, [currentSeedIndex, isDisabled, template?.slots, createInitialSeed]); // Added dependencies
 
   // Add a new seed (blank)
   const addSeed = useCallback(() => {
@@ -572,6 +579,21 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
     input.click();
   }, [handleSlotChange, isDisabled]);
 
+  // --- Slot Edit Modal Handlers ---
+  const openSlotEditModal = useCallback((slotName) => {
+    if (isDisabled) return; // Don't open if disabled
+    const currentValue = currentSeed[slotName] || '';
+    setEditingSlotData({ slotName });
+    setIsSlotEditModalOpen(true);
+  }, [currentSeed, isDisabled]);
+
+  const closeSlotEditModal = useCallback(() => {
+    setIsSlotEditModalOpen(false);
+    setEditingSlotData({ slotName: null }); // Clear data on close
+  }, []);
+
+  // --- End Slot Edit Modal Handlers ---
+
   // Memoize the pagination indicators to prevent unnecessary recalculations
   const renderPaginationIndicators = useMemo(() => {
     if (seedList.length <= 1) return null;
@@ -676,10 +698,12 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
               type="text"
               value={currentSeed[slot] || ''}
               onChange={(e) => handleSlotChange(slot, e.target.value)}
+              onDoubleClick={() => openSlotEditModal(slot)} // Keep double-click handler
               className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200
                           ${hasError ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}
                           ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-              placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
+              placeholder={`Enter ${slot} (or double-click to expand)`} // Updated placeholder
+              title="Type directly or double-click to edit in a larger window" // Updated title
               disabled={isDisabled}
               aria-invalid={hasError}
               aria-describedby={hasError ? errorId : undefined}
@@ -702,13 +726,13 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
           )}
           {currentSeed[slot] && currentSeed[slot].length > 100 && (
             <p className="mt-1 text-xs text-gray-500">
-              {currentSeed[slot].length.toLocaleString()} characters
+              {currentSeed[slot].length.toLocaleString()} characters (Double-click to view all)
             </p>
           )}
         </div>
       );
     });
-  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isDisabled, validationErrors]);
+  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isDisabled, validationErrors, openSlotEditModal]); // Added openSlotEditModal dependency
 
   // Calculate total error count across all seeds
   const totalErrorCount = useMemo(() => {
@@ -946,6 +970,24 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
         currentSeedIndex={currentSeedIndex}
         setCurrentSeedIndex={setCurrentSeedIndex}
       />
+
+      {/* Render the Slot Edit Modal */}
+      {isSlotEditModalOpen && editingSlotData.slotName && ( // Ensure slotName is set before rendering
+        <SlotEditModal
+          isOpen={isSlotEditModalOpen}
+          onClose={closeSlotEditModal}
+          slotName={editingSlotData.slotName}
+          // Pass the current value directly from the main state
+          value={currentSeed[editingSlotData.slotName] || ''}
+          // Pass a function that updates the main state
+          onChange={(newValue) => {
+            if (editingSlotData.slotName) { // Check slotName still exists
+              handleSlotChange(editingSlotData.slotName, newValue);
+            }
+          }}
+          isDisabled={isDisabled}
+        />
+      )}
     </div>
   );
 };
