@@ -34,6 +34,11 @@ class WorkflowExecutor:
             "output": self._execute_output_node,
             "template": self._execute_template_node,
         }
+        
+        # Enable additional logging if in debug mode
+        if debug_mode:
+            logger.setLevel(logging.DEBUG)
+            logger.debug("Workflow executor initialized in debug mode")
     
     def _get_timestamp(self) -> str:
         """Helper method to get consistent timestamp format for progress updates."""
@@ -61,10 +66,44 @@ class WorkflowExecutor:
         nodes = workflow_data.get("nodes", {})
         connections = workflow_data.get("connections", [])
         
-        # Build a graph of node dependencies
-        # Each node's ID maps to a list of dependent node IDs
+        # Validate connections and nodes
+        if not connections:
+            logger.warning("Workflow has no connections between nodes!")
+        
+        if not nodes:
+            logger.warning("Workflow has no nodes!")
+            return WorkflowExecutionResult(
+                workflow_id=workflow_id,
+                results=[],
+                seed_data=seed_data,
+                final_output={"output": "Workflow contains no nodes"},
+                execution_time=0,
+                status="error"
+            )
+        
+        # Analyze the graph
+        # Find input and output nodes
+        input_nodes = [node_id for node_id, node in nodes.items() if node.get("type") == "input"]
+        output_nodes = [node_id for node_id, node in nodes.items() if node.get("type") == "output"]
+        
+        if not input_nodes:
+            logger.warning("Workflow has no input nodes!")
+        
+        if not output_nodes:
+            logger.warning("Workflow has no output nodes!")
+        
+        # Build a graph of node dependencies (directed from input to output)
         dependency_graph = self._build_dependency_graph(nodes, connections)
         
+        # Check for nodes that have no incoming or outgoing connections
+        isolated_nodes = []
+        for node_id in nodes:
+            incoming = any(node_id in deps for deps in dependency_graph.values())
+            outgoing = node_id in dependency_graph and dependency_graph[node_id]
+            if not incoming and not outgoing and node_id not in input_nodes:
+                isolated_nodes.append(node_id)
+                logger.warning(f"Node {node_id} is isolated (no connections)")
+            
         # Determine execution order (topological sort)
         execution_order = self._determine_execution_order(dependency_graph)
         logger.info(f"Execution order: {execution_order}")
@@ -73,14 +112,36 @@ class WorkflowExecutor:
         node_results = []
         node_outputs = {}  # Store intermediate outputs for each node
         
-        # Initialize with seed data
+        # Initialize with seed data and log for debugging
         initial_data = {
             "seed_data": seed_data.dict(),
             "slots": seed_data.slots
         }
         
-        # Track the final output node
-        final_node_id = execution_order[-1] if execution_order else None
+        # Log initial data structure for debugging
+        if self.debug_mode:
+            debug_info = {
+                'input_keys': list(initial_data.keys()),
+                'slots': list(initial_data.get('slots', {}).keys())
+            }
+            
+            # Add slot values with truncation for long values
+            slot_values = {}
+            for k, v in initial_data.get('slots', {}).items():
+                if isinstance(v, str) and len(v) > 30:
+                    slot_values[k] = v[:30] + '...'
+                else:
+                    slot_values[k] = str(v)
+            debug_info['slot_values'] = slot_values
+            
+            logger.debug(f"Workflow initial data: {json.dumps(debug_info, indent=2)}")
+        
+        # Find the final output node(s) - use the last output node in execution order
+        # (or the last node if no output nodes exist)
+        output_node_ids = [node_id for node_id in execution_order if node_id in output_nodes]
+        final_node_id = output_node_ids[-1] if output_node_ids else execution_order[-1] if execution_order else None
+        
+        logger.info(f"Using node {final_node_id} as final output node")
         final_output = {}
         
         for node_id in execution_order:
@@ -91,6 +152,27 @@ class WorkflowExecutor:
                 
             # Get node inputs based on connections
             node_inputs = self._get_node_inputs(node_id, connections, node_outputs, initial_data)
+            
+            # Debug log - especially important for the input node
+            if self.debug_mode:
+                node_type = node_config.get("type", "unknown")
+                if node_type == "input":
+                    # For input nodes, log more detailed information
+                    debug_info = {
+                        'input_keys': list(node_inputs.keys()),
+                        'template_output_present': 'template_output' in node_inputs,
+                        'output_present': 'output' in node_inputs,
+                        'slot_keys': list(node_inputs.get('slots', {}).keys())
+                    }
+                    
+                    # Add template output type if present
+                    if 'template_output' in node_inputs:
+                        debug_info['template_output_type'] = type(node_inputs.get('template_output')).__name__
+                    
+                    logger.debug(f"Input node {node_id} received inputs: {json.dumps(debug_info, indent=2)}")
+                else:
+                    # For other nodes, just log the keys
+                    logger.debug(f"Node {node_id} of type {node_type} received inputs with keys: {list(node_inputs.keys())}")
             
             # Execute the node
             node_type = node_config.get("type")
@@ -159,16 +241,71 @@ class WorkflowExecutor:
             status = "partial_success"
         else:
             status = "error"
+            
+        # Ensure we have a final output
+        if not final_output and final_node_id:
+            # Try to get the output from the intended final node
+            final_output = node_outputs.get(final_node_id, {})
+            
+            if not final_output and output_node_ids:
+                # Try any output node
+                for output_id in output_node_ids:
+                    if output_id in node_outputs:
+                        final_output = node_outputs[output_id]
+                        logger.info(f"Using output from node {output_id} as final output")
+                        break
+                        
+            # If still no output, try all executed nodes
+            if not final_output and node_outputs:
+                # Just use the last node that executed successfully
+                last_node_id = next(reversed(node_outputs.keys()), None)
+                if last_node_id:
+                    final_output = node_outputs[last_node_id]
+                    logger.info(f"Using output from node {last_node_id} as fallback final output")
+        
+        # If still no final output, provide diagnostics about what went wrong
+        if not final_output or not final_output.get("output"):
+            # Determine what went wrong with the workflow execution
+            error_message = "No output from workflow"
+            
+            # Check for specific issues
+            if not connections:
+                error_message = "No output from workflow - Missing connections between nodes. Please connect your nodes."
+            elif not output_nodes:
+                error_message = "No output from workflow - Missing output node. Please add an output node to your workflow."
+            elif isolated_nodes:
+                error_message = f"No output from workflow - Detected isolated nodes: {', '.join(isolated_nodes)}. Please connect all nodes."
+            
+            if "template_output" in initial_data:
+                final_output = {
+                    "output": error_message,
+                    "original_template_output": initial_data["template_output"],
+                    "_error": error_message
+                }
+                logger.warning(f"{error_message} - attempted to use original template output as fallback")
+            else:
+                final_output = {"output": error_message, "_error": error_message}
+                logger.warning(error_message)
         
         logger.info(f"Workflow execution completed in {total_execution_time:.2f}s with status: {status}")
         
+        # Create the final result with all diagnostic information
         return WorkflowExecutionResult(
             workflow_id=workflow_id,
             results=node_results,
             seed_data=seed_data,
             final_output=final_output,
             execution_time=total_execution_time,
-            status=status
+            status=status,
+            # Include diagnostic information in the result
+            meta={
+                "input_nodes": input_nodes,
+                "output_nodes": output_nodes,
+                "isolated_nodes": isolated_nodes,
+                "execution_order": execution_order,
+                "selected_output_node": final_node_id,
+                "has_connections": len(connections) > 0
+            }
         )
     
     def _build_dependency_graph(self, nodes: Dict[str, Any], 
@@ -256,72 +393,187 @@ class WorkflowExecutor:
         # Start with initial data
         node_inputs = initial_data.copy()
         
+        # Special case for Input nodes: make sure they get the template_output
+        # from the initial_data
+        if "template_output" in initial_data and "template_output" not in node_inputs:
+            node_inputs["template_output"] = initial_data["template_output"]
+            if self.debug_mode:
+                logger.debug(f"Preserving template_output for node {node_id}")
+                
+        if "output" in initial_data and not node_inputs.get("output"):
+            node_inputs["initial_output"] = initial_data["output"]
+            if self.debug_mode:
+                logger.debug(f"Preserving initial output for node {node_id}")
+        
         # Find connections where this node is the target
         input_connections = [
             conn for conn in connections 
             if conn.get("target_node_id") == node_id
         ]
         
-        # Add inputs from connected nodes
+        # Add inputs from connected nodes (only if there are connections)
+        connected_input = False
         for connection in input_connections:
             source_id = connection.get("source_node_id")
             if source_id in node_outputs:
+                connected_input = True
+                
+                # Preserve important fields while updating with new outputs
+                original_template_output = node_inputs.get("original_template_output")
+                template_output = node_inputs.get("template_output")
+                
                 # Use the entire output of the source node as input to this node
-                # In a more advanced implementation, we might use source_handle/target_handle
-                # to map specific outputs to specific inputs
                 node_inputs.update(node_outputs[source_id])
+                
+                # Restore original_template_output if it was lost in the update
+                if original_template_output and "original_template_output" not in node_inputs:
+                    node_inputs["original_template_output"] = original_template_output
+                    if self.debug_mode:
+                        logger.debug(f"Restored original_template_output after node connection update for {node_id}")
+                
+                # Restore template_output if it was lost and we don't have a new one
+                if template_output and "template_output" not in node_inputs:
+                    node_inputs["template_output"] = template_output
+                    if self.debug_mode:
+                        logger.debug(f"Restored template_output after node connection update for {node_id}")
+        
+        # Only allow connections defined in the graph - no automatic data flow
+        # If there are no connections for this node and it's not an input node,
+        # log a warning as there's no way for data to reach this node
+        if not connected_input and not input_connections and not node_id.startswith("input"):
+            logger.warning(f"Node {node_id} has no input connections - it may not receive any data")
         
         return node_inputs
     
-    async def _execute_model_node(self, node_config: Dict[str, Any], 
+    async def _execute_model_node(self, node_config: Dict[str, Any],
                            node_inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a model node by calling the Ollama API directly.
+        Handles multiple inputs referenced in system_instruction.
         
         Args:
-            node_config: The node configuration including model, system instruction, etc.
-            node_inputs: The inputs for the node
-            
+            node_config: The node configuration including model, system_instruction, etc.
+            node_inputs: The inputs for the node, with keys matching input handle IDs
+                
         Returns:
             Dict[str, Any]: The outputs from the node
         """
         from ..api.generate import call_ollama_generate
-        
+
         try:
             # Extract model parameters
             model = node_config.get("model")
             if not model:
-                raise ValueError("Model node requires a model name")
+                raise ValueError("Model name is required for model node")
                 
-            system_prompt = node_config.get("system_instruction", "")
+            # Get system instruction directly from node config
+            system_instruction = node_config.get("system_instruction", "")
             
-            # Prepare user prompt - use the input value if available
-            input_value = ""
-            for key in ["output", "user_prompt", "text"]:
-                if key in node_inputs:
-                    input_value = node_inputs.get(key, "")
-                    break
+            # Get defined inputs from node config
+            inputs = node_config.get("inputs", [])
+            
+            # Collect all input texts from connected nodes
+            input_texts = {}
+            for input_config in inputs:
+                input_id = input_config.get("id")
+                if input_id and input_id in node_inputs:
+                    # Get the value from connected node output
+                    value = node_inputs[input_id]
+                    if not isinstance(value, str):
+                        # Handle non-string inputs (convert or extract output field)
+                        if isinstance(value, dict) and "output" in value:
+                            value = value["output"]
+                        else:
+                            value = str(value)
                     
-            # If no input found, try using slots
-            if not input_value and "slots" in node_inputs:
-                slots_str = ", ".join([f"{k}: {v}" for k, v in node_inputs.get("slots", {}).items()])
-                input_value = f"Process the following input: {slots_str}"
+                    input_texts[input_id] = value
+                    if self.debug_mode:
+                        logger.debug(f"Model node {node_config.get('id')}: Using input '{input_id}' with text length {len(value)}")
+            
+            # If there are no inputs, log warning
+            if not input_texts:
+                logger.warning(f"Model node {node_config.get('id')} has no connected inputs")
                 
+            # If there is only one input, use it directly as user prompt
+            user_prompt = ""
+            if len(input_texts) == 1:
+                # With one input, use it directly as the user prompt
+                user_prompt = next(iter(input_texts.values()))
+                if self.debug_mode:
+                    logger.debug(f"Model node {node_config.get('id')}: Using single input directly as user prompt")
+            else:
+                # With multiple inputs, substitute them into the system instruction
+                # First check if system_instruction has placeholders
+                placeholders = set(re.findall(r"\{([^{}]+)\}", system_instruction))
+                
+                if placeholders:
+                    # Prepare substitution dictionary
+                    substitutions = {}
+                    missing_inputs = []
+                    
+                    # Check for placeholders that match our input IDs
+                    for placeholder in placeholders:
+                        if placeholder in input_texts:
+                            substitutions[placeholder] = input_texts[placeholder]
+                        else:
+                            missing_inputs.append(placeholder)
+                            logger.warning(f"Model node {node_config.get('id')}: Missing input for placeholder '{{{placeholder}}}' referenced in system instruction")
+                            substitutions[placeholder] = f"[MISSING: {placeholder}]"
+                    
+                    # Process system instruction - replace placeholders with input values
+                    processed_system = system_instruction
+                    for key, value in substitutions.items():
+                        placeholder = f"{{{key}}}"
+                        processed_system = processed_system.replace(placeholder, value)
+                    
+                    # Update system instruction with processed version
+                    system_instruction = processed_system
+                    
+                    if self.debug_mode:
+                        logger.debug(f"Model node {node_config.get('id')}: Processed system instruction with substitutions")
+                
+                # Combine any inputs not referenced in system instruction as user prompt
+                unreferenced_inputs = []
+                for input_id, text in input_texts.items():
+                    if input_id not in placeholders:
+                        unreferenced_inputs.append(text)
+                
+                # Join unreferenced inputs as user prompt
+                if unreferenced_inputs:
+                    user_prompt = "\n\n".join(unreferenced_inputs)
+                    if self.debug_mode:
+                        logger.debug(f"Model node {node_config.get('id')}: Combined {len(unreferenced_inputs)} unreferenced inputs as user prompt")
+            
+            # If still no user prompt, look for any input to use
+            if not user_prompt and node_inputs:
+                # Try to find a useful input
+                for input_name, input_value in node_inputs.items():
+                    # Skip special keys like "seed_data"
+                    if input_name in ["seed_data", "slots"]:
+                        continue
+                        
+                    # Try to extract a string value
+                    if isinstance(input_value, str):
+                        user_prompt = input_value
+                        logger.info(f"Model node {node_config.get('id')}: Using '{input_name}' as fallback user prompt")
+                        break
+                    elif isinstance(input_value, dict) and "output" in input_value:
+                        user_prompt = input_value["output"]
+                        logger.info(f"Model node {node_config.get('id')}: Using '{input_name}.output' as fallback user prompt")
+                        break
+            
             # Get model parameters if specified
-            model_parameters = None
-            if node_config.get("model_parameters"):
-                from ..api.schemas import ModelParameters
-                model_parameters = ModelParameters.parse_obj(node_config.get("model_parameters"))
-                
+            model_parameters = node_config.get("model_parameters")
+            
             # Call Ollama API
             result = await call_ollama_generate(
                 model=model,
-                system_prompt=system_prompt,
-                user_prompt=input_value,
+                system_prompt=system_instruction,
+                user_prompt=user_prompt,
                 template_params=model_parameters,
-                template=None,  # No template used directly
-                user_prefs={},  # No user prefs needed
-                is_tool_calling=False  # Tool calling not supported in direct model nodes
+                template=None,
+                user_prefs={},
+                is_tool_calling=False
             )
             
             # Extract response
@@ -331,16 +583,22 @@ class WorkflowExecutor:
             return {
                 "output": output_text,
                 "model": model,
-                "system_prompt": system_prompt,
-                "input": input_value,
+                "system_instruction": system_instruction,
+                "user_prompt": user_prompt,
+                "inputs_provided": list(input_texts.keys()),
                 "timestamp": datetime.utcnow().isoformat()
             }
             
         except Exception as e:
-            logger.exception(f"Error executing model node: {str(e)}")
-            raise ValueError(f"Model execution failed: {str(e)}")
-            
-    async def _execute_template_node(self, node_config: Dict[str, Any], 
+            logger.exception(f"Error executing model node {node_config.get('id')}: {str(e)}")
+            error_details = {
+                "error": str(e),
+                "model": node_config.get("model"),
+                "inputs_available": list(node_inputs.keys())
+            }
+            raise ValueError(f"Model execution failed: {json.dumps(error_details)}")
+
+    async def _execute_template_node(self, node_config: Dict[str, Any],
                            node_inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a template node using the DatasetForge template system.
@@ -507,6 +765,10 @@ class WorkflowExecutor:
         """
         Execute an input node - passes through the template generation output.
         
+        The Input node is the entry point for workflows. In the frontend, the generation process
+        is run as normal (with templates and the Ollama API), and the output of that process
+        is provided as template_output to this node.
+        
         Args:
             node_config: The node configuration
             node_inputs: The inputs for the node (contains template generation output)
@@ -514,14 +776,51 @@ class WorkflowExecutor:
         Returns:
             Dict[str, Any]: The processed template output to pass to downstream nodes
         """
-        # We expect node_inputs to contain 'output' field from the template generation
-        if 'output' not in node_inputs and 'generation_output' in node_inputs:
-            # Try to use generation_output as fallback if output is not available
-            node_inputs['output'] = node_inputs['generation_output']
+        if self.debug_mode:
+            debug_data = {
+                'keys_available': list(node_inputs.keys()),
+                'slots_available': list(node_inputs.get('slots', {}).keys()),
+                'has_template_output': 'template_output' in node_inputs,
+                'has_output': 'output' in node_inputs
+            }
             
-        # Ensure we have an output field, even if empty
-        if 'output' not in node_inputs:
-            logger.warning("Input node received no output from template generation")
+            # Add type info separately to avoid syntax errors
+            if 'template_output' in node_inputs:
+                debug_data['template_output_type'] = type(node_inputs.get('template_output')).__name__
+                
+            logger.debug(f"Input node received raw inputs: {json.dumps(debug_data, indent=2)}")
+        
+        # We expect template_output to be provided directly by the frontend as a string
+        # This is the output from the template+seed+model generation process
+        if 'template_output' in node_inputs and isinstance(node_inputs['template_output'], str):
+            # Store the template output as 'output' - the standard field for node outputs
+            output_text = node_inputs['template_output']
+            logger.info(f"Input node using template_output as workflow input (length: {len(output_text)})")
+            
+            # Make sure we have the template output in both original and standard fields
+            node_inputs['output'] = output_text
+            node_inputs['original_template_output'] = output_text  # Preserve the original for downstream nodes
+        
+        # If not found in template_output, look for it in the 'output' field
+        elif 'output' in node_inputs and node_inputs['output']:
+            # Output already available, nothing to do
+            logger.info("Input node using existing output field")
+            pass
+        
+        # Check other possible locations as fallbacks
+        elif isinstance(node_inputs.get('template_output'), dict) and 'output' in node_inputs['template_output']:
+            # If template_output is a dict with output field, use that
+            node_inputs['output'] = node_inputs['template_output']['output']
+            logger.info(f"Using template_output.output as the input to workflow")
+        
+        elif 'generation_output' in node_inputs:
+            # Try to use generation_output as fallback
+            node_inputs['output'] = node_inputs['generation_output']
+            logger.info(f"Using generation_output as fallback for workflow input")
+        
+        else:
+            # Ensure we have an output field, even if empty
+            logger.warning("Input node received no template output data - using empty string")
             node_inputs['output'] = ""
         
         # Mark the source as the input node
@@ -529,8 +828,48 @@ class WorkflowExecutor:
         result["_node_info"] = {
             "type": "input",
             "id": node_config.get("id", "input-node"),
+            "source": "template_output",
             "timestamp": datetime.utcnow().isoformat()
         }
+        
+        # Add more detailed debug info
+        if self.debug_mode:
+            output_value = result.get('output', '')
+            
+            # Prepare a preview of the output
+            if isinstance(output_value, str):
+                if len(output_value) > 100:
+                    output_preview = output_value[:100] + '...'
+                else:
+                    output_preview = output_value
+            else:
+                output_preview = str(output_value)
+            
+            # Determine the input source
+            if isinstance(node_inputs.get('template_output'), str):
+                input_source = "direct_template_output"
+            elif isinstance(node_inputs.get('template_output'), dict):
+                input_source = "object_template_output"
+            elif 'output' in node_inputs:
+                input_source = "output_field"
+            elif 'generation_output' in node_inputs:
+                input_source = "generation_output"
+            else:
+                input_source = "none"
+            
+            # Create the debug info object
+            debug_info = {
+                "input_source": input_source,
+                "output_length": len(output_value) if isinstance(output_value, str) else 0,
+                "output_preview": output_preview
+            }
+            
+            # Add type info separately to avoid syntax errors
+            if 'template_output' in node_inputs:
+                debug_info["template_output_type"] = type(node_inputs.get('template_output')).__name__
+            
+            result["_debug"] = debug_info
+            logger.debug(f"Input node producing output: {json.dumps(debug_info, indent=2)}")
         
         return result
         
@@ -546,11 +885,58 @@ class WorkflowExecutor:
         Returns:
             Dict[str, Any]: The final output wrapped with metadata
         """
-        # Determine which field to use as the final output
+        # Determine which field to use as the final output - usually 'output'
         output_field = node_config.get("field", "output")
+        
+        # Debug log the available inputs
+        if self.debug_mode:
+            debug_info = {
+                'available_fields': list(node_inputs.keys()),
+                'selected_field': output_field,
+                'has_output_field': output_field in node_inputs,
+            }
+            
+            # Add preview of the output if available
+            if output_field in node_inputs:
+                output_value = node_inputs.get(output_field)
+                if isinstance(output_value, str):
+                    debug_info['output_preview'] = output_value[:100] + ('...' if len(output_value) > 100 else '')
+                    debug_info['output_length'] = len(output_value)
+            
+            logger.debug(f"Output node inputs: {json.dumps(debug_info, indent=2)}")
         
         # Extract the value from the specified field
         output_value = node_inputs.get(output_field, "")
+        
+        if not output_value and output_field == "output":
+            # Special case: if we're looking for 'output' and it's empty or blank, 
+            # try to find the template output data from various locations
+            if "original_template_output" in node_inputs:
+                output_value = node_inputs["original_template_output"]
+                logger.info(f"Output node using original_template_output as final output (len: {len(output_value) if isinstance(output_value, str) else 0})")
+            elif "template_output" in node_inputs:
+                output_value = node_inputs["template_output"]
+                logger.info(f"Output node using template_output as final output (len: {len(output_value) if isinstance(output_value, str) else 0})")
+            elif "_node_info" in node_inputs and node_inputs.get("_node_info", {}).get("type") == "input":
+                # This data came from an input node, try to find its original content
+                for key in ["original_output", "input_text", "template_output"]:
+                    if key in node_inputs and node_inputs[key]:
+                        output_value = node_inputs[key]
+                        logger.info(f"Output node using {key} as final output")
+                        break
+                        
+            # Last resort - check slots
+            if not output_value and "slots" in node_inputs:
+                # Try to find template_output in slots
+                if "template_output" in node_inputs["slots"]:
+                    output_value = node_inputs["slots"]["template_output"]
+                    logger.info("Output node found template_output in slots")
+                elif "output" in node_inputs["slots"]:
+                    output_value = node_inputs["slots"]["output"]
+                    logger.info("Output node found output in slots")
+        
+        if not output_value:
+            logger.warning(f"Output node has no value for field '{output_field}'. Using empty string.")
         
         # Create the final result with metadata
         result = {
@@ -563,6 +949,15 @@ class WorkflowExecutor:
                 "timestamp": datetime.utcnow().isoformat()
             }
         }
+        
+        # Add debug info to the result for troubleshooting
+        if self.debug_mode:
+            result["_debug"] = {
+                "output_field": output_field,
+                "output_length": len(output_value) if isinstance(output_value, str) else 0,
+                "input_keys": list(node_inputs.keys())
+            }
+            logger.debug(f"Output node final result length: {len(output_value) if isinstance(output_value, str) else 0}")
         
         return result
     
@@ -593,9 +988,72 @@ class WorkflowExecutor:
         nodes = workflow_data.get("nodes", {})
         connections = workflow_data.get("connections", [])
         
+        # Validate connections and nodes
+        if not connections:
+            logger.warning("Workflow has no connections between nodes!")
+            await progress_callback("system", "error", 1.0, 
+                                   NodeExecutionResult(
+                                       node_id="system",
+                                       node_type="system",
+                                       input={},
+                                       output={},
+                                       execution_time=0,
+                                       status="error",
+                                       error_message="Workflow has no connections between nodes"
+                                   ))
+        
+        if not nodes:
+            logger.warning("Workflow has no nodes!")
+            error_result = WorkflowExecutionResult(
+                workflow_id=workflow_id,
+                results=[],
+                seed_data=seed_data,
+                final_output={"output": "Workflow contains no nodes"},
+                execution_time=0,
+                status="error"
+            )
+            await progress_callback("system", "error", 1.0)
+            return error_result
+        
+        # Analyze the graph
+        # Find input and output nodes
+        input_nodes = [node_id for node_id, node in nodes.items() if node.get("type") == "input"]
+        output_nodes = [node_id for node_id, node in nodes.items() if node.get("type") == "output"]
+        
+        if not input_nodes:
+            logger.warning("Workflow has no input nodes!")
+        
+        if not output_nodes:
+            logger.warning("Workflow has no output nodes!")
+            
         # Build dependency graph and determine execution order
         dependency_graph = self._build_dependency_graph(nodes, connections)
         execution_order = self._determine_execution_order(dependency_graph)
+        
+        # Check for isolated nodes
+        isolated_nodes = []
+        for node_id in nodes:
+            incoming = any(node_id in deps for deps in dependency_graph.values())
+            outgoing = node_id in dependency_graph and dependency_graph[node_id]
+            if not incoming and not outgoing and node_id not in input_nodes:
+                isolated_nodes.append(node_id)
+                logger.warning(f"Node {node_id} is isolated (no connections)")
+                
+        # Send this information to the client
+        await progress_callback("system", "info", 0.0, 
+                              NodeExecutionResult(
+                                  node_id="system",
+                                  node_type="system",
+                                  input={},
+                                  output={
+                                      "input_nodes": input_nodes,
+                                      "output_nodes": output_nodes,
+                                      "isolated_nodes": isolated_nodes,
+                                      "execution_order": execution_order
+                                  },
+                                  execution_time=0,
+                                  status="info"
+                              ))
         
         # Send initial queued status for all nodes
         for node_id in execution_order:
@@ -613,11 +1071,26 @@ class WorkflowExecutor:
             "slots": seed_data.slots
         }
         
-        # Track the final output node
-        final_node_id = execution_order[-1] if execution_order else None
+        # Log initial data structure for debugging
+        if self.debug_mode:
+            debug_info = {
+                'input_keys': list(initial_data.keys()),
+                'slots': list(initial_data.get('slots', {}).keys()),
+                'template_output_exists': 'template_output' in initial_data.get('slots', {}),
+                'output_exists': 'output' in initial_data.get('slots', {})
+            }
+            logger.debug(f"Workflow progress execution initial data: {json.dumps(debug_info, indent=2)}")
+        
+        # Find the final output node(s) - use the last output node in execution order
+        # (or the last node if no output nodes exist)
+        output_node_ids = [node_id for node_id in execution_order if node_id in output_nodes]
+        final_node_id = output_node_ids[-1] if output_node_ids else execution_order[-1] if execution_order else None
+        
+        logger.info(f"Using node {final_node_id} as final output node")
         final_output = {}
         
-        for index, node_id in enumerate(execution_order):
+        # Fixed loop: iterate through execution_order which is a list of node IDs
+        for node_id in execution_order:
             node_config = nodes.get(node_id)
             if not node_config:
                 logger.error(f"Node {node_id} not found in workflow configuration")
@@ -629,6 +1102,27 @@ class WorkflowExecutor:
             
             # Get node inputs
             node_inputs = self._get_node_inputs(node_id, connections, node_outputs, initial_data)
+            
+            # Debug log - especially important for the input node
+            if self.debug_mode:
+                node_type = node_config.get("type", "unknown")
+                if node_type == "input":
+                    # For input nodes, log more detailed information
+                    debug_info = {
+                        'input_keys': list(node_inputs.keys()),
+                        'template_output_present': 'template_output' in node_inputs,
+                        'output_present': 'output' in node_inputs,
+                        'slot_keys': list(node_inputs.get('slots', {}).keys())
+                    }
+                    
+                    # Add template output type if present
+                    if 'template_output' in node_inputs:
+                        debug_info['template_output_type'] = type(node_inputs.get('template_output')).__name__
+                    
+                    logger.debug(f"Input node {node_id} [streaming] received inputs: {json.dumps(debug_info, indent=2)}")
+                else:
+                    # For other nodes, just log the keys
+                    logger.debug(f"Node {node_id} of type {node_type} [streaming] received inputs with keys: {list(node_inputs.keys())}")
             
             # Get the right executor
             node_type = node_config.get("type")
@@ -691,7 +1185,7 @@ class WorkflowExecutor:
                 
             except Exception as e:
                 logger.exception(f"Error executing node {node_id}: {str(e)}")
-                node_execution_time = time.time() - node_start_time
+                node_execution_time = time.time() - node_start_time if 'node_start_time' in locals() else 0
                 
                 node_result = NodeExecutionResult(
                     node_id=node_id,
@@ -716,15 +1210,69 @@ class WorkflowExecutor:
             status = "partial_success"
         else:
             status = "error"
+            
+        # Ensure we have a final output
+        if not final_output and final_node_id:
+            # Try to get the output from the intended final node
+            final_output = node_outputs.get(final_node_id, {})
+            
+            if not final_output and output_node_ids:
+                # Try any output node
+                for output_id in output_node_ids:
+                    if output_id in node_outputs:
+                        final_output = node_outputs[output_id]
+                        logger.info(f"Using output from node {output_id} as final output")
+                        break
+                        
+            # If still no output, try all executed nodes
+            if not final_output and node_outputs:
+                # Just use the last node that executed successfully
+                last_node_id = next(reversed(node_outputs.keys()), None)
+                if last_node_id:
+                    final_output = node_outputs[last_node_id]
+                    logger.info(f"Using output from node {last_node_id} as fallback final output")
         
-        # Create the final result
+        # If still no final output, provide diagnostics about what went wrong
+        if not final_output or not final_output.get("output"):
+            # Determine what went wrong with the workflow execution
+            error_message = "No output from workflow"
+            
+            # Check for specific issues
+            if not connections:
+                error_message = "No output from workflow - Missing connections between nodes. Please connect your nodes."
+            elif not output_nodes:
+                error_message = "No output from workflow - Missing output node. Please add an output node to your workflow."
+            elif isolated_nodes:
+                error_message = f"No output from workflow - Detected isolated nodes: {', '.join(isolated_nodes)}. Please connect all nodes."
+            
+            if "template_output" in initial_data:
+                final_output = {
+                    "output": error_message,
+                    "original_template_output": initial_data["template_output"],
+                    "_error": error_message
+                }
+                logger.warning(f"{error_message} - attempted to use original template output as fallback")
+            else:
+                final_output = {"output": error_message, "_error": error_message}
+                logger.warning(error_message)
+        
+        # Create the final result with all diagnostic information
         workflow_result = WorkflowExecutionResult(
             workflow_id=workflow_id,
             results=node_results,
             seed_data=seed_data,
             final_output=final_output,
             execution_time=total_execution_time,
-            status=status
+            status=status,
+            # Include diagnostic information in the result
+            meta={
+                "input_nodes": input_nodes,
+                "output_nodes": output_nodes,
+                "isolated_nodes": isolated_nodes,
+                "execution_order": execution_order,
+                "selected_output_node": final_node_id,
+                "has_connections": len(connections) > 0
+            }
         )
         
         logger.info(f"Workflow execution with progress completed in {total_execution_time:.2f}s with status: {status}")

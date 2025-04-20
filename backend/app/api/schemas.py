@@ -207,9 +207,10 @@ class BaseNodeConfig(BaseModel):
 class ModelNodeConfig(BaseNodeConfig):
     type: str = "model"
     model: Optional[str] = None
-    system_instruction: Optional[str] = None
+    system_instruction: Optional[str] = None  # User can edit directly
     template_id: Optional[int] = None
     model_parameters: Optional[ModelParameters] = None
+    inputs: Optional[List[Dict[str, Any]]] = Field(default_factory=list)  # List of input objects with id and connected state
 
 
 class TransformNodeConfig(BaseNodeConfig):
@@ -276,3 +277,4 @@ class WorkflowExecutionResult(BaseModel):
     final_output: Dict[str, Any]
     execution_time: float
     status: str = "success"  # success, error, partial_success
+    meta: Optional[Dict[str, Any]] = None  # Additional metadata about the workflow execution
