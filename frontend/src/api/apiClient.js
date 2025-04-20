@@ -284,13 +284,13 @@ const api = {
     .then(response => response.data),
     
   // Workflow API endpoints
-  executeWorkflow: (workflow, seedData, debugMode = false) => apiClient.post('/workflow/execute', {
+  executeWorkflow: (workflow, seedData, debugMode = false) => apiClient.post('/workflows/execute', {
     workflow,
     seed_data: seedData,
     debug_mode: debugMode
   }).then(response => response.data),
   
-  executeWorkflowStep: (nodeConfig, inputs) => apiClient.post('/workflow/execute_step', {
+  executeWorkflowStep: (nodeConfig, inputs) => apiClient.post('/workflows/execute_step', {
     node_config: nodeConfig,
     inputs
   }).then(response => response.data),
@@ -304,7 +304,7 @@ const api = {
     });
     
     // Use fetch API for streaming
-    const response = await fetch('/api/workflow/execute/stream', {
+    const response = await fetch('/api/workflows/execute/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
