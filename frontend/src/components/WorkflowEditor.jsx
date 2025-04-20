@@ -21,6 +21,7 @@ import OutputNode from './OutputNode'; // Import the new OutputNode
 import TextNode from './TextNode'; // Import the new TextNode
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
+import ConfirmationModal from './ConfirmationModal'; // Import the modal
 
 // Define node types for selection dropdown and internal logic
 const NODE_TYPES = {
@@ -70,6 +71,7 @@ const WorkflowEditor = ({
   const [selectedNodeType, setSelectedNodeType] = useState('model'); // Default node type to add
   const [selectedNodeId, setSelectedNodeId] = useState(null); // Track selected node ID
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isNewConfirmOpen, setIsNewConfirmOpen] = useState(false); // State for the confirmation modal
 
   const reactFlowWrapper = useRef(null);
   const nodeIdCounterRef = useRef(1); // Counter for generating unique node IDs
@@ -202,6 +204,24 @@ const WorkflowEditor = ({
   // Depend on workflow prop instance and the stable callback
   }, [workflow, setNodes, setEdges, handleNodeConfigChange]); 
 
+  // --- Modal Handlers ---
+  const openNewConfirmModal = () => {
+    if (disabled) return; // Don't open if disabled
+    // Always open the modal when 'New' is clicked, regardless of unsaved changes
+    setIsNewConfirmOpen(true); 
+  };
+
+  const closeNewConfirmModal = () => {
+    setIsNewConfirmOpen(false); // Close the modal
+  };
+
+  const handleConfirmNew = () => {
+    if (onNew) {
+      onNew(); // Call the original onNew prop function
+    }
+    closeNewConfirmModal(); // Close the modal after confirmation
+  };
+
   // --- React Flow Handlers ---
 
   // Handle node selection changes
@@ -215,11 +235,10 @@ const WorkflowEditor = ({
       setSelectedNodeId(selectionChange.selected ? selectionChange.id : null);
     }
     
-    // Mark changes if nodes moved or were deleted
-    if (changes.some(c => c.type === 'position' || c.type === 'remove')) {
-      setHasUnsavedChanges(true);
-    }
-  }, [onNodesChange, disabled]);
+    // Mark any node change (move, select, remove) as unsaved
+    setHasUnsavedChanges(true); 
+
+  }, [onNodesChange, disabled, setHasUnsavedChanges]); // Added setHasUnsavedChanges to dependency array
 
   // Handle edge changes (creation, deletion)
   const handleEdgesChange = useCallback((changes) => {
@@ -479,14 +498,14 @@ const WorkflowEditor = ({
           disabled={!hasUnsavedChanges || disabled}
         >
           <Icon name="save" className="w-4 h-4" />
-          <span>Save Workflow</span>
+          <span>Save</span>
         </button>
         
         {/* Action Buttons */} 
         <div className="flex items-center space-x-2">
           {onNew && (
             <button 
-              onClick={onNew} // Call the passed onNew handler
+              onClick={openNewConfirmModal} // Changed onClick to open modal handler
               className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
               disabled={disabled}
               title="Create New Workflow"
@@ -541,6 +560,17 @@ const WorkflowEditor = ({
           <Background variant="dots" gap={16} size={1} color="#ccc" />
         </ReactFlow>
       </div>
+
+      {/* Confirmation Modal for New Workflow */}
+      <ConfirmationModal
+        isOpen={isNewConfirmOpen}
+        onClose={closeNewConfirmModal}
+        onConfirm={handleConfirmNew}
+        title="Discard Unsaved Changes?"
+        message="Creating a new workflow will discard this one. Export to JSON to save it."
+        confirmButtonText="Discard and Create New"
+        confirmButtonVariant="danger" // Use danger variant for discarding
+      />
     </div>
   );
 };

@@ -873,7 +873,8 @@ const Generate = ({ context }) => {
                 // Set all nodes to queued initially, including the node name
                 nodeIds.forEach(nodeId => {
                   const node = currentWorkflow?.nodes?.[nodeId];
-                  const nodeName = node?.data?.label || nodeId; // Get name or fallback to ID
+                console.log("USING NODE DETAILS", node);
+                  const nodeName = node?.name || nodeId; // Get name or fallback to ID
                   console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node?.data, `Derived Name: ${nodeName}`); // Added logging
                   nodeStatusMap[nodeId] = { 
                     status: 'queued',

@@ -314,7 +314,8 @@ const VariationCard = ({
                     <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-blue-200 text-blue-800 text-xs font-medium mr-2">
                       {index + 1}
                     </span>
-                    {node.node_id} ({node.node_type})
+                    {/* Use node_name if available, otherwise fallback to node_id */}
+                    {node.node_name || node.node_id} ({node.node_type}) 
                     <span className="ml-2 text-xs text-gray-500">
                       {node.execution_time.toFixed(2)}s
                     </span>
