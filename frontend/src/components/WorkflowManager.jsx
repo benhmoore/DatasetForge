@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import WorkflowEditor from './WorkflowEditor';
 import api from '../api/apiClient';
+import { importTextFile } from '../lib/FileImportUtil'; // Import the utility
 
 /**
  * WorkflowManager component for managing workflow definitions
@@ -11,8 +12,7 @@ const WorkflowManager = ({
   visible, 
   workflow, 
   setWorkflow,
-  onImport,
-  onExport,
+  // Remove onImport and onExport from props, handle internally
   disabled = false
 }) => {
   const [templates, setTemplates] = useState([]);
@@ -103,17 +103,106 @@ const WorkflowManager = ({
     }
   };
   
-  // Handle workflow imports/exports
-  const handleImportWorkflow = (importedWorkflow) => {
-    if (onImport) {
-      onImport(importedWorkflow);
+  // Handle workflow imports
+  const handleImportWorkflow = () => {
+    if (disabled) return;
+
+    importTextFile({
+      acceptTypes: ['.json'], // Only accept JSON files
+      onSuccess: (content, file) => {
+        try {
+          const importedWorkflow = JSON.parse(content);
+          
+          // Basic validation
+          if (!importedWorkflow.name || !importedWorkflow.nodes || !importedWorkflow.connections) {
+            toast.error('Invalid workflow JSON format. Must include name, nodes, and connections.');
+            return;
+          }
+          
+          // Add/update timestamp
+          importedWorkflow.updated_at = new Date().toISOString();
+          
+          // Optionally use filename if workflow name is generic or missing
+          if (!importedWorkflow.name || importedWorkflow.name === 'New Workflow') {
+            importedWorkflow.name = file.name.replace(/\.json$/i, ''); // Remove .json extension
+          }
+
+          console.log("Importing workflow from file:", file.name, {
+            id: importedWorkflow.id, // May not exist if new
+            nodeCount: Object.keys(importedWorkflow.nodes).length,
+            connectionCount: importedWorkflow.connections.length
+          });
+
+          // Use setTimeout to ensure React renders before we update the workflow
+          setTimeout(() => {
+            setWorkflow(importedWorkflow); // Update the parent state
+            setShowJsonEditor(false); // Switch back to visual editor if needed
+            toast.success(`Workflow '${importedWorkflow.name}' imported successfully.`);
+          }, 0);
+
+        } catch (error) {
+          console.error("Error parsing imported workflow JSON:", error);
+          toast.error(`Failed to import workflow: ${error.message}`);
+        }
+      },
+      onError: (error) => {
+        // Error is already toasted by importTextFile, just log it
+        console.error("Error selecting or reading workflow file:", error);
+      }
+    });
+  };
+  
+  // Handle workflow exports
+  const handleExportWorkflow = (workflowToExport) => {
+    if (!workflowToExport) {
+      toast.warn("No workflow data to export.");
+      return;
+    }
+    
+    try {
+      const workflowJsonString = JSON.stringify(workflowToExport, null, 2);
+      const blob = new Blob([workflowJsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      // Sanitize name for filename
+      const safeName = (workflowToExport.name || 'untitled').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
+      link.download = `workflow-${safeName}.json`;
+      
+      document.body.appendChild(link); // Required for Firefox
+      link.click();
+      
+      // Clean up
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      toast.success(`Workflow '${workflowToExport.name}' exported.`);
+      
+    } catch (error) {
+      console.error("Error exporting workflow:", error);
+      toast.error(`Failed to export workflow: ${error.message}`);
     }
   };
   
-  const handleExportWorkflow = (exportedWorkflow) => {
-    if (onExport) {
-      onExport(exportedWorkflow);
-    }
+  // Handle creating a new workflow
+  const handleNewWorkflow = () => {
+    if (disabled) return;
+
+    const newWorkflow = {
+      // No ID yet, will be assigned on first save
+      name: 'New Workflow',
+      description: '',
+      nodes: {},
+      connections: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    console.log("Creating a new blank workflow.");
+    setWorkflow(newWorkflow); // Update parent state
+    setShowJsonEditor(false); // Ensure visual editor is shown
+    toast.info('New workflow created. Remember to save!');
   };
   
   // Early return if not visible
@@ -167,8 +256,9 @@ const WorkflowManager = ({
           workflow={workflow}
           setWorkflow={setWorkflow}
           availableTemplates={templates}
-          onImport={handleImportWorkflow}
-          onExport={handleExportWorkflow}
+          onImport={handleImportWorkflow} 
+          onExport={handleExportWorkflow} 
+          onNew={handleNewWorkflow} // Pass the new handler
           disabled={disabled || isLoading}
         />
       )}

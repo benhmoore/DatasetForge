@@ -58,8 +58,9 @@ const nodeTypes = {
 const WorkflowEditor = ({ 
   workflow, 
   setWorkflow, // Callback to update the parent's workflow state
-  onImport, // Callback for import action
-  onExport, // Callback for export action
+  onImport, // Callback for import action (now provided by WorkflowManager)
+  onExport, // Callback for export action (now provided by WorkflowManager)
+  onNew, // Callback for creating a new workflow
   disabled = false // Disable editing controls
 }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -481,25 +482,42 @@ const WorkflowEditor = ({
           <span>Save Workflow</span>
         </button>
         
-        {/* Import/Export Buttons (Optional) */}
-        {onImport && (
-          <button 
-            onClick={() => { /* Trigger import logic */ }} 
-            className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50"
-            disabled={disabled}
-          >
-            Import
-          </button>
-        )}
-        {onExport && (
-          <button 
-            onClick={() => onExport(workflow)} // Pass current workflow state for export
-            className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50"
-            disabled={disabled}
-          >
-            Export
-          </button>
-        )}
+        {/* Action Buttons */} 
+        <div className="flex items-center space-x-2">
+          {onNew && (
+            <button 
+              onClick={onNew} // Call the passed onNew handler
+              className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
+              disabled={disabled}
+              title="Create New Workflow"
+            >
+               <Icon name="file-plus" className="w-4 h-4" />
+               <span>New</span>
+            </button>
+          )}
+          {onImport && (
+            <button 
+              onClick={onImport} 
+              className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
+              disabled={disabled}
+              title="Import Workflow from JSON"
+            >
+               <Icon name="upload" className="w-4 h-4" />
+               <span>Import</span>
+            </button>
+          )}
+          {onExport && (
+            <button 
+              onClick={() => onExport(workflow)} 
+              className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
+              disabled={disabled || !workflow} 
+              title="Export Workflow to JSON"
+            >
+               <Icon name="download" className="w-4 h-4" />
+               <span>Export</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* React Flow Canvas */}
