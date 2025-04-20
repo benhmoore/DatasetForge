@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
 import { 
   ReactFlow, 
   Background, 
@@ -55,15 +55,16 @@ const nodeTypes = {
 
 /**
  * WorkflowEditor component for visual workflow editing
+ * Using forwardRef to expose the saveWorkflow method
  */
-const WorkflowEditor = ({ 
+const WorkflowEditor = forwardRef(({ 
   workflow, 
   setWorkflow, // Callback to update the parent's workflow state
   onImport, // Callback for import action (now provided by WorkflowManager)
   onExport, // Callback for export action (now provided by WorkflowManager)
   onNew, // Callback for creating a new workflow
   disabled = false // Disable editing controls
-}) => {
+}, ref) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [workflowName, setWorkflowName] = useState('');
@@ -76,6 +77,18 @@ const WorkflowEditor = ({
   const reactFlowWrapper = useRef(null);
   const nodeIdCounterRef = useRef(1); // Counter for generating unique node IDs
   const previousWorkflowRef = useRef(null); // Ref to store previous workflow prop instance
+
+  // Expose the saveWorkflow method via ref
+  useImperativeHandle(ref, () => ({
+    saveWorkflow: () => {
+      if (hasUnsavedChanges) {
+        console.log("WorkflowEditor: Saving workflow via exposed ref method");
+        saveWorkflow();
+        return true; // Return true if changes were saved
+      }
+      return false; // Return false if no changes to save
+    }
+  }));
 
   // --- State Synchronization ---
 
@@ -317,7 +330,6 @@ const WorkflowEditor = ({
       );
     }
     // --- End handle count update logic ---
-
   }, [setEdges, setNodes, disabled]); // Added setNodes dependency back
 
   // --- Workflow Actions ---
@@ -572,6 +584,6 @@ const WorkflowEditor = ({
       />
     </div>
   );
-};
+});
 
 export default WorkflowEditor;

@@ -41,7 +41,8 @@ const Generate = ({ context }) => {
   const [workflowEnabled, setWorkflowEnabled] = useState(false);
   const [currentWorkflow, setCurrentWorkflow] = useState(null);
   const [isExecutingWorkflow, setIsExecutingWorkflow] = useState(false);
-  const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false); // <-- Add state for modal visibility
+  const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false); 
+  const [workflowSaveRequest, setWorkflowSaveRequest] = useState(null);
   
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
@@ -1352,8 +1353,17 @@ const Generate = ({ context }) => {
 
   // Handler to close the workflow modal
   const handleCloseWorkflowModal = useCallback(() => {
-    setIsWorkflowModalOpen(false);
-  }, []);
+    // Trigger save in WorkflowEditor before closing
+    if (currentWorkflow) {
+      console.log("Generate: Requesting workflow save before closing modal");
+      setWorkflowSaveRequest(Date.now()); // Use timestamp to trigger save
+    }
+    
+    // Set a small delay to ensure save completes before closing
+    setTimeout(() => {
+      setIsWorkflowModalOpen(false);
+    }, 100);
+  }, [currentWorkflow]);
 
   // Determine button text and action based on selected variations
   const saveButtonText = selectedCount > 0
@@ -1557,8 +1567,7 @@ const Generate = ({ context }) => {
                 onImport={handleWorkflowImport}
                 onExport={handleWorkflowExport}
                 disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
-                // Add onClose prop if WorkflowManager needs to close itself
-                // onClose={handleCloseWorkflowModal} 
+                saveRequest={workflowSaveRequest} // Add this new prop
               />
             </div>
             

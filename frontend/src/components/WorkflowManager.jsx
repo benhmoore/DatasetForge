@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import WorkflowEditor from './WorkflowEditor';
 import api from '../api/apiClient';
@@ -13,12 +13,16 @@ const WorkflowManager = ({
   workflow, 
   setWorkflow,
   // Remove onImport and onExport from props, handle internally
-  disabled = false
+  disabled = false,
+  saveRequest = null // Add this new parameter for handling save requests
 }) => {
   const [templates, setTemplates] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [workflowJson, setWorkflowJson] = useState('');
+  
+  // Add a ref to access WorkflowEditor methods
+  const workflowEditorRef = useRef(null);
   
   // Fetch templates on component mount
   useEffect(() => {
@@ -40,6 +44,52 @@ const WorkflowManager = ({
       fetchTemplates();
     }
   }, [visible]);
+  
+  // Add a useEffect to handle save requests
+  useEffect(() => {
+    if (saveRequest && visible && workflow) {
+      console.log("WorkflowManager: Auto-saving workflow before closing modal", {
+        saveRequest, 
+        showJsonEditor
+      });
+      
+      if (showJsonEditor) {
+        // If in JSON editor mode, try to parse and save the JSON
+        try {
+          const parsed = JSON.parse(workflowJson);
+          
+          // Basic validation
+          if (!parsed.name || !parsed.nodes || !parsed.connections) {
+            toast.error('Cannot save: Invalid workflow format in JSON editor.');
+            return;
+          }
+          
+          // Add a timestamp for the update
+          parsed.updated_at = new Date().toISOString();
+          
+          setWorkflow(parsed);
+          toast.success('Workflow JSON saved before closing');
+        } catch (error) {
+          console.error("Error saving workflow JSON before closing:", error);
+          toast.error(`Failed to save workflow: ${error.message}`);
+        }
+      } else {
+        // If in visual editor mode, use the editor's save method via ref
+        if (workflowEditorRef.current && workflowEditorRef.current.saveWorkflow) {
+          const didSave = workflowEditorRef.current.saveWorkflow();
+          if (didSave) {
+            console.log("WorkflowManager: Successfully triggered save via editor ref");
+          } else {
+            console.log("WorkflowManager: No changes to save in editor");
+          }
+        } else {
+          console.warn("WorkflowManager: Could not access editor save method");
+        }
+      }
+    }
+  }, [saveRequest, visible, workflow, showJsonEditor, workflowJson, setWorkflow]);
+  
+  // Rest of the code remains the same...
   
   // Update JSON when workflow changes
   useEffect(() => {
@@ -253,6 +303,7 @@ const WorkflowManager = ({
         </div>
       ) : (
         <WorkflowEditor
+          ref={workflowEditorRef} // Add this ref to access the editor methods
           workflow={workflow}
           setWorkflow={setWorkflow}
           availableTemplates={templates}
