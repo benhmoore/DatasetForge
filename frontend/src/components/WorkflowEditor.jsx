@@ -641,10 +641,30 @@ const WorkflowEditor = forwardRef(({
     const nodeLabel = `${NODE_TYPES[selectedNodeType]} ${newNodeId.split('-').pop()}`;
     const nodeComponentType = nodeComponentMap[selectedNodeType];
 
-    const position = project({
-        x: reactFlowWrapper.current.clientWidth / 2,
-        y: reactFlowWrapper.current.clientHeight / 3
-    });
+    // Create a position with a fallback if project function is not ready
+    let position;
+    try {
+      // Try to use project function if available
+      if (typeof project === 'function' && reactFlowWrapper.current) {
+        position = project({
+          x: reactFlowWrapper.current.clientWidth / 2,
+          y: reactFlowWrapper.current.clientHeight / 3
+        });
+      } else {
+        // Fallback positioning if project function unavailable
+        position = { 
+          x: Math.random() * 400 + 100, 
+          y: Math.random() * 200 + 100 
+        };
+      }
+    } catch (error) {
+      console.warn("Failed to use project function, using fallback position", error);
+      // Fallback if project function throws error
+      position = { 
+        x: Math.random() * 400 + 100, 
+        y: Math.random() * 200 + 100 
+      };
+    }
 
     let defaultConfig = {};
      if (selectedNodeType === 'model') {
@@ -675,7 +695,7 @@ const WorkflowEditor = forwardRef(({
 
     setNodes((nds) => nds.concat(newNode));
     // setHasUnsavedChanges(true); // Handled by saveHistorySnapshot
-  }, [selectedNodeType, setNodes, handleNodeConfigChange, disabled, project, getNextNodeId, saveHistorySnapshot]); // <-- Add saveHistorySnapshot dependency
+  }, [selectedNodeType, setNodes, handleNodeConfigChange, disabled, project, getNextNodeId, saveHistorySnapshot]);
 
   // Save the current workflow state
   const saveWorkflow = useCallback(() => {
