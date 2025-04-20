@@ -48,11 +48,6 @@ const ModelNodeComponent = ({ data, isConnectable }) => {
         <div className="mb-1">
           <span className="font-medium">Model:</span> {data.model || 'Not set'}
         </div>
-        {data.template_id && (
-          <div className="mb-1">
-            <span className="font-medium">Template:</span> ID {data.template_id}
-          </div>
-        )}
         {data.system_instruction && (
           <div className="mb-1 truncate max-w-xs">
             <span className="font-medium">Instruction:</span> {data.system_instruction.substring(0, 30)}...
@@ -218,6 +213,14 @@ const WorkflowEditor = ({
   const nodeIdCounterRef = useRef(1);
   
   // Load workflow data into ReactFlow format
+  // Add keyboard event listener
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleKeyDown]);
+  
   useEffect(() => {
     if (workflow) {
       // Convert workflow nodes to ReactFlow format
@@ -408,6 +411,14 @@ const WorkflowEditor = ({
     setSelectedNode(node);
   }, []);
   
+  // Handle edge selection
+  const onEdgeClick = useCallback((event, edge) => {
+    // If it's just a click (not a drag), offer to delete the edge
+    if (window.confirm('Delete this connection?')) {
+      handleDeleteEdge(edge.id);
+    }
+  }, []);
+  
   // Handle connection creation
   const onConnect = useCallback((params) => {
     setEdges(eds => addEdge({
@@ -476,7 +487,6 @@ const WorkflowEditor = ({
           ...nodeData,
           model: '',
           system_instruction: '',
-          template_id: null,
           model_parameters: {
             temperature: 0.7,
             top_p: 1.0,
@@ -552,6 +562,47 @@ const WorkflowEditor = ({
     
     setSelectedNode(null);
   };
+  
+  // Delete selected edge
+  const handleDeleteEdge = (edgeId) => {
+    if (disabled) return;
+    
+    // Remove the edge
+    setEdges(eds => eds.filter(e => e.id !== edgeId));
+  };
+  
+  // Handle keyboard events
+  const handleKeyDown = useCallback((event) => {
+    if (disabled) return;
+    
+    // Handle Delete or Backspace key
+    if ((event.key === 'Delete' || event.key === 'Backspace') && 
+        (document.activeElement === document.body || // Only if not in an input field
+         document.activeElement.tagName === 'DIV')) {
+      
+      // Check for box-selected nodes (multiple selection)
+      const selectedNodes = nodes.filter(node => node.selected);
+      
+      if (selectedNodes.length > 0) {
+        // Delete all selected nodes
+        const selectedNodeIds = selectedNodes.map(node => node.id);
+        
+        // Remove selected nodes
+        setNodes(nds => nds.filter(node => !selectedNodeIds.includes(node.id)));
+        
+        // Remove associated edges
+        setEdges(eds => eds.filter(edge => 
+          !selectedNodeIds.includes(edge.source) && !selectedNodeIds.includes(edge.target)
+        ));
+        
+        event.preventDefault();
+      } else if (selectedNode) {
+        // Fall back to single node deletion
+        handleDeleteNode();
+        event.preventDefault();
+      }
+    }
+  }, [selectedNode, nodes, disabled]);
   
   // Update node configuration
   const handleNodeConfigChange = (nodeId, updatedConfig) => {
@@ -799,10 +850,12 @@ const WorkflowEditor = ({
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
             nodeTypes={nodeTypes}
             fitView
             snapToGrid={true}
             snapGrid={[15, 15]}
+            selectionMode={1} // Enable box selection mode
           >
             <Background color="#aaa" gap={16} />
             <Controls />

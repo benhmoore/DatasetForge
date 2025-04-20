@@ -18,7 +18,6 @@ const ModelNode = ({
   const [localConfig, setLocalConfig] = useState({
     model: nodeConfig.model || '',
     system_instruction: nodeConfig.system_instruction || '',
-    template_id: nodeConfig.template_id || null,
     model_parameters: nodeConfig.model_parameters || {
       temperature: 0.7,
       top_p: 1.0,
@@ -50,7 +49,6 @@ const ModelNode = ({
       ...nodeConfig,
       model: localConfig.model,
       system_instruction: localConfig.system_instruction,
-      template_id: localConfig.template_id,
       model_parameters: localConfig.model_parameters
     });
   }, [localConfig, nodeConfig, onConfigChange]);
@@ -63,16 +61,7 @@ const ModelNode = ({
     }));
   };
   
-  // Handle template selection
-  const handleTemplateChange = (templateId) => {
-    // Convert template ID to number if it exists
-    const numTemplateId = templateId ? Number(templateId) : null;
-    
-    setLocalConfig(prev => ({
-      ...prev,
-      template_id: numTemplateId
-    }));
-  };
+  // No longer needed - template handling is now in TemplateNode component
   
   // Handle system instruction change
   const handleInstructionChange = (e) => {
@@ -99,14 +88,7 @@ const ModelNode = ({
     label: model
   }));
   
-  // Template options for dropdown
-  const templateOptions = [
-    { value: '', label: 'No template (use instruction only)' },
-    ...availableTemplates.map(template => ({
-      value: template.id,
-      label: template.name
-    }))
-  ];
+  // No longer needed - template handling is now in TemplateNode component
   
   return (
     <div className="p-4 space-y-4 bg-white rounded border border-gray-200">
@@ -127,38 +109,18 @@ const ModelNode = ({
         />
       </div>
       
-      {/* Template selection */}
-      <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700">
-          Template (Optional)
-        </label>
-        <CustomSelect
-          options={templateOptions}
-          value={localConfig.template_id || ''}
-          onChange={handleTemplateChange}
-          placeholder="Select a template..."
-          disabled={disabled}
-        />
-        <p className="text-xs text-gray-500">
-          When a template is selected, the system prompt and user prompt from the template will be used.
-        </p>
-      </div>
+      {/* Template selection removed - now handled by separate TemplateNode */}
       
       {/* System instruction */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
           System Instruction
-          {localConfig.template_id && 
-            <span className="text-xs text-yellow-600 ml-2">
-              (Will be appended to template system prompt)
-            </span>
-          }
         </label>
         <textarea
           className="w-full h-24 p-2 border rounded text-sm"
           value={localConfig.system_instruction || ''}
           onChange={handleInstructionChange}
-          placeholder="Enter additional system instructions for the model..."
+          placeholder="Enter system instructions for the model..."
           disabled={disabled}
         />
       </div>
