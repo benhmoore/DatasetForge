@@ -35,7 +35,6 @@ const CustomSlider = ({
 
   const handleInteractionStart = useCallback((e) => {
     if (disabled) return;
-    e.stopPropagation(); // Prevent node drag
     setIsDragging(true);
     // Prevent text selection during drag
     e.preventDefault();
@@ -116,19 +115,16 @@ const CustomSlider = ({
         className={`relative w-full h-2 rounded-full cursor-pointer nodrag ${
           disabled ? 'bg-gray-200 cursor-not-allowed' : 'bg-gray-300'
         }`}
-        onMouseDown={(e) => { // Stop propagation on track mousedown
+        onMouseDown={(e) => {
           if (disabled) return;
-          e.stopPropagation(); 
-          handleInteractionStart(e); 
-        }}
-        onTouchStart={(e) => { // Stop propagation on track touchstart
-          if (disabled) return;
-          e.stopPropagation();
           handleInteractionStart(e);
         }}
-        onClick={(e) => { // Allow clicking on track to set value
+        onTouchStart={(e) => {
           if (disabled) return;
-          e.stopPropagation(); // Also stop propagation on click
+          handleInteractionStart(e);
+        }}
+        onClick={(e) => {
+          if (disabled) return;
           const newValue = getValueFromPosition(e.clientX);
           if (newValue !== value) {
             onChange(newValue);
@@ -140,8 +136,8 @@ const CustomSlider = ({
         aria-valuenow={value}
         aria-orientation="horizontal"
         aria-disabled={disabled}
-        tabIndex={disabled ? -1 : 0} // Make track focusable if thumb isn't directly focusable
-        onKeyDown={handleKeyDown} // Handle keydown on the track as well
+        tabIndex={disabled ? -1 : 0}
+        onKeyDown={handleKeyDown}
       >
         {/* Filled part of the track */}
         <div
@@ -157,17 +153,15 @@ const CustomSlider = ({
             disabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary-600 cursor-grab active:cursor-grabbing'
           }`}
           style={{ left: `${percentage}%` }}
-          tabIndex={disabled ? -1 : 0} // Make thumb focusable
-          onKeyDown={handleKeyDown} // Handle keydown directly on the thumb
-          onMouseDown={(e) => { // Stop propagation on thumb mousedown
-             if (disabled) return;
-             e.stopPropagation(); 
-             handleInteractionStart(e);
+          tabIndex={disabled ? -1 : 0}
+          onKeyDown={handleKeyDown}
+          onMouseDown={(e) => {
+            if (disabled) return;
+            handleInteractionStart(e);
           }}
-          onTouchStart={(e) => { // Stop propagation on thumb touchstart
-             if (disabled) return;
-             e.stopPropagation();
-             handleInteractionStart(e);
+          onTouchStart={(e) => {
+            if (disabled) return;
+            handleInteractionStart(e);
           }}
         />
       </div>

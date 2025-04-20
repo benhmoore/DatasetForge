@@ -34,9 +34,6 @@ const OutputNode = ({
           rows={4}
           placeholder="Output will appear here..."
           disabled={disabled}
-          // Stop propagation to prevent node drag
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
         />
       </div>
     </NodeBase>

@@ -120,12 +120,7 @@ const ModelNode = ({
       inputHandles={inputHandles} 
     >
       {/* Model selection */}
-      <div 
-        className="space-y-2" 
-        // Stop propagation for clicks/touches within the select area
-        onMouseDown={(e) => e.stopPropagation()} 
-        onTouchStart={(e) => e.stopPropagation()}
-      >
+      <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
           Select Model
         </label>
@@ -153,9 +148,6 @@ const ModelNode = ({
           rows={4}
           placeholder="Enter instructions for the model. Use {input_0}, {input_1}, etc. to reference inputs."
           disabled={disabled}
-          // Stop propagation to prevent node drag when clicking/touching textarea
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
         />
         
         <div className="text-xs text-gray-500 mt-1">
