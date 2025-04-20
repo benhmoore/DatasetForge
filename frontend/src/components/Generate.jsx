@@ -10,6 +10,7 @@ import SettingsModal from './SettingsModal';
 import ParaphraseModal from './ParaphraseModal';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons'; // Import Icon component
+import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch
 import WorkflowManager from './WorkflowManager'; // Import WorkflowManager component
 
 const Generate = ({ context }) => {
@@ -1418,31 +1419,15 @@ const Generate = ({ context }) => {
                     Manage Workflow
                   </button>
                 )}
-                <div className="relative inline-block w-10 align-middle select-none">
-                  <input
-                    type="checkbox"
-                    name="workflow-toggle"
-                    id="workflow-toggle"
-                    className="opacity-0 absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"
-                    checked={workflowEnabled}
-                    onChange={handleToggleWorkflow}
-                    disabled={isGenerating || isParaphrasing}
-                  />
-                  <label
-                    htmlFor="workflow-toggle"
-                    className={`block overflow-hidden h-6 rounded-full cursor-pointer ${
-                      workflowEnabled ? 'bg-blue-500' : 'bg-gray-300'
-                    }`}
-                  >
-                    <span
-                      className={`block h-6 w-6 rounded-full bg-white shadow transform transition-transform duration-200 ease-in-out ${
-                        workflowEnabled ? 'translate-x-4' : 'translate-x-0'
-                      }`}
-                    ></span>
-                  </label>
-                </div>
+                {/* Replace checkbox with ToggleSwitch */}
+                <ToggleSwitch
+                  checked={workflowEnabled}
+                  onChange={handleToggleWorkflow}
+                  disabled={isGenerating || isParaphrasing}
+                />
               </div>
             </div>
+
           </div>
 
           <div className="pl-4">
