@@ -565,7 +565,68 @@ const WorkflowEditor = forwardRef(({
 
   }, [copiedNodes, disabled, project, setNodes, getNextNodeId, handleNodeConfigChange, saveHistorySnapshot]); // <-- Add saveHistorySnapshot dependency
 
-  // Effect for Keyboard Shortcuts (Copy/Paste/Undo/Redo)
+  // Function to get the latest workflow data based on current state
+  const getLatestWorkflowData = useCallback(() => {
+    if (hasUnsavedChanges) {
+      if (showJsonEditor) {
+        try {
+          const parsed = JSON.parse(workflowJson);
+          if (!parsed.name || !parsed.nodes || !parsed.connections) {
+            toast.error('Cannot export: Invalid workflow format in JSON editor.');
+            return null; // Indicate failure
+          }
+          // Use the potentially unsaved name/description from JSON if present
+          return {
+             ...(workflow || {}), // Preserve other potential workflow properties
+             ...parsed,
+             updated_at: new Date().toISOString() // Mark as potentially updated
+          };
+        } catch (error) {
+          toast.error(`Cannot export: Failed to parse workflow JSON: ${error.message}`);
+          return null; // Indicate failure
+        }
+      } else {
+        // Construct from visual editor state
+        const currentNodes = nodes;
+        const currentEdges = edges;
+        const currentName = workflowName;
+        const currentDescription = workflowDescription;
+
+        const updatedNodes = {};
+        currentNodes.forEach(node => {
+          const { label, onConfigChange, ...configData } = node.data;
+          updatedNodes[node.id] = {
+            ...configData,
+            position: node.position
+          };
+        });
+
+        const updatedConnections = currentEdges.map(edge => ({
+          source_node_id: edge.source,
+          source_handle: edge.sourceHandle || null,
+          target_node_id: edge.target,
+          target_handle: edge.targetHandle || null
+        }));
+
+        return {
+          ...(workflow || {}), // Preserve other potential workflow properties
+          name: currentName,
+          description: currentDescription,
+          nodes: updatedNodes,
+          connections: updatedConnections,
+          updated_at: new Date().toISOString() // Mark as potentially updated
+        };
+      }
+    } else {
+      // No unsaved changes, use the prop (which should be the saved state)
+      return workflow;
+    }
+  }, [
+      workflow, hasUnsavedChanges, showJsonEditor, workflowJson,
+      nodes, edges, workflowName, workflowDescription
+  ]);
+
+  // Effect for Keyboard Shortcuts (Copy/Paste/Undo/Redo/Save)
   useEffect(() => {
     const handleKeyDown = (event) => {
       const activeElement = document.activeElement;
@@ -620,13 +681,31 @@ const WorkflowEditor = forwardRef(({
              // console.log("Ignoring node paste shortcut (not focused on flow or input focused).");
           }
       }
+      // --- Save/Export (Ctrl/Cmd + S) ---
+      else if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        // Prevent browser's default save action
+        event.preventDefault();
+        if (!disabled && onExport) {
+          // console.log("Handling Save/Export shortcut.");
+          const dataToExport = getLatestWorkflowData();
+          if (dataToExport) {
+            onExport(dataToExport);
+            // Optionally provide feedback, e.g., toast.info('Workflow exported.');
+          } else {
+            // console.log("Save shortcut ignored: No data to export.");
+          }
+        } else {
+          // console.log("Save shortcut ignored (disabled or no onExport handler).");
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown); // <-- Pass handleKeyDown here
+      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [handleCopy, handlePaste, getNodes, handleUndo, handleRedo]); // <-- Add handleUndo, handleRedo dependencies
+    // Add onExport and getLatestWorkflowData to dependencies
+  }, [handleCopy, handlePaste, getNodes, handleUndo, handleRedo, onExport, getLatestWorkflowData, disabled]);
 
 
   // --- Original Workflow Actions ---
@@ -789,67 +868,6 @@ const WorkflowEditor = forwardRef(({
     </button>
   );
 
-  // Function to get the latest workflow data based on current state
-  const getLatestWorkflowData = useCallback(() => {
-    if (hasUnsavedChanges) {
-      if (showJsonEditor) {
-        try {
-          const parsed = JSON.parse(workflowJson);
-          if (!parsed.name || !parsed.nodes || !parsed.connections) {
-            toast.error('Cannot export: Invalid workflow format in JSON editor.');
-            return null; // Indicate failure
-          }
-          // Use the potentially unsaved name/description from JSON if present
-          return {
-             ...(workflow || {}), // Preserve other potential workflow properties
-             ...parsed,
-             updated_at: new Date().toISOString() // Mark as potentially updated
-          };
-        } catch (error) {
-          toast.error(`Cannot export: Failed to parse workflow JSON: ${error.message}`);
-          return null; // Indicate failure
-        }
-      } else {
-        // Construct from visual editor state
-        const currentNodes = nodes;
-        const currentEdges = edges;
-        const currentName = workflowName;
-        const currentDescription = workflowDescription;
-
-        const updatedNodes = {};
-        currentNodes.forEach(node => {
-          const { label, onConfigChange, ...configData } = node.data;
-          updatedNodes[node.id] = {
-            ...configData,
-            position: node.position
-          };
-        });
-
-        const updatedConnections = currentEdges.map(edge => ({
-          source_node_id: edge.source,
-          source_handle: edge.sourceHandle || null,
-          target_node_id: edge.target,
-          target_handle: edge.targetHandle || null
-        }));
-
-        return {
-          ...(workflow || {}), // Preserve other potential workflow properties
-          name: currentName,
-          description: currentDescription,
-          nodes: updatedNodes,
-          connections: updatedConnections,
-          updated_at: new Date().toISOString() // Mark as potentially updated
-        };
-      }
-    } else {
-      // No unsaved changes, use the prop (which should be the saved state)
-      return workflow;
-    }
-  }, [
-      workflow, hasUnsavedChanges, showJsonEditor, workflowJson,
-      nodes, edges, workflowName, workflowDescription
-  ]);
-
 
   return (
     <div className="flex flex-col h-full border rounded-lg overflow-hidden"> {/* Changed h-[70vh] to h-full */}
@@ -909,14 +927,15 @@ const WorkflowEditor = forwardRef(({
             </button>
 
             {/* JSON Editor Toggle Button */}
-            <button
+            {/* Hidden for phase-out at a later date, once node editor is stable */}
+            {/* <button
               onClick={() => setShowJsonEditor(!showJsonEditor)}
               className={`px-3 py-1 ${showJsonEditor ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'} hover:bg-blue-700 hover:text-white rounded transition text-sm disabled:opacity-50 flex items-center space-x-1`}
               disabled={disabled}
               title={showJsonEditor ? "Switch to Visual Editor" : "Switch to JSON Editor"}
             >
               {showJsonEditor ? 'Visual Editor' : 'JSON Editor'}
-            </button>
+            </button> */}
 
             {/* Existing Buttons */}
             {onNew && (

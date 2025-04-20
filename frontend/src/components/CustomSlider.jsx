@@ -35,6 +35,7 @@ const CustomSlider = ({
 
   const handleInteractionStart = useCallback((e) => {
     if (disabled) return;
+    e.stopPropagation(); // Prevent node drag
     setIsDragging(true);
     // Prevent text selection during drag
     e.preventDefault();
@@ -112,13 +113,22 @@ const CustomSlider = ({
       )}
       <div
         ref={sliderRef}
-        className={`relative w-full h-2 rounded-full cursor-pointer ${
+        className={`relative w-full h-2 rounded-full cursor-pointer nodrag ${
           disabled ? 'bg-gray-200 cursor-not-allowed' : 'bg-gray-300'
         }`}
-        onMouseDown={handleInteractionStart}
-        onTouchStart={handleInteractionStart}
+        onMouseDown={(e) => { // Stop propagation on track mousedown
+          if (disabled) return;
+          e.stopPropagation(); 
+          handleInteractionStart(e); 
+        }}
+        onTouchStart={(e) => { // Stop propagation on track touchstart
+          if (disabled) return;
+          e.stopPropagation();
+          handleInteractionStart(e);
+        }}
         onClick={(e) => { // Allow clicking on track to set value
           if (disabled) return;
+          e.stopPropagation(); // Also stop propagation on click
           const newValue = getValueFromPosition(e.clientX);
           if (newValue !== value) {
             onChange(newValue);
@@ -143,12 +153,22 @@ const CustomSlider = ({
         {/* Thumb */}
         <div
           ref={thumbRef}
-          className={`absolute top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full shadow focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-primary-500 ${
+          className={`absolute top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full shadow focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-primary-500 nodrag ${
             disabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary-600 cursor-grab active:cursor-grabbing'
           }`}
           style={{ left: `${percentage}%` }}
           tabIndex={disabled ? -1 : 0} // Make thumb focusable
           onKeyDown={handleKeyDown} // Handle keydown directly on the thumb
+          onMouseDown={(e) => { // Stop propagation on thumb mousedown
+             if (disabled) return;
+             e.stopPropagation(); 
+             handleInteractionStart(e);
+          }}
+          onTouchStart={(e) => { // Stop propagation on thumb touchstart
+             if (disabled) return;
+             e.stopPropagation();
+             handleInteractionStart(e);
+          }}
         />
       </div>
     </div>

@@ -87,6 +87,8 @@ const TemplateNode = ({
           onChange={handleInstructionChange}
           placeholder="Enter additional instructions to add to the template's system prompt..."
           disabled={disabled}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
         />
         <p className="text-xs text-gray-500">
           This will be appended to the template's system prompt.

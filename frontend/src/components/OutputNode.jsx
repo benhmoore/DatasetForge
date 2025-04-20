@@ -19,10 +19,25 @@ const OutputNode = ({
       disabled={disabled} 
       nodeType="output" // Specify type for styling and handle logic
       iconName="arrow-left-circle" // Specify icon
+      // Input handles will use the default from NodeBase
+      outputHandles={[]} // No output handles for the Output node
     >
       {/* No specific content needed for Output node, but could add info */}
       <div className="text-xs text-gray-500">
         Represents the final output of the workflow.
+      </div>
+      <div className="space-y-2">
+        <textarea
+          value={data.output_text || ''} // Display output text
+          readOnly // Make it read-only
+          className="w-full p-2 border rounded text-sm bg-gray-100 nodrag" // Style as read-only
+          rows={4}
+          placeholder="Output will appear here..."
+          disabled={disabled}
+          // Stop propagation to prevent node drag
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        />
       </div>
     </NodeBase>
   );

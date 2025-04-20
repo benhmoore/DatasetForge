@@ -22,9 +22,19 @@
     @apply block;
   }
 }
-
 /* Custom styles for selected React Flow edges */
 .react-flow__edge.selected .react-flow__edge-path {
   stroke: #fb923c; /* Tailwind orange-500 */
-  stroke-width: 2;
+  stroke-width: 3;
+  stroke-dasharray: none; /* Ensure solid line */
+}
+
+/* Prevent node dragging for interactive components */
+.nodrag {
+  pointer-events: all !important;
+}
+
+/* Override React Flow pointer events for elements with nodrag class */
+.react-flow__node .nodrag {
+  pointer-events: all !important;
 }
