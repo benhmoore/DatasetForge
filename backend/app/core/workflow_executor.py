@@ -33,6 +33,7 @@ class WorkflowExecutor:
             "input": self._execute_input_node,
             "output": self._execute_output_node,
             "template": self._execute_template_node,
+            "text": self._execute_text_node,
         }
         
         # Enable additional logging if in debug mode
@@ -487,10 +488,12 @@ class WorkflowExecutor:
                            node_inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a model node by calling the Ollama API directly.
-        Handles multiple inputs using the simplified array-based approach.
+        - System prompt is hardcoded.
+        - Reads 'model_instruction' from config (previously 'user_prompt' / 'system_instruction').
+        - Appends all inputs to the model instruction if no {input_X} placeholders are found.
         
         Args:
-            node_config: The node configuration including model, system_instruction, etc.
+            node_config: The node configuration including model, model_instruction, etc.
             node_inputs: The inputs for the node, with 'inputs' array containing all inputs
                 
         Returns:
@@ -500,115 +503,135 @@ class WorkflowExecutor:
         from ..api.schemas import ModelParameters
 
         try:
-            # Extract model parameters
+            # --- Configuration ---
+            node_id = node_config.get('id', 'unknown_model_node')
             model = node_config.get("model")
             if not model:
-                raise ValueError("Model name is required for model node")
-                
-            # Get system instruction directly from node config
-            system_instruction = node_config.get("system_instruction", "")
+                raise ValueError(f"Model name is required for model node '{node_id}'")
+            
+            # Get the base model instruction from config (renamed from user_prompt/system_instruction)
+            model_instruction_template = node_config.get("model_instruction", "")
+            
+            # Hardcoded system prompt
+            system_prompt = "Follow the user's prompt exactly."
             
             # Get input array from node_inputs (added by _get_node_inputs)
             input_array = node_inputs.get("inputs", [])
             
-            # Log available inputs for debugging
             if self.debug_mode:
-                logger.debug(f"Model node {node_config.get('id')}: Received {len(input_array)} inputs")
-            
-            # If there are no inputs, use empty user prompt
-            user_prompt = ""
+                logger.debug(f"Model node {node_id}: Received {len(input_array)} inputs. Model instruction template: '{model_instruction_template[:100]}...'")
+
+            # --- Construct Final User Prompt (which is based on model_instruction) ---
+            final_user_prompt = ""
+            placeholders = set(re.findall(r"\{input_(\d+)\}", model_instruction_template))
+
             if not input_array:
-                logger.info(f"Model node {node_config.get('id')} has no inputs - using empty user prompt")
-                user_prompt = ""
+                # No inputs, use the template directly
+                final_user_prompt = model_instruction_template
+                if self.debug_mode:
+                    logger.debug(f"Model node {node_id}: No inputs provided. Using model instruction template directly.")
+            elif placeholders:
+                # Placeholders found, substitute them
+                processed_prompt = model_instruction_template
+                max_index_referenced = -1
+                
+                for idx_str in placeholders:
+                    try:
+                        idx = int(idx_str)
+                        max_index_referenced = max(max_index_referenced, idx)
+                        if idx < len(input_array):
+                            placeholder = f"{{input_{idx}}}"
+                            input_value = str(input_array[idx])
+                            processed_prompt = processed_prompt.replace(placeholder, input_value)
+                        else:
+                            placeholder = f"{{input_{idx}}}"
+                            missing_msg = f"[MISSING INPUT {idx}]"
+                            processed_prompt = processed_prompt.replace(placeholder, missing_msg)
+                            logger.warning(f"Model node {node_id}: Missing input for placeholder '{placeholder}'")
+                    except ValueError:
+                        logger.warning(f"Model node {node_id}: Invalid input index '{idx_str}' in model instruction template.")
+                
+                final_user_prompt = processed_prompt
+                if self.debug_mode:
+                    logger.debug(f"Model node {node_id}: Substituted {len(placeholders)} placeholders in model instruction.")
+                    
+                # Append any remaining inputs *not* referenced by placeholders
+                remaining_inputs = []
+                for i, val in enumerate(input_array):
+                    if i > max_index_referenced:
+                        remaining_inputs.append(str(val))
+                
+                if remaining_inputs:
+                    appended_text = "\n\n--- Additional Inputs ---\n" + "\n".join(remaining_inputs)
+                    final_user_prompt += appended_text
+                    if self.debug_mode:
+                        logger.debug(f"Model node {node_id}: Appended {len(remaining_inputs)} remaining inputs not referenced by placeholders.")
+
             else:
-                # With single input, use it directly as user prompt
-                if len(input_array) == 1:
-                    user_prompt = str(input_array[0])
-                    if self.debug_mode:
-                        logger.debug(f"Model node {node_config.get('id')}: Using single input as user prompt")
-                else:
-                    # If system instruction has input_X placeholders, substitute them
-                    # Check for {input_0}, {input_1}, etc. placeholders
-                    placeholders = set(re.findall(r"\{input_(\d+)\}", system_instruction))
-                    
-                    if placeholders:
-                        # Process system instruction - replace placeholders with input values
-                        processed_system = system_instruction
-                        
-                        for idx_str in placeholders:
-                            try:
-                                idx = int(idx_str)
-                                if idx < len(input_array):
-                                    # Replace {input_X} with actual input value
-                                    placeholder = f"{{input_{idx}}}"
-                                    input_value = str(input_array[idx])
-                                    processed_system = processed_system.replace(placeholder, input_value)
-                                else:
-                                    # Missing input for this index
-                                    placeholder = f"{{input_{idx}}}"
-                                    missing_msg = f"[MISSING INPUT {idx}]"
-                                    processed_system = processed_system.replace(placeholder, missing_msg)
-                                    logger.warning(f"Model node {node_config.get('id')}: Missing input for placeholder '{placeholder}'")
-                            except ValueError:
-                                logger.warning(f"Model node {node_config.get('id')}: Invalid input index '{idx_str}'")
-                        
-                        # Update system instruction with processed version
-                        system_instruction = processed_system
-                        
-                        if self.debug_mode:
-                            logger.debug(f"Model node {node_config.get('id')}: Processed system instruction with input substitutions")
-                    
-                    # Use the first input as user prompt if no other is specified
-                    # This maintains backward compatibility
-                    user_prompt = str(input_array[0])
-                    
-                    if self.debug_mode:
-                        logger.debug(f"Model node {node_config.get('id')}: Using first input as user prompt")
-            
-            # Process model parameters - convert dict to ModelParameters if needed
-            model_parameters = node_config.get("model_parameters")
-            if model_parameters and isinstance(model_parameters, dict):
+                # No placeholders, append all inputs
+                if self.debug_mode:
+                    logger.debug(f"Model node {node_id}: No placeholders found. Appending all {len(input_array)} inputs to model instruction.")
+                
+                inputs_as_strings = [str(inp) for inp in input_array]
+                appended_text = "\n\n--- Inputs ---\n" + "\n".join(inputs_as_strings)
+                final_user_prompt = model_instruction_template + appended_text
+
+            # --- Model Parameters ---
+            model_parameters_dict = node_config.get("model_parameters")
+            model_parameters = ModelParameters() # Use defaults
+            if model_parameters_dict and isinstance(model_parameters_dict, dict):
                 try:
-                    model_parameters = ModelParameters(**model_parameters)
+                    # Only pass valid parameters to the Pydantic model
+                    valid_params = {k: v for k, v in model_parameters_dict.items() if hasattr(ModelParameters, k)}
+                    model_parameters = ModelParameters(**valid_params)
                 except Exception as e:
-                    logger.warning(f"Invalid model parameters format: {e}. Using defaults.")
-                    model_parameters = ModelParameters()
-            elif not model_parameters:
-                model_parameters = ModelParameters()  # Use defaults
+                    logger.warning(f"Model node {node_id}: Invalid model parameters format: {e}. Using defaults.")
             
-            # Call Ollama API
+            if self.debug_mode:
+                 logger.debug(f"Model node {node_id}: Final User Prompt: '{final_user_prompt[:500]}...'")
+                 logger.debug(f"Model node {node_id}: System Prompt: '{system_prompt}'")
+                 logger.debug(f"Model node {node_id}: Model: {model}, Parameters: {model_parameters.dict()}")
+
+            # --- Call Ollama API ---
             result = await call_ollama_generate(
                 model=model,
-                system_prompt=system_instruction,
-                user_prompt=user_prompt,
+                system_prompt=system_prompt, # Hardcoded
+                user_prompt=final_user_prompt, # Constructed prompt based on model_instruction
                 template_params=model_parameters,
-                template=None,
-                user_prefs={},
-                is_tool_calling=False
+                template=None, # Not used directly here
+                user_prefs={}, # Not used here
+                is_tool_calling=False # Not used here
             )
             
-            # Extract response
             output_text = result.get("response", "").strip()
             
+            if self.debug_mode:
+                logger.debug(f"Model node {node_id}: Received response (first 100 chars): '{output_text[:100]}...'")
+
             # Return result with standard fields
             return {
                 "output": output_text,
-                "model": model,
-                "system_instruction": system_instruction,
-                "user_prompt": user_prompt,
+                "model_used": model,
+                "system_prompt_used": system_prompt,
+                "final_user_prompt": final_user_prompt, # Include the final prompt sent
+                "model_instruction_template": model_instruction_template, # Original template
                 "input_count": len(input_array),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": self._get_timestamp()
             }
             
         except Exception as e:
-            logger.exception(f"Error executing model node {node_config.get('id')}: {str(e)}")
+            logger.exception(f"Error executing model node {node_config.get('id', 'unknown')}: {str(e)}")
             error_details = {
                 "error": str(e),
+                "node_id": node_config.get('id'),
                 "model": node_config.get("model"),
-                "inputs_available": list(node_inputs.keys()),
-                "input_count": len(node_inputs.get("inputs", []))
+                "inputs_available_count": len(node_inputs.get("inputs", [])),
             }
-            raise ValueError(f"Model execution failed: {json.dumps(error_details)}")
+            # Avoid raising, return error structure consistent with NodeExecutionResult
+            return {
+                 "error": f"Model execution failed: {json.dumps(error_details)}",
+                 "timestamp": self._get_timestamp()
+            }
 
     async def _execute_template_node(self, node_config: Dict[str, Any],
                            node_inputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -725,6 +748,42 @@ class WorkflowExecutor:
         except Exception as e:
             logger.exception(f"Error executing template node: {str(e)}")
             raise ValueError(f"Template execution failed: {str(e)}")
+        
+        # Execute text node
+    async def _execute_text_node(self, node_config: Dict[str, Any],
+                            node_inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute a text node - no inputs, just returns the text.
+
+        Args:
+            node_config: The node configuration
+            node_inputs: The inputs for the node (not used)
+        Returns:
+            Dict[str, Any]: The text from the node configuration
+        """
+        # Get the text from the node configuration
+        text = node_config.get("text_content", "")
+        if not text:
+            logger.warning("Text node received no text - using empty string")
+            text = ""
+
+        # Return the text as output
+        result = {
+            "output": text,
+            "_node_info": {
+                "type": "text",
+                "id": node_config.get("id", "text-node"),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        }
+        # Add debug info only in debug mode
+        if self.debug_mode:
+            result["_debug"] = {
+                "text_length": len(text) if isinstance(text, str) else 0
+            }
+            logger.debug(f"Text node final result length: {len(text) if isinstance(text, str) else 0}")
+        return result
+
     
     async def _execute_transform_node(self, node_config: Dict[str, Any], 
                                node_inputs: Dict[str, Any]) -> Dict[str, Any]:

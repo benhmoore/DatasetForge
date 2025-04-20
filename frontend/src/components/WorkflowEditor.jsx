@@ -18,6 +18,7 @@ import ModelNode from './ModelNode'; // Direct import
 import TransformNode from './TransformNode'; // Direct import
 import InputNode from './InputNode'; // Import the new InputNode
 import OutputNode from './OutputNode'; // Import the new OutputNode
+import TextNode from './TextNode'; // Import the new TextNode
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
 
@@ -26,7 +27,8 @@ const NODE_TYPES = {
   model: 'Model',
   transform: 'Transform',
   input: 'Input',
-  output: 'Output'
+  output: 'Output',
+  text: 'Text' // Add Text node type
 };
 
 // Define the mapping from internal type to React Flow component type
@@ -35,6 +37,7 @@ const nodeComponentMap = {
   transform: 'transformNode',
   input: 'inputNode',
   output: 'outputNode',
+  text: 'textNode' // Add Text node mapping
 };
 
 // --- Node Components ---
@@ -45,7 +48,8 @@ const nodeTypes = {
   modelNode: ModelNode, 
   transformNode: TransformNode,
   inputNode: InputNode, // Use imported InputNode
-  outputNode: OutputNode // Use imported OutputNode
+  outputNode: OutputNode, // Use imported OutputNode
+  textNode: TextNode // Add TextNode component
 };
 
 /**
@@ -337,6 +341,11 @@ const WorkflowEditor = ({
       defaultConfig = { type: 'input', name: 'Input' };
     } else if (selectedNodeType === 'output') {
       defaultConfig = { type: 'output', name: 'Output' };
+    } else if (selectedNodeType === 'text') {
+      defaultConfig = { type: 'text', name: 'Text', text_content: '' };
+    } else {
+      console.error(`Unknown node type: ${selectedNodeType}`);
+      return; // Exit if type is unknown
     }
     
     const newNode = {

@@ -446,13 +446,17 @@ const Generate = ({ context }) => {
                   });
                 }
                 
-                // Set all nodes to queued initially
+                // Set all nodes to queued initially, including the node name
                 nodeIds.forEach(nodeId => {
+                  const node = currentWorkflow?.nodes?.[nodeId];
+                  const nodeName = node?.name || nodeId; // Get name or fallback to ID
+                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node?.data, `Derived Name: ${nodeName}`); // Added logging
                   nodeStatusMap[variationKey][nodeId] = { 
                     status: 'queued',
                     progress: 0,
                     started_at: null,
-                    completed_at: null
+                    completed_at: null,
+                    node_name: nodeName // Store the node name
                   };
                 });
                 
@@ -465,7 +469,7 @@ const Generate = ({ context }) => {
                     updated[targetIndex] = {
                       ...updated[targetIndex],
                       workflow_progress: {
-                        node_statuses: {...nodeStatusMap[variationKey]},
+                        node_statuses: {...nodeStatusMap[variationKey]}, // Pass the map with names
                         execution_order: progressData.execution_order,
                         started_at: new Date().toISOString()
                       }
@@ -479,17 +483,19 @@ const Generate = ({ context }) => {
                 const { node_id, status, progress, result } = progressData;
                 
                 if (nodeStatusMap[variationKey][node_id]) {
+                  // Preserve existing node_name when updating status
+                  const existingNodeData = nodeStatusMap[variationKey][node_id];
                   nodeStatusMap[variationKey][node_id] = {
-                    ...nodeStatusMap[variationKey][node_id],
+                    ...existingNodeData, // Keep existing data like node_name
                     status: status,
                     progress: progress,
                     result: result || null,
                     started_at: status === 'running' && progress === 0 
                       ? new Date().toISOString() 
-                      : nodeStatusMap[variationKey][node_id].started_at,
+                      : existingNodeData.started_at,
                     completed_at: (status === 'success' || status === 'error') && progress === 1 
                       ? new Date().toISOString() 
-                      : nodeStatusMap[variationKey][node_id].completed_at
+                      : existingNodeData.completed_at
                   };
                   
                   // Update variation with progress
@@ -498,11 +504,13 @@ const Generate = ({ context }) => {
                     const targetIndex = updated.findIndex(v => v.id === targetVariation.id);
                     
                     if (targetIndex !== -1) {
+                      // Ensure workflow_progress exists before updating node_statuses
+                      const currentProgress = updated[targetIndex].workflow_progress || { node_statuses: {}, execution_order: [] };
                       updated[targetIndex] = {
                         ...updated[targetIndex],
                         workflow_progress: {
-                          ...updated[targetIndex].workflow_progress,
-                          node_statuses: {...nodeStatusMap[variationKey]}
+                          ...currentProgress,
+                          node_statuses: {...nodeStatusMap[variationKey]} // Pass updated map
                         }
                       };
                     }
@@ -860,13 +868,17 @@ const Generate = ({ context }) => {
                   });
                 }
                 
-                // Set all nodes to queued initially
+                // Set all nodes to queued initially, including the node name
                 nodeIds.forEach(nodeId => {
+                  const node = currentWorkflow?.nodes?.[nodeId];
+                  const nodeName = node?.data?.label || nodeId; // Get name or fallback to ID
+                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node?.data, `Derived Name: ${nodeName}`); // Added logging
                   nodeStatusMap[nodeId] = { 
                     status: 'queued',
                     progress: 0,
                     started_at: null,
-                    completed_at: null
+                    completed_at: null,
+                    node_name: nodeName // Store the node name
                   };
                 });
                 
@@ -879,13 +891,13 @@ const Generate = ({ context }) => {
                     updated[targetIndex] = {
                       ...updated[targetIndex],
                       workflow_progress: {
-                        node_statuses: {...nodeStatusMap},
+                        node_statuses: {...nodeStatusMap}, // Pass the map with names
                         execution_order: progressData.execution_order,
                         started_at: new Date().toISOString()
                       }
                     };
                   }
-                  return updated;
+                  return updated; 
                 });
               }
               else if (progressData.type === 'progress') {
@@ -893,17 +905,19 @@ const Generate = ({ context }) => {
                 const { node_id, status, progress, result } = progressData;
                 
                 if (nodeStatusMap[node_id]) {
+                  // Preserve existing node_name when updating status
+                  const existingNodeData = nodeStatusMap[node_id];
                   nodeStatusMap[node_id] = {
-                    ...nodeStatusMap[node_id],
+                    ...existingNodeData, // Keep existing data like node_name
                     status: status,
                     progress: progress,
                     result: result || null,
                     started_at: status === 'running' && progress === 0 
                       ? new Date().toISOString() 
-                      : nodeStatusMap[node_id].started_at,
+                      : existingNodeData.started_at,
                     completed_at: (status === 'success' || status === 'error') && progress === 1 
                       ? new Date().toISOString() 
-                      : nodeStatusMap[node_id].completed_at
+                      : existingNodeData.completed_at
                   };
                   
                   // Update variation with progress
@@ -912,11 +926,13 @@ const Generate = ({ context }) => {
                     const targetIndex = updated.findIndex(v => v.id === id);
                     
                     if (targetIndex !== -1) {
+                      // Ensure workflow_progress exists before updating node_statuses
+                      const currentProgress = updated[targetIndex].workflow_progress || { node_statuses: {}, execution_order: [] };
                       updated[targetIndex] = {
                         ...updated[targetIndex],
                         workflow_progress: {
-                          ...updated[targetIndex].workflow_progress,
-                          node_statuses: {...nodeStatusMap}
+                          ...currentProgress,
+                          node_statuses: {...nodeStatusMap} // Pass updated map
                         }
                       };
                     }

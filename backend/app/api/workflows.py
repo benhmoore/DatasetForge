@@ -252,7 +252,7 @@ async def execute_workflow_step(
     try:
         # Extract node configuration and input data
         node_config = request.get("node_config")
-        node_inputs = request.get("inputs", {})
+        node_inputs = request.get("inputs", {}) # Changed from input_data for consistency
         
         if not node_config:
             raise HTTPException(
@@ -272,20 +272,34 @@ async def execute_workflow_step(
         executor = WorkflowExecutor(debug_mode=True)
         
         # Execute based on node type
-        if node_type == "model":
-            result = await executor._execute_model_node(node_config, node_inputs)
-        elif node_type == "transform":
-            result = await executor._execute_transform_node(node_config, node_inputs)
-        else:
-            raise HTTPException(
+        # Use the executor's registered methods for consistency
+        node_executor = executor.node_executors.get(node_type)
+        
+        if not node_executor:
+             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unsupported node type: {node_type}"
             )
         
+        # Ensure node_inputs has the required structure (e.g., 'inputs' array)
+        # This might need adjustment based on how _get_node_inputs structures things
+        # For now, assume node_inputs is passed correctly for the specific executor
+        if "inputs" not in node_inputs:
+             # If only a single value was passed, wrap it in the expected structure
+             if node_inputs:
+                  logger.warning(f"execute_step: Wrapping raw input data into 'inputs' array for node {node_config.get('id')}")
+                  node_inputs = {"inputs": [node_inputs.get("input")] if "input" in node_inputs else list(node_inputs.values())}
+             else:
+                  node_inputs = {"inputs": []}
+
+        # Call the appropriate executor method
+        result = await node_executor(node_config, node_inputs)
+        
+        # Return a consistent structure
         return {
             "node_id": node_config.get("id", "temp-node"),
             "node_type": node_type,
-            "output": result
+            "output": result # The entire output object from the executor
         }
         
     except Exception as e:

@@ -448,7 +448,7 @@ const VariationCard = ({
               <div key={nodeId} className="flex flex-col space-y-1">
                 <div className="flex justify-between items-center text-xs">
                   <span className={`font-medium ${textColor}`}>
-                    {nodeId}
+                    {nodeStatus.node_name || nodeId} {/* Display node name or fallback to ID */}
                   </span>
                   <span className={`px-1.5 py-0.5 rounded-full text-xs ${textColor} ${statusColor}`}>
                     {status === 'running' && (

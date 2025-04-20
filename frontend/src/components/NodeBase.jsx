@@ -29,10 +29,11 @@ const NodeBase = ({
   const [currentName, setCurrentName] = useState(name || label || 'Node');
 
   // Determine handle colors based on type
-  const handleColorClass = nodeType === 'model' ? '!bg-blue-500' : 
-                           nodeType === 'transform' ? '!bg-orange-500' :
-                           nodeType === 'input' ? '!bg-green-500' :
-                           nodeType === 'output' ? '!bg-purple-500' :
+  const handleColorClass =  nodeType === 'model' ? '!bg-blue-500' : 
+                            nodeType === 'transform' ? '!bg-orange-500' :
+                            nodeType === 'input' ? '!bg-green-500' :
+                            nodeType === 'output' ? '!bg-purple-500' :
+                            nodeType === 'text' ? '!bg-yellow-500' :
                            '!bg-gray-500'; // Default
 
   const toggleCollapse = () => {

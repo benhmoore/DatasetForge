@@ -21,7 +21,7 @@ const ModelNode = ({
   const { 
     onConfigChange, 
     model = '', 
-    system_instruction = '',
+    model_instruction = '', // Renamed from system_instruction
     model_parameters = { temperature: 0.7, top_p: 1.0, max_tokens: 1000 },
     _visibleHandleCount = 1 // Read count from data, default to 1
   } = data;
@@ -29,8 +29,6 @@ const ModelNode = ({
   // State for models and loading status
   const [models, setModels] = useState([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
-  
-  // REMOVED local visibleHandleCount state - rely solely on data prop
   
   // Hook to notify React Flow about internal changes (like adding/removing handles)
   const updateNodeInternals = useUpdateNodeInternals();
@@ -67,11 +65,11 @@ const ModelNode = ({
     }
   };
 
-  // Handle system instruction change
-  const handleSystemInstructionChange = (e) => {
+  // Handle model instruction change
+  const handleModelInstructionChange = (e) => {
     if (onConfigChange) {
-      console.log(`ModelNode (${id}): handleSystemInstructionChange`);
-      onConfigChange(id, { system_instruction: e.target.value });
+      console.log(`ModelNode (${id}): handleModelInstructionChange`);
+      onConfigChange(id, { model_instruction: e.target.value });
     }
   };
 
@@ -136,23 +134,23 @@ const ModelNode = ({
         />
       </div>
       
-      {/* System instruction */}
+      {/* Model instruction */}
       <div className="mt-4 space-y-2">
         <label className="block text-sm font-medium text-gray-700">
-          System Instruction
+          Model Instruction
         </label>
         <textarea
-          value={system_instruction}
-          onChange={handleSystemInstructionChange}
+          value={model_instruction}
+          onChange={handleModelInstructionChange}
           className="w-full p-2 border rounded text-sm"
           rows={4}
-          placeholder="Enter system instructions for the model. Use {input_0}, {input_1}, etc. to reference inputs."
+          placeholder="Enter instructions for the model. Use {input_0}, {input_1}, etc. to reference inputs."
           disabled={disabled}
         />
         
         <div className="text-xs text-gray-500 mt-1">
           <p>Reference inputs using <code>{'{input_0}'}</code>, <code>{'{input_1}'}</code>, etc.</p>
-          <p>The first input is always used as the user prompt if not referenced in system instruction.</p>
+          <p>The first input is always used as the user prompt if not referenced in model instruction.</p>
         </div>
       </div>
       
