@@ -213,13 +213,7 @@ const WorkflowEditor = ({
   const nodeIdCounterRef = useRef(1);
   
   // Load workflow data into ReactFlow format
-  // Add keyboard event listener
-  useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [handleKeyDown]);
+  // Keyboard event handling will be implemented in a future version
   
   useEffect(() => {
     if (workflow) {
@@ -571,38 +565,11 @@ const WorkflowEditor = ({
     setEdges(eds => eds.filter(e => e.id !== edgeId));
   };
   
-  // Handle keyboard events
+  // Simple keyboard event handler - to be expanded in future versions
   const handleKeyDown = useCallback((event) => {
-    if (disabled) return;
-    
-    // Handle Delete or Backspace key
-    if ((event.key === 'Delete' || event.key === 'Backspace') && 
-        (document.activeElement === document.body || // Only if not in an input field
-         document.activeElement.tagName === 'DIV')) {
-      
-      // Check for box-selected nodes (multiple selection)
-      const selectedNodes = nodes.filter(node => node.selected);
-      
-      if (selectedNodes.length > 0) {
-        // Delete all selected nodes
-        const selectedNodeIds = selectedNodes.map(node => node.id);
-        
-        // Remove selected nodes
-        setNodes(nds => nds.filter(node => !selectedNodeIds.includes(node.id)));
-        
-        // Remove associated edges
-        setEdges(eds => eds.filter(edge => 
-          !selectedNodeIds.includes(edge.source) && !selectedNodeIds.includes(edge.target)
-        ));
-        
-        event.preventDefault();
-      } else if (selectedNode) {
-        // Fall back to single node deletion
-        handleDeleteNode();
-        event.preventDefault();
-      }
-    }
-  }, [selectedNode, nodes, disabled]);
+    // This will be implemented in a future version
+    // We'll support keyboard-based deletion and navigation
+  }, []);
   
   // Update node configuration
   const handleNodeConfigChange = (nodeId, updatedConfig) => {
@@ -855,7 +822,6 @@ const WorkflowEditor = ({
             fitView
             snapToGrid={true}
             snapGrid={[15, 15]}
-            selectionMode={1} // Enable box selection mode
           >
             <Background color="#aaa" gap={16} />
             <Controls />
