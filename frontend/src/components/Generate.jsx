@@ -428,6 +428,10 @@ const Generate = ({ context }) => {
             variation: targetVariation.variation || ""
           };
           
+          // Track the original variation ID to update or create derivatives from
+          const origVariationId = targetVariation.id;
+          let createdOutputVariations = {}; // Track created output variations
+          
           // Execute workflow with streaming for this seed/variation
           await api.executeWorkflowWithStream(
             currentWorkflow,
@@ -466,7 +470,7 @@ const Generate = ({ context }) => {
                 // Update variation with workflow structure
                 setVariations(prevVariations => {
                   const updated = [...prevVariations];
-                  const targetIndex = updated.findIndex(v => v.id === targetVariation.id);
+                  const targetIndex = updated.findIndex(v => v.id === origVariationId);
                   
                   if (targetIndex !== -1) {
                     updated[targetIndex] = {
@@ -504,7 +508,7 @@ const Generate = ({ context }) => {
                   // Update variation with progress
                   setVariations(prevVariations => {
                     const updated = [...prevVariations];
-                    const targetIndex = updated.findIndex(v => v.id === targetVariation.id);
+                    const targetIndex = updated.findIndex(v => v.id === origVariationId);
                     
                     if (targetIndex !== -1) {
                       // Ensure workflow_progress exists before updating node_statuses
@@ -522,76 +526,140 @@ const Generate = ({ context }) => {
                 }
               }
               else if (progressData.type === 'complete') {
-                // Update variation with final results
-                setVariations(prevVariations => {
-                  const updated = [...prevVariations];
-                  const targetIndex = updated.findIndex(v => v.id === targetVariation.id);
-                  
-                  if (targetIndex !== -1) {
-                    // Extract the final output from workflow result
-                    let workflowOutput = "";
+                // Get all the node results
+                const allResults = progressData.result?.results || [];
+                
+                // Filter to find just the output nodes
+                const outputNodeResults = allResults.filter(result => 
+                  result.node_type === 'output'
+                );
+                
+                if (outputNodeResults.length <= 1) {
+                  // If there's only one output node, update the original variation as before
+                  setVariations(prevVariations => {
+                    const updated = [...prevVariations];
+                    const targetIndex = updated.findIndex(v => v.id === origVariationId);
                     
-                    // Try to get output from different places
-                    if (progressData.result?.final_output?.output) {
-                      workflowOutput = progressData.result.final_output.output;
-                      console.log("Using final_output.output as workflow result", {
-                        length: workflowOutput.length,
-                        preview: workflowOutput.substring(0, 50) + '...'
+                    if (targetIndex !== -1) {
+                      // Extract the output content
+                      const finalOutput = progressData.result?.final_output?.output || '';
+                      
+                      updated[targetIndex] = {
+                        ...baseVariation,
+                        output: outputContent,
+                        variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
+                        isGenerating: false,
+                        error: null,
+                        template_id: data.template_id,
+                        _source: 'workflow_output',
+                        _output_node_id: nodeId,
+                        _output_node_name: nodeName,
+                        workflow_results: progressData.result,
+                        workflow_progress: {
+                          ...baseVariation.workflow_progress,
+                          completed_at: new Date().toISOString(),
+                          status: 'complete'
+                        }
+                      };
+                    } else {
+                      // Create new variations for additional outputs
+                      const newVariationId = `${origVariationId}-output-${nodeId}-${Date.now()}`;
+                      
+                      newVariations.push({
+                        ...baseVariation,
+                        id: newVariationId,
+                        output: outputContent,
+                        variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
+                        isGenerating: false,
+                        error: null,
+                        template_id: data.template_id,
+                        _source: 'workflow_output',
+                        _output_node_id: nodeId,
+                        _output_node_name: nodeName,
+                        workflow_results: progressData.result,
+                        workflow_progress: {
+                          ...baseVariation.workflow_progress,
+                          completed_at: new Date().toISOString(),
+                          status: 'complete'
+                        }
                       });
-                    } else if (progressData.result?.final_output) {
-                      // If final_output exists but no output field, try other fields
-                      const finalOutput = progressData.result.final_output;
-                      for (const key of ['result', 'text', 'content', 'value']) {
-                        if (finalOutput[key]) {
-                          workflowOutput = finalOutput[key];
-                          console.log(`Using final_output.${key} as workflow result`);
-                          break;
+                    }
+                  });
+                } else {
+                  // Multiple output nodes - create multiple variation cards
+                  setVariations(prevVariations => {
+                    const updated = [...prevVariations];
+                    const targetIndex = updated.findIndex(v => v.id === origVariationId);
+                    
+                    if (targetIndex !== -1) {
+                      const baseVariation = updated[targetIndex];
+                      const newVariations = [];
+                      
+                      // Process each output node result
+                      outputNodeResults.forEach((nodeResult, index) => {
+
+                        console.log("GIVEN NODE RESULT:", nodeResult);
+                        // Extract node info and output
+                        const nodeId = nodeResult.node_id;
+                        const nodeName = nodeResult?.node_name || nodeId; // Fallback to ID if name is not available
+                        const outputContent = nodeResult.output?.output || '';
+                        
+                        if (index === 0) {
+                          // Update the original variation with the first output
+                          updated[targetIndex] = {
+                            ...baseVariation,
+                            output: outputContent,
+                            variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
+                            isGenerating: false,
+                            error: null,
+                            template_id: data.template_id,
+                            _source: 'workflow_output',
+                            _output_node_id: nodeId,
+                            _output_node_name: nodeName,
+                            workflow_results: progressData.result,
+                            workflow_progress: {
+                              ...baseVariation.workflow_progress,
+                              completed_at: new Date().toISOString(),
+                              status: 'complete'
+                            }
+                          };
+                        } else {
+                          // Create new variations for additional outputs
+                          const newVariationId = `${origVariationId}-output-${nodeId}-${Date.now()}`;
+                          
+                          newVariations.push({
+                            ...baseVariation,
+                            id: newVariationId,
+                            output: outputContent,
+                            variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
+                            isGenerating: false,
+                            error: null,
+                            template_id: data.template_id,
+                            _source: 'workflow_output',
+                            _output_node_id: nodeId,
+                            _output_node_name: nodeName,
+                            workflow_results: progressData.result,
+                            workflow_progress: {
+                              ...baseVariation.workflow_progress,
+                              completed_at: new Date().toISOString(),
+                              status: 'complete'
+                            }
+                          });
                         }
-                      }
+                      });
+                      
+                      // Add all new variations to the updated array
+                      return [...updated, ...newVariations];
                     }
-                    
-                    // If still empty, check results array for any output
-                    if (!workflowOutput && progressData.result?.results) {
-                      // Look for the last result with an output
-                      const results = progressData.result.results;
-                      for (let i = results.length - 1; i >= 0; i--) {
-                        if (results[i].output) {
-                          workflowOutput = results[i].output;
-                          console.log(`Using results[${i}].output as workflow result`);
-                          break;
-                        }
-                      }
-                    }
-                    
-                    // Final fallback
-                    if (!workflowOutput) {
-                      workflowOutput = "No output from workflow";
-                    }
-                    
-                    updated[targetIndex] = {
-                      ...updated[targetIndex],
-                      output: workflowOutput,
-                      processed_prompt: data.instruction || "",
-                      isGenerating: false,
-                      error: null,
-                      template_id: data.template_id,
-                      _source: 'workflow',
-                      workflow_results: progressData.result,
-                      workflow_progress: {
-                        ...updated[targetIndex].workflow_progress,
-                        completed_at: new Date().toISOString(),
-                        status: 'complete'
-                      }
-                    };
-                  }
-                  return updated;
-                });
+                    return updated;
+                  });
+                }
               }
               else if (progressData.type === 'error') {
                 // Update variation with error
                 setVariations(prevVariations => {
                   const updated = [...prevVariations];
-                  const targetIndex = updated.findIndex(v => v.id === targetVariation.id);
+                  const targetIndex = updated.findIndex(v => v.id === origVariationId);
                   
                   if (targetIndex !== -1) {
                     updated[targetIndex] = {
@@ -769,6 +837,11 @@ const Generate = ({ context }) => {
 
       const originalSeedIndex = currentVariation.seed_index;
       const originalVariationIndex = currentVariation.variation_index;
+      
+      // Check if this is an output node variation
+      const isOutputNodeVariation = currentVariation._output_node_id !== undefined;
+      const outputNodeId = currentVariation._output_node_id;
+      const outputNodeName = currentVariation._output_node_name;
 
       // Use workflow if enabled
       if (workflowEnabled && currentWorkflow) {
@@ -801,7 +874,10 @@ const Generate = ({ context }) => {
           console.log(`Preparing workflow input for regeneration:`, {
             hasOutput: !!currentVariation.output,
             outputPreview: currentVariation.output ? currentVariation.output.substring(0, 50) + '...' : 'empty',
-            variationKeys: Object.keys(currentVariation)
+            variationKeys: Object.keys(currentVariation),
+            isOutputNodeVariation,
+            outputNodeId,
+            outputNodeName
           });
           
           // Full variation data for context
@@ -810,7 +886,12 @@ const Generate = ({ context }) => {
             template_id: selectedTemplate.id,
             instruction: instruction || "",
             regenerating: true,
-            original_output: variationOutput
+            original_output: variationOutput,
+            // If this is an output node variation, include that information
+            ...(isOutputNodeVariation && {
+              target_output_node_id: outputNodeId,
+              target_output_node_name: outputNodeName
+            })
           };
           
           // First get the template output using standard generation
@@ -874,7 +955,7 @@ const Generate = ({ context }) => {
                 // Set all nodes to queued initially, including the node name
                 nodeIds.forEach(nodeId => {
                   const node = currentWorkflow?.nodes?.[nodeId];
-                console.log("USING NODE DETAILS", node);
+                  console.log("USING NODE DETAILS", node);
                   const nodeName = node?.name || nodeId; // Get name or fallback to ID
                   console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node?.data, `Derived Name: ${nodeName}`); // Added logging
                   nodeStatusMap[nodeId] = { 
@@ -945,80 +1026,59 @@ const Generate = ({ context }) => {
                 }
               }
               else if (progressData.type === 'complete') {
-                // Update variation with final results
-                setVariations(prevVariations => {
-                  const updated = [...prevVariations];
-                  const targetIndex = updated.findIndex(v => v.id === id);
+                // If this is an output node variation, check for multiple output nodes
+                if (isOutputNodeVariation) {
+                  // Handle completion for a specific output node variation
+                  const outputNodeResults = progressData.result?.output_node_results || {};
                   
-                  if (targetIndex !== -1) {
-                    // Extract the final output from workflow result
-                    let workflowOutput = "";
+                  // Check if our specific output node is in the results
+                  if (outputNodeId && outputNodeResults[outputNodeId]) {
+                    // Use the output from the specific node we're regenerating
+                    const nodeOutput = outputNodeResults[outputNodeId];
+                    const outputContent = nodeOutput.output || "No output from this node after regeneration";
                     
-                    // Try to get output from different places
-                    if (progressData.result?.final_output?.output) {
-                      workflowOutput = progressData.result.final_output.output;
-                      console.log("Using final_output.output as workflow result", {
-                        length: workflowOutput.length,
-                        preview: workflowOutput.substring(0, 50) + '...'
-                      });
-                    } else if (progressData.result?.final_output) {
-                      // If final_output exists but no output field, try other fields
-                      const finalOutput = progressData.result.final_output;
-                      for (const key of ['result', 'text', 'content', 'value']) {
-                        if (finalOutput[key]) {
-                          workflowOutput = finalOutput[key];
-                          console.log(`Using final_output.${key} as workflow result`);
-                          break;
+                    setVariations(prevVariations => {
+                      const updated = [...prevVariations];
+                      const targetIndex = updated.findIndex(v => v.id === id);
+                      
+                      if (targetIndex !== -1) {
+                        updated[targetIndex] = {
+                          ...updated[targetIndex],
+                          output: outputContent,
+                          processed_prompt: instruction || "",
+                          isGenerating: false,
+                          error: null,
+                          template_id: selectedTemplate.id,
+                          _source: 'workflow_regen',
+                          workflow_results: progressData.result,
+                          workflow_progress: {
+                            ...updated[targetIndex].workflow_progress,
+                            completed_at: new Date().toISOString(),
+                            status: 'complete'
+                          }
+                        };
+                        
+                        // Deselect item if it was selected
+                        if (selectedVariations.has(id)) {
+                          setSelectedVariations(prevSelected => {
+                            const newSelected = new Set(prevSelected);
+                            newSelected.delete(id);
+                            return newSelected;
+                          });
+                          toast.info("Deselected item due to regeneration.");
                         }
                       }
-                    }
-                    
-                    // If still empty, check results array for any output
-                    if (!workflowOutput && progressData.result?.results) {
-                      // Look for the last result with an output
-                      const results = progressData.result.results;
-                      for (let i = results.length - 1; i >= 0; i--) {
-                        if (results[i].output) {
-                          workflowOutput = results[i].output;
-                          console.log(`Using results[${i}].output as workflow result`);
-                          break;
-                        }
-                      }
-                    }
-                    
-                    // Final fallback
-                    if (!workflowOutput) {
-                      workflowOutput = "No output from workflow";
-                    }
-                    
-                    updated[targetIndex] = {
-                      ...updated[targetIndex],
-                      output: workflowOutput,
-                      processed_prompt: instruction || "",
-                      isGenerating: false,
-                      error: null,
-                      template_id: selectedTemplate.id,
-                      _source: 'workflow_regen',
-                      workflow_results: progressData.result,
-                      workflow_progress: {
-                        ...updated[targetIndex].workflow_progress,
-                        completed_at: new Date().toISOString(),
-                        status: 'complete'
-                      }
-                    };
-                    
-                    // Deselect item if it was selected, as it has been regenerated
-                    if (selectedVariations.has(id)) {
-                      setSelectedVariations(prevSelected => {
-                        const newSelected = new Set(prevSelected);
-                        newSelected.delete(id);
-                        return newSelected;
-                      });
-                      toast.info("Deselected item due to regeneration.");
-                    }
+                      return updated;
+                    });
+                  } else {
+                    // Our specific output node wasn't found in the results
+                    // Fall back to default behavior
+                    handleRegenerateWorkflowComplete(id, progressData, instruction);
                   }
-                  return updated;
-                });
+                } else {
+                  // Standard workflow completion handling
+                  handleRegenerateWorkflowComplete(id, progressData, instruction);
+                }
               }
               else if (progressData.type === 'error') {
                 // Update variation with error
@@ -1122,6 +1182,99 @@ const Generate = ({ context }) => {
       });
     }
   }, [selectedTemplate, isGenerating, isParaphrasing, selectedVariations, workflowEnabled, currentWorkflow]);
+
+  // Helper function to handle workflow completion for regeneration
+  const handleRegenerateWorkflowComplete = (id, progressData, instruction) => {
+    setVariations(prevVariations => {
+      const updated = [...prevVariations];
+      const targetIndex = updated.findIndex(v => v.id === id);
+      
+      if (targetIndex !== -1) {
+        // Extract the final output from workflow result
+        let workflowOutput = "";
+        
+        // Handle multiple output nodes if present
+        const outputNodeResults = progressData.result?.output_node_results || {};
+        const outputNodes = Object.keys(outputNodeResults);
+        
+        if (outputNodes.length > 0) {
+          // Just use the first output node result
+          const firstNodeId = outputNodes[0];
+          const nodeOutput = outputNodeResults[firstNodeId];
+          workflowOutput = nodeOutput.output || "";
+          
+          // Update the node ID and name
+          updated[targetIndex]._output_node_id = firstNodeId;
+          updated[targetIndex]._output_node_name = nodeOutput.name || firstNodeId;
+          
+          // Update variation name with node name
+          if (nodeOutput.name) {
+            // Extract the base variation name (before any parenthesis)
+            const baseName = updated[targetIndex].variation.split(' (')[0];
+            updated[targetIndex].variation = `${baseName} (${nodeOutput.name})`;
+          }
+        } else {
+          // Try to get output from different places
+          if (progressData.result?.final_output?.output) {
+            workflowOutput = progressData.result.final_output.output;
+          } else if (progressData.result?.final_output) {
+            // If final_output exists but no output field, try other fields
+            const finalOutput = progressData.result.final_output;
+            for (const key of ['result', 'text', 'content', 'value']) {
+              if (finalOutput[key]) {
+                workflowOutput = finalOutput[key];
+                break;
+              }
+            }
+          }
+          
+          // If still empty, check results array for any output
+          if (!workflowOutput && progressData.result?.results) {
+            // Look for the last result with an output
+            const results = progressData.result.results;
+            for (let i = results.length - 1; i >= 0; i--) {
+              if (results[i].output) {
+                workflowOutput = results[i].output;
+                break;
+              }
+            }
+          }
+        }
+        
+        // Final fallback
+        if (!workflowOutput) {
+          workflowOutput = "No output from workflow";
+        }
+        
+        updated[targetIndex] = {
+          ...updated[targetIndex],
+          output: workflowOutput,
+          processed_prompt: instruction || "",
+          isGenerating: false,
+          error: null,
+          template_id: selectedTemplate.id,
+          _source: 'workflow_regen',
+          workflow_results: progressData.result,
+          workflow_progress: {
+            ...updated[targetIndex].workflow_progress,
+            completed_at: new Date().toISOString(),
+            status: 'complete'
+          }
+        };
+        
+        // Deselect item if it was selected, as it has been regenerated
+        if (selectedVariations.has(id)) {
+          setSelectedVariations(prevSelected => {
+            const newSelected = new Set(prevSelected);
+            newSelected.delete(id);
+            return newSelected;
+          });
+          toast.info("Deselected item due to regeneration.");
+        }
+      }
+      return updated;
+    });
+  };
 
   const handleSaveSelectedToDataset = async () => {
     if (!selectedDataset) {

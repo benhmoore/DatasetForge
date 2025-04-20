@@ -263,6 +263,7 @@ class WorkflowExecuteRequest(BaseModel):
 class NodeExecutionResult(BaseModel):
     node_id: str
     node_type: str
+    node_name: Optional[str] = None  # Add this field
     input: Dict[str, Any]
     output: Dict[str, Any]
     execution_time: float

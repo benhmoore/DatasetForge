@@ -185,6 +185,7 @@ class WorkflowExecutor:
                 node_result = NodeExecutionResult(
                     node_id=node_id,
                     node_type=node_type or "unknown",
+                    node_name=node_config.get("name"),  # Add this field
                     input=node_inputs,
                     output={},
                     execution_time=0,
@@ -212,6 +213,7 @@ class WorkflowExecutor:
                 node_result = NodeExecutionResult(
                     node_id=node_id,
                     node_type=node_type,
+                    node_name=node_config.get("name"),  # Add this field
                     input=node_inputs,
                     output=node_output,
                     execution_time=node_execution_time,
@@ -224,6 +226,7 @@ class WorkflowExecutor:
                 node_result = NodeExecutionResult(
                     node_id=node_id,
                     node_type=node_type or "unknown",
+                    node_name=node_config.get("name"),  # Add this field
                     input=node_inputs,
                     output={},
                     execution_time=time.time() - node_start_time,
@@ -288,6 +291,25 @@ class WorkflowExecutor:
                 final_output = {"output": error_message, "_error": error_message}
                 logger.warning(error_message)
         
+        # Collect all output node results
+        output_node_results = {}
+        for node_id in output_nodes:
+            if node_id in node_outputs:
+                output_name = nodes.get(node_id, {}).get("name", node_id)
+                output_node_results[node_id] = {
+                    "name": output_name,
+                    "output": node_outputs[node_id].get("output", ""),
+                    "node_type": "output",
+                    "node_id": node_id
+                }
+        
+        # Still select one as the "primary" output for backward compatibility
+        if output_node_ids:
+            final_node_id = output_node_ids[-1]
+            final_output = node_outputs.get(final_node_id, {})
+        else:
+            final_output = {}
+        
         logger.info(f"Workflow execution completed in {total_execution_time:.2f}s with status: {status}")
         
         # Create the final result with all diagnostic information
@@ -298,7 +320,7 @@ class WorkflowExecutor:
             final_output=final_output,
             execution_time=total_execution_time,
             status=status,
-            # Include diagnostic information in the result
+            output_node_results=output_node_results,  # Add this field
             meta={
                 "input_nodes": input_nodes,
                 "output_nodes": output_nodes,
@@ -1110,6 +1132,7 @@ class WorkflowExecutor:
                 node_result = NodeExecutionResult(
                     node_id=node_id,
                     node_type=node_type or "unknown",
+                    node_name=node_config.get("name"),  # Add this field
                     input=node_inputs,
                     output={},
                     execution_time=0,
@@ -1149,6 +1172,7 @@ class WorkflowExecutor:
                 node_result = NodeExecutionResult(
                     node_id=node_id,
                     node_type=node_type,
+                    node_name=node_config.get("name"),  # Add this field
                     input=node_inputs,
                     output=node_output,
                     execution_time=node_execution_time,
@@ -1166,6 +1190,7 @@ class WorkflowExecutor:
                 node_result = NodeExecutionResult(
                     node_id=node_id,
                     node_type=node_type or "unknown",
+                    node_name=node_config.get("name"),  # Add this field
                     input=node_inputs,
                     output={},
                     execution_time=node_execution_time,
@@ -1232,7 +1257,19 @@ class WorkflowExecutor:
                 final_output = {"output": error_message, "_error": error_message}
                 logger.warning(error_message)
         
-        # Create the final result with all diagnostic information
+        # Collect all output node results
+        output_node_results = {}
+        for node_id in output_nodes:
+            if node_id in node_outputs:
+                output_name = nodes.get(node_id, {}).get("name", node_id)
+                output_node_results[node_id] = {
+                    "name": output_name,
+                    "output": node_outputs[node_id].get("output", ""),
+                    "node_type": "output",
+                    "node_id": node_id
+                }
+        
+        # Return with output_node_results
         workflow_result = WorkflowExecutionResult(
             workflow_id=workflow_id,
             results=node_results,
@@ -1240,7 +1277,7 @@ class WorkflowExecutor:
             final_output=final_output,
             execution_time=total_execution_time,
             status=status,
-            # Include diagnostic information in the result
+            output_node_results=output_node_results,  # Add this field
             meta={
                 "input_nodes": input_nodes,
                 "output_nodes": output_nodes,
