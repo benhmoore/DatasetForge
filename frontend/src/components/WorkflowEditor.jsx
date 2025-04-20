@@ -448,12 +448,24 @@ const WorkflowEditor = ({
     label: label
   }));
 
+  // Define the Add Node button element to pass to CustomSelect
+  const addNodeButton = (
+    <button 
+      onClick={addNode} 
+      className="p-2 bg-blue-500 text-white rounded-r-md hover:bg-blue-600 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed" // Adjusted styling for integration
+      disabled={disabled}
+      title="Add Selected Node Type"
+    >
+      <Icon name="plus" className="w-5 h-5" />
+    </button>
+  );
+
   return (
     <div className="flex flex-col h-[70vh] border rounded-lg overflow-hidden">
       {/* Toolbar */}
-      <div className="p-2 border-b bg-gray-50 flex items-center space-x-4">
-        {/* Workflow Name & Description */}
-        <div className="flex-grow flex items-center space-x-2">
+      <div className="p-2 border-b bg-gray-50 flex items-center space-x-4 justify-between">
+        {/* Left Group: Workflow Info */}
+        <div className="flex items-center space-x-2 flex-grow mr-4">
            <input 
              type="text"
              value={workflowName}
@@ -472,37 +484,32 @@ const WorkflowEditor = ({
            />
         </div>
         
-        {/* Node Adder */}
-        <div className="flex items-center space-x-2">
+        {/* Center Group: Node Management - Combined Select and Add Button */}
+        <div className="flex items-center border-l border-r px-4">
           <CustomSelect
             options={nodeTypeOptions}
             value={selectedNodeType}
             onChange={setSelectedNodeType}
             disabled={disabled}
-            className="w-36" // Adjust width as needed
+            actionButton={addNodeButton} // Pass the button here
+            className="w-48" // Adjust width as needed, maybe wider now
           />
-          <button 
-            onClick={addNode} 
-            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition text-sm flex items-center space-x-1 disabled:opacity-50"
-            disabled={disabled}
-          >
-            <Icon name="plus" className="w-4 h-4" />
-            <span>Add Node</span>
-          </button>
+          {/* Removed the standalone Add Node button */}
         </div>
         
-        {/* Save Button */}
-        <button 
-          onClick={saveWorkflow} 
-          className={`px-3 py-1 rounded transition text-sm flex items-center space-x-1 ${hasUnsavedChanges ? 'bg-green-500 hover:bg-green-600 text-white animate-pulse' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}
-          disabled={!hasUnsavedChanges || disabled}
-        >
-          <Icon name="save" className="w-4 h-4" />
-          <span>Save</span>
-        </button>
-        
-        {/* Action Buttons */} 
-        <div className="flex items-center space-x-2">
+        {/* Right Group: Workflow Actions */}
+        <div className="flex items-center space-x-2 pl-4">
+          <button 
+            onClick={saveWorkflow} 
+            className={`px-3 py-1 rounded transition text-sm flex items-center space-x-1 ${hasUnsavedChanges ? 'bg-green-500 hover:bg-green-600 text-white animate-pulse' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}
+            disabled={!hasUnsavedChanges || disabled}
+            title="Save Workflow"
+          >
+            <Icon name="save" className="w-4 h-4" />
+            <span>Save</span>
+          </button>
+          
+          {/* Action Buttons */} 
           {onNew && (
             <button 
               onClick={openNewConfirmModal} // Changed onClick to open modal handler
@@ -510,8 +517,8 @@ const WorkflowEditor = ({
               disabled={disabled}
               title="Create New Workflow"
             >
-               <Icon name="file-plus" className="w-4 h-4" />
-               <span>New</span>
+              New Workflow
+               {/* <span>New</span> */} {/* Optionally hide text for space */}
             </button>
           )}
           {onImport && (
@@ -522,7 +529,7 @@ const WorkflowEditor = ({
               title="Import Workflow from JSON"
             >
                <Icon name="upload" className="w-4 h-4" />
-               <span>Import</span>
+               {/* <span>Import</span> */} {/* Optionally hide text for space */}
             </button>
           )}
           {onExport && (
@@ -533,7 +540,7 @@ const WorkflowEditor = ({
               title="Export Workflow to JSON"
             >
                <Icon name="download" className="w-4 h-4" />
-               <span>Export</span>
+               {/* <span>Export</span> */} {/* Optionally hide text for space */}
             </button>
           )}
         </div>
@@ -567,7 +574,7 @@ const WorkflowEditor = ({
         onClose={closeNewConfirmModal}
         onConfirm={handleConfirmNew}
         title="Discard Unsaved Changes?"
-        message="Creating a new workflow will discard this one. Export to JSON to save it."
+        message="Creating a new workflow will discard any unsaved changes to the current one. Consider exporting first if you want to save it."
         confirmButtonText="Discard and Create New"
         confirmButtonVariant="danger" // Use danger variant for discarding
       />

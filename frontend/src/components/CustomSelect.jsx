@@ -7,7 +7,8 @@ const CustomSelect = ({
   onChange, 
   placeholder = "Select...", 
   disabled = false,
-  isLoading = false
+  isLoading = false,
+  actionButton = null // Add actionButton prop
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState(''); // Add state for search term
@@ -56,23 +57,35 @@ const CustomSelect = ({
 
   return (
     <div className="relative" ref={selectRef}>
-      <button
-        type="button"
-        className={`w-full p-2 border border-gray-300 rounded-md text-left flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200 ${
-          disabled || isLoading ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'bg-white hover:bg-gray-50'
-        }`}
-        onClick={() => !disabled && !isLoading && setIsOpen(!isOpen)}
-        disabled={disabled || isLoading}
-      >
-        <span className="truncate">
-          {isLoading ? 'Loading...' : displayLabel}
-        </span>
-        <Icon
-          name="chevronDown"
-          className={`h-5 w-5 text-gray-400 transition-transform duration-200 ${isOpen ? 'transform rotate-180' : ''}`}
-          aria-hidden="true"
-        />
-      </button>
+      <div className="flex items-center border border-gray-300 rounded-md focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-primary-500 transition-colors duration-200">
+        <button
+          type="button"
+          // Add conditional right padding (e.g., pr-1) when actionButton is present
+          className={`flex-grow p-2 py-0 text-left flex justify-between items-center focus:outline-none rounded-l-md ${ 
+            disabled || isLoading ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'bg-white hover:bg-gray-50'
+          }`}
+          onClick={() => !disabled && !isLoading && setIsOpen(!isOpen)}
+          disabled={disabled || isLoading}
+          style={{ borderTopRightRadius: actionButton ? 0 : undefined, borderBottomRightRadius: actionButton ? 0 : undefined }} // Remove right radius if action button exists
+        >
+          <span className="truncate">
+            {isLoading ? 'Loading...' : displayLabel}
+          </span>
+          <Icon
+            name="chevronDown"
+            className={`h-5 w-5 text-gray-400 transition-transform duration-200 ${isOpen ? 'transform rotate-180' : ''}`}
+            aria-hidden="true"
+          />
+        </button>
+        {/* Render Action Button if provided */}
+        {actionButton && (
+           <div className={`flex items-center border-l border-gray-300 ${disabled || isLoading ? 'bg-gray-100' : 'bg-white'}`} style={{ borderTopRightRadius: '0.375rem', borderBottomRightRadius: '0.375rem' }}> {/* Add right radius here */}
+             {/* Clone the button to potentially pass disabled state, or render directly */}
+             {/* Note: Passing disabled might require the actionButton component to accept/handle it */}
+             {actionButton}
+           </div>
+        )}
+      </div>
 
       {isOpen && !disabled && !isLoading && (
         <div className="absolute z-10 mt-1 w-full bg-white rounded-md shadow-lg border border-gray-200 max-h-60 flex flex-col">
