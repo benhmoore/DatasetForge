@@ -12,6 +12,7 @@ import CustomSelect from './CustomSelect';
 import Icon from './Icons'; // Import Icon component
 import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch
 import WorkflowManager from './WorkflowManager'; // Import WorkflowManager component
+import WorkflowSelectionModal from './WorkflowSelectionModal'; // Import WorkflowSelectionModal component
 
 const Generate = ({ context }) => {
   const { selectedDataset } = context;
@@ -43,6 +44,9 @@ const Generate = ({ context }) => {
   const [isExecutingWorkflow, setIsExecutingWorkflow] = useState(false);
   const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false); 
   const [workflowSaveRequest, setWorkflowSaveRequest] = useState(null);
+  const [workflowsList, setWorkflowsList] = useState([]);
+  const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
   
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
@@ -128,50 +132,69 @@ const Generate = ({ context }) => {
     }
   }, [selectedTemplateId]);
 
-  // Load workflow from localStorage
+  // Fetch workflows from API when workflow mode is enabled
   useEffect(() => {
+    if (workflowEnabled) {
+      fetchWorkflows();
+    }
+  }, [workflowEnabled]);
+  
+  // Function to fetch workflows from API
+  const fetchWorkflows = async () => {
+    if (!workflowEnabled) return;
+    
+    setIsLoadingWorkflows(true);
     try {
-      const savedWorkflow = localStorage.getItem('datasetforge_currentWorkflow');
-      if (savedWorkflow) {
-        setCurrentWorkflow(JSON.parse(savedWorkflow));
-      }
+      const result = await api.getWorkflows(1, 50); // Get first page with up to 50 workflows
+      setWorkflowsList(result.items);
       
-      const workflowEnabledSetting = localStorage.getItem('datasetforge_workflowEnabled');
-      if (workflowEnabledSetting) {
-        setWorkflowEnabled(workflowEnabledSetting === 'true');
+      // If there's a selected workflow ID but no current workflow data,
+      // or if there's no selected ID but we have workflows, select the first one
+      if (selectedWorkflowId && !currentWorkflow) {
+        // Find and load the selected workflow
+        const selectedWorkflow = result.items.find(w => w.id === selectedWorkflowId);
+        if (selectedWorkflow) {
+          loadWorkflow(selectedWorkflow.id);
+        }
+      } else if (!selectedWorkflowId && result.items.length > 0) {
+        // Auto-select the first workflow if none is selected
+        setSelectedWorkflowId(result.items[0].id);
+        loadWorkflow(result.items[0].id);
       }
     } catch (error) {
-      console.error('Failed to load workflow from localStorage:', error);
-      // Clear potentially corrupted data
-      localStorage.removeItem('datasetforge_currentWorkflow');
-      localStorage.removeItem('datasetforge_workflowEnabled');
+      console.error('Failed to fetch workflows:', error);
+      toast.error('Failed to load workflows');
+    } finally {
+      setIsLoadingWorkflows(false);
     }
-  }, []);
+  };
   
-  // Debounced function to save workflow to localStorage
-  const debouncedSaveWorkflow = useDebouncedCallback((workflowToSave) => {
-    if (workflowToSave) {
-      console.log("Generate (Debounced): Saving workflow to localStorage", {
-        id: workflowToSave.id, 
-        nodeCount: Object.keys(workflowToSave.nodes || {}).length,
-        connectionCount: (workflowToSave.connections || []).length
-      });
-      localStorage.setItem('datasetforge_currentWorkflow', JSON.stringify(workflowToSave));
-    } else {
-      console.log("Generate (Debounced): Removing workflow from localStorage");
-      localStorage.removeItem('datasetforge_currentWorkflow');
+  // Function to load a single workflow by ID
+  const loadWorkflow = async (id) => {
+    if (!id) return;
+    
+    setIsLoadingWorkflows(true);
+    try {
+      const workflow = await api.getWorkflowById(id);
+      setCurrentWorkflow(workflow);
+      setSelectedWorkflowId(workflow.id);
+      console.log(`Loaded workflow: ${workflow.name} (ID: ${workflow.id})`);
+    } catch (error) {
+      console.error(`Failed to load workflow ${id}:`, error);
+      toast.error('Failed to load selected workflow');
+    } finally {
+      setIsLoadingWorkflows(false);
     }
-  }, 500); // Debounce for 500ms
-
-  // Save workflow to localStorage when it changes (using debounced function)
-  useEffect(() => {
-    // Call the debounced save function whenever currentWorkflow changes
-    debouncedSaveWorkflow(currentWorkflow);
-  }, [currentWorkflow, debouncedSaveWorkflow]);
+  };
   
   // Save workflow enabled setting to localStorage
   useEffect(() => {
     localStorage.setItem('datasetforge_workflowEnabled', workflowEnabled.toString());
+    
+    // If workflow mode was just enabled, fetch workflows
+    if (workflowEnabled) {
+      fetchWorkflows();
+    }
   }, [workflowEnabled]);
 
   const handleTemplateChange = (templateId) => {
@@ -1486,7 +1509,52 @@ const Generate = ({ context }) => {
   
   // Handler for toggling workflow mode
   const handleToggleWorkflow = () => {
-    setWorkflowEnabled(!workflowEnabled);
+    const newValue = !workflowEnabled;
+    setWorkflowEnabled(newValue);
+    
+    // If enabling workflow mode, fetch workflows
+    if (newValue) {
+      fetchWorkflows();
+    } else {
+      // If disabling, clear workflow-related state
+      setCurrentWorkflow(null);
+      setSelectedWorkflowId(null);
+    }
+  };
+
+  // Handler for workflow selection from dropdown
+  const handleWorkflowSelection = (id) => {
+    if (!id) return;
+    loadWorkflow(id);
+  };
+
+  // Handler for workflow selection from modal
+  const handleWorkflowSelectedFromModal = (workflow) => {
+    if (!workflow) return;
+    
+    // If selecting a new workflow template
+    if (workflow.isNew) {
+      // Create a new workflow via API
+      api.createWorkflow(workflow)
+        .then(createdWorkflow => {
+          setCurrentWorkflow(createdWorkflow);
+          setSelectedWorkflowId(createdWorkflow.id);
+          toast.success(`Created new workflow "${createdWorkflow.name}"`);
+          // Refresh the workflow list
+          fetchWorkflows();
+        })
+        .catch(error => {
+          console.error('Failed to create workflow:', error);
+          toast.error('Failed to create new workflow');
+        });
+    } else {
+      // Load existing workflow
+      setCurrentWorkflow(workflow);
+      setSelectedWorkflowId(workflow.id);
+    }
+    
+    // Close the modal
+    setIsWorkflowModalOpen(false);
   };
 
   // Handler for workflow import/export
@@ -1577,20 +1645,84 @@ const Generate = ({ context }) => {
                   <button
                     onClick={handleOpenWorkflowModal}
                     className="text-sm text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={isGenerating || isParaphrasing}
+                    disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
                     title="Open Workflow Editor"
                   >
                     Manage Workflow
                   </button>
                 )}
-                {/* Replace checkbox with ToggleSwitch */}
                 <ToggleSwitch
                   checked={workflowEnabled}
                   onChange={handleToggleWorkflow}
-                  disabled={isGenerating || isParaphrasing}
+                  disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
                 />
               </div>
             </div>
+            
+            {/* Workflow Selection UI */}
+            {workflowEnabled && (
+              <div className="mt-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-gray-600">Selected Workflow:</span>
+                  <button
+                    onClick={handleOpenWorkflowModal}
+                    className="text-xs text-blue-600 hover:text-blue-800 py-0.5 px-1.5 rounded hover:bg-blue-50 transition-colors"
+                    title="Browse all workflows"
+                    disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                  >
+                    Browse All
+                  </button>
+                </div>
+                
+                {currentWorkflow ? (
+                  <div className="flex items-center p-2 border rounded bg-blue-50 border-blue-200">
+                    <div className="flex-grow">
+                      <div className="font-medium text-sm truncate" title={currentWorkflow.name}>
+                        {currentWorkflow.name}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Updated {new Date(currentWorkflow.updated_at).toLocaleString()} (v{currentWorkflow.version})
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleOpenWorkflowModal}
+                      className="ml-2 p-1.5 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-100 flex-shrink-0"
+                      disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                      title="Edit workflow"
+                    >
+                      <Icon name="edit" className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : isLoadingWorkflows ? (
+                  <div className="flex items-center justify-center p-2 border rounded bg-gray-50 h-10">
+                    <Icon name="spinner" className="w-4 h-4 mr-2 animate-spin text-blue-500" />
+                    <span className="text-sm text-gray-600">Loading...</span>
+                  </div>
+                ) : workflowsList.length > 0 ? (
+                  <div className="text-center p-2 border rounded bg-gray-50">
+                    <button
+                      onClick={handleOpenWorkflowModal}
+                      className="text-sm text-blue-600 hover:text-blue-800 py-1 px-3 rounded hover:bg-blue-100"
+                      disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                    >
+                      <Icon name="plus" className="w-3.5 h-3.5 mr-1 inline-block" />
+                      Select Workflow
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center p-2 border rounded bg-gray-50">
+                    <button
+                      onClick={handleOpenWorkflowModal}
+                      className="text-sm text-blue-600 hover:text-blue-800 py-1 px-3 rounded hover:bg-blue-100"
+                      disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                    >
+                      <Icon name="plus" className="w-3.5 h-3.5 mr-1 inline-block" />
+                      Create New Workflow
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
 
@@ -1681,8 +1813,16 @@ const Generate = ({ context }) => {
         </div>
       </div>
       
+      {/* Workflow Selection Modal */}
+      <WorkflowSelectionModal
+        isOpen={isWorkflowModalOpen}
+        onClose={handleCloseWorkflowModal}
+        onSelect={handleWorkflowSelectedFromModal}
+        currentWorkflowId={selectedWorkflowId}
+      />
+      
       {/* Workflow Manager Modal */}
-      {isWorkflowModalOpen && (
+      {isWorkflowModalOpen && currentWorkflow && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-y-auto p-4"
           onClick={handleCloseWorkflowModal} // Close on backdrop click
@@ -1698,7 +1838,7 @@ const Generate = ({ context }) => {
             <div className="flex justify-between items-center p-5 border-b border-gray-200 flex-shrink-0">
               <h2 id="workflow-manager-title" className="text-xl font-semibold flex items-center">
                 <Icon name="workflow" className="h-5 w-5 mr-2 text-blue-600" />
-                Workflow Manager
+                Workflow Manager: {currentWorkflow.name}
               </h2>
               <button
                 className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
@@ -1723,11 +1863,6 @@ const Generate = ({ context }) => {
                 saveRequest={workflowSaveRequest} // Add this new prop
               />
             </div>
-            
-            {/* Optional Modal Footer (can add buttons here if needed) */}
-            {/* <div className="flex justify-end space-x-2 p-4 border-t border-gray-200 flex-shrink-0 bg-gray-50">
-              <button onClick={handleCloseWorkflowModal} className="...">Close</button>
-            </div> */}
           </div>
         </div>
       )}

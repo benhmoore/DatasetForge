@@ -60,10 +60,10 @@
 -   [x] Update `WorkflowManager.jsx` (JSON editor)
     -   [x] Replace localStorage with API calls
     -   [x] Add validation and error handling
--   [ ] Update `Generate.jsx`
-    -   [ ] Add workflow fetching and selection
-    -   [ ] Implement workflow toggle functionality
-    -   [ ] Handle loading and error states
+-   [x] Update `Generate.jsx`
+    -   [x] Add workflow fetching and selection
+    -   [x] Implement workflow toggle functionality
+    -   [x] Handle loading and error states
 
 ### Test Frontend Integration
 
