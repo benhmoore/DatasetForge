@@ -329,3 +329,4 @@ class WorkflowExecutionResult(BaseModel):
     execution_time: float
     status: str = "success"  # success, error, partial_success
     meta: Optional[Dict[str, Any]] = None  # Additional metadata about the workflow execution
+    output_node_results: Optional[Dict[str, Any]] = None  # Results from output nodes
