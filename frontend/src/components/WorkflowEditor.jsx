@@ -9,19 +9,21 @@ import {
   useEdgesState,
   MarkerType,
   Handle,
-  Position // Import Position
+  Position
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { toast } from 'react-toastify';
-import isEqual from 'lodash/isEqual'; // Keep for comparing workflow prop content
-import ModelNode from './ModelNode'; // Direct import
-import TransformNode from './TransformNode'; // Direct import
-import InputNode from './InputNode'; // Import the new InputNode
-import OutputNode from './OutputNode'; // Import the new OutputNode
-import TextNode from './TextNode'; // Import the new TextNode
+import isEqual from 'lodash/isEqual';
+import api from '../api/apiClient';
+import { apiToReactFlow, reactFlowToApi } from '../utils/workflowTransform';
+import ModelNode from './ModelNode';
+import TransformNode from './TransformNode';
+import InputNode from './InputNode';
+import OutputNode from './OutputNode';
+import TextNode from './TextNode';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
-import ConfirmationModal from './ConfirmationModal'; // Import the modal
+import ConfirmationModal from './ConfirmationModal';
 
 // Define node types for selection dropdown and internal logic
 const NODE_TYPES = {
@@ -29,7 +31,7 @@ const NODE_TYPES = {
   transform: 'Transform',
   input: 'Input',
   output: 'Output',
-  text: 'Text' // Add Text node type
+  text: 'Text'
 };
 
 // Define the mapping from internal type to React Flow component type
@@ -38,19 +40,16 @@ const nodeComponentMap = {
   transform: 'transformNode',
   input: 'inputNode',
   output: 'outputNode',
-  text: 'textNode' // Add Text node mapping
+  text: 'textNode'
 };
 
-// --- Node Components ---
-
 // Map internal types to actual components for React Flow
-// Use direct components, including the new Input/Output nodes
 const nodeTypes = { 
   modelNode: ModelNode, 
   transformNode: TransformNode,
-  inputNode: InputNode, // Use imported InputNode
-  outputNode: OutputNode, // Use imported OutputNode
-  textNode: TextNode // Add TextNode component
+  inputNode: InputNode,
+  outputNode: OutputNode,
+  textNode: TextNode
 };
 
 /**
@@ -60,8 +59,8 @@ const nodeTypes = {
 const WorkflowEditor = forwardRef(({ 
   workflow, 
   setWorkflow, // Callback to update the parent's workflow state
-  onImport, // Callback for import action (now provided by WorkflowManager)
-  onExport, // Callback for export action (now provided by WorkflowManager)
+  onImport, // Callback for import action
+  onExport, // Callback for export action
   onNew, // Callback for creating a new workflow
   disabled = false // Disable editing controls
 }, ref) => {
@@ -69,14 +68,15 @@ const WorkflowEditor = forwardRef(({
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [workflowName, setWorkflowName] = useState('');
   const [workflowDescription, setWorkflowDescription] = useState('');
-  const [selectedNodeType, setSelectedNodeType] = useState('model'); // Default node type to add
-  const [selectedNodeId, setSelectedNodeId] = useState(null); // Track selected node ID
+  const [selectedNodeType, setSelectedNodeType] = useState('model');
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isNewConfirmOpen, setIsNewConfirmOpen] = useState(false); // State for the confirmation modal
+  const [isNewConfirmOpen, setIsNewConfirmOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const reactFlowWrapper = useRef(null);
-  const nodeIdCounterRef = useRef(1); // Counter for generating unique node IDs
-  const previousWorkflowRef = useRef(null); // Ref to store previous workflow prop instance
+  const nodeIdCounterRef = useRef(1);
+  const previousWorkflowRef = useRef(null);
 
   // Expose the saveWorkflow method via ref
   useImperativeHandle(ref, () => ({
@@ -93,7 +93,6 @@ const WorkflowEditor = forwardRef(({
   // --- State Synchronization ---
 
   // Handler for changes within a node's configuration (called by child nodes)
-  // This function is passed down to each node via its `data` prop.
   const handleNodeConfigChange = useCallback((nodeId, updatedConfig) => {
     if (disabled) return;
     
@@ -119,7 +118,7 @@ const WorkflowEditor = forwardRef(({
     setHasUnsavedChanges(true); // Mark changes as unsaved
   }, [setNodes, disabled]);
 
-  // Effect to load workflow from props
+  // Effect to load workflow from props using transformation utility
   useEffect(() => {
     // Only run loading logic if the workflow prop *instance* has changed
     // Or if the workflow prop content has changed (using deep comparison)
@@ -137,57 +136,19 @@ const WorkflowEditor = forwardRef(({
       console.log("Workflow prop changed or content differs. Loading into editor.");
 
       try {
-        const reactFlowNodes = [];
-        const reactFlowEdges = [];
-        let maxId = 0; // Track max numeric ID part
-        
-        const workflowNodes = incomingWorkflow.nodes || {};
-        const workflowConnections = incomingWorkflow.connections || [];
-
-        Object.entries(workflowNodes).forEach(([nodeId, nodeConfig]) => {
-          // Update counter based on existing node IDs
+        // Find the highest node ID to update counter
+        let maxId = 0;
+        Object.keys(incomingWorkflow.nodes || {}).forEach(nodeId => {
           const idNumber = parseInt(nodeId.replace(/[^0-9]/g, ''), 10);
           if (!isNaN(idNumber) && idNumber > maxId) {
             maxId = idNumber;
           }
-          
-          const position = nodeConfig.position || { x: 100, y: 100 + reactFlowNodes.length * 150 };
-          const nodeComponentType = nodeComponentMap[nodeConfig.type] || 'modelNode'; // Fallback
-          
-          // Prepare node data, ensuring onConfigChange is attached
-          // Pass the *entire* nodeConfig from the workflow into the data object
-          // Also include the label derived from name/type
-          const data = {
-            ...nodeConfig, // Spread the whole config here
-            label: nodeConfig.name || `${NODE_TYPES[nodeConfig.type] || 'Node'}`,
-            onConfigChange: handleNodeConfigChange // Pass the stable callback
-          };
-          
-          reactFlowNodes.push({ 
-            id: nodeId, 
-            type: nodeComponentType, 
-            position, 
-            data // Pass the prepared data object
-          });
         });
+        nodeIdCounterRef.current = maxId + 1;
         
-        nodeIdCounterRef.current = maxId + 1; // Set counter after finding max ID
-        
-        workflowConnections.forEach((connection) => {
-          if (connection.source_node_id && connection.target_node_id) {
-            reactFlowEdges.push({
-              id: `edge-${connection.source_node_id}-${connection.source_handle || 'default'}-${connection.target_node_id}-${connection.target_handle || 'default'}`, 
-              source: connection.source_node_id,
-              target: connection.target_node_id,
-              sourceHandle: connection.source_handle || null,
-              targetHandle: connection.target_handle || null,
-              type: 'smoothstep',
-              animated: true,
-              style: { stroke: '#3b82f6' },
-              markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#3b82f6' },
-            });
-          }
-        });
+        // Use our utility to transform from API format to React Flow format
+        const { nodes: reactFlowNodes, edges: reactFlowEdges } = 
+          apiToReactFlow(incomingWorkflow, nodeComponentMap, handleNodeConfigChange);
         
         setNodes(reactFlowNodes);
         setEdges(reactFlowEdges);
@@ -205,7 +166,7 @@ const WorkflowEditor = forwardRef(({
       } catch (error) {
         console.error("Error loading workflow into editor:", error);
         toast.error("Failed to load workflow into editor.");
-        // Optionally reset state to a safe default
+        // Reset state to a safe default
         setNodes([]);
         setEdges([]);
         setWorkflowName('Error Loading');
@@ -214,25 +175,23 @@ const WorkflowEditor = forwardRef(({
         previousWorkflowRef.current = null;
       }
     }
-  // Depend on workflow prop instance and the stable callback
   }, [workflow, setNodes, setEdges, handleNodeConfigChange]); 
 
   // --- Modal Handlers ---
   const openNewConfirmModal = () => {
-    if (disabled) return; // Don't open if disabled
-    // Always open the modal when 'New' is clicked, regardless of unsaved changes
+    if (disabled) return;
     setIsNewConfirmOpen(true); 
   };
 
   const closeNewConfirmModal = () => {
-    setIsNewConfirmOpen(false); // Close the modal
+    setIsNewConfirmOpen(false);
   };
 
   const handleConfirmNew = () => {
     if (onNew) {
-      onNew(); // Call the original onNew prop function
+      onNew();
     }
-    closeNewConfirmModal(); // Close the modal after confirmation
+    closeNewConfirmModal();
   };
 
   // --- React Flow Handlers ---
@@ -240,7 +199,7 @@ const WorkflowEditor = forwardRef(({
   // Handle node selection changes
   const handleNodesChange = useCallback((changes) => {
     if (disabled) return;
-    onNodesChange(changes); // Apply changes using React Flow's handler
+    onNodesChange(changes);
     
     // Update selected node ID if a node is selected/deselected
     const selectionChange = changes.find(change => change.type === 'select');
@@ -250,14 +209,13 @@ const WorkflowEditor = forwardRef(({
     
     // Mark any node change (move, select, remove) as unsaved
     setHasUnsavedChanges(true); 
-
-  }, [onNodesChange, disabled, setHasUnsavedChanges]); // Added setHasUnsavedChanges to dependency array
+  }, [onNodesChange, disabled]);
 
   // Handle edge changes (creation, deletion)
   const handleEdgesChange = useCallback((changes) => {
     if (disabled) return;
-    onEdgesChange(changes); // Apply changes using React Flow's handler
-    setHasUnsavedChanges(true); // Any edge change is considered an unsaved change
+    onEdgesChange(changes);
+    setHasUnsavedChanges(true);
   }, [onEdgesChange, disabled]);
 
   // Handle new connection creation
@@ -282,7 +240,7 @@ const WorkflowEditor = forwardRef(({
       ...params, 
       sourceHandle,
       targetHandle,
-      id: `edge-${params.source}-${sourceHandle || 'default'}-${params.target}-${targetHandle || 'default'}`, // Ensure unique ID
+      id: `edge-${params.source}-${sourceHandle || 'default'}-${params.target}-${targetHandle || 'default'}`,
       type: 'smoothstep',
       animated: true,
       style: { stroke: '#3b82f6' },
@@ -291,46 +249,35 @@ const WorkflowEditor = forwardRef(({
     setEdges((eds) => addEdge(newEdge, eds));
     setHasUnsavedChanges(true);
 
-    // --- Logic to update target ModelNode's handle count --- 
-    // Check if the target handle matches the pattern 'input_X'
+    // Logic to update target ModelNode's handle count
     const match = targetHandle?.match(/^input_(\d+)$/);
     if (match) {
       const inputIndex = parseInt(match[1], 10);
       const targetNodeId = params.target;
 
-      // Update the nodes state
       setNodes(prevNodes =>
         prevNodes.map(node => {
-          // Find the target node and check if it's a model node
           if (node.id === targetNodeId && node.type === 'modelNode') {
-            // Read the current count from data, default to 1 if not present
             const currentCount = node.data._visibleHandleCount || 1; 
-            // Calculate the required count based on the connected index
-            const requiredCount = inputIndex + 2; // Need one more than the connected index
-            // Determine the next count, capped at 5
+            const requiredCount = inputIndex + 2;
             const nextCount = Math.min(Math.max(currentCount, requiredCount), 5);
 
-            // Only update if the count needs to increase
             if (nextCount > currentCount) {
               console.log(`WorkflowEditor: Updating node ${targetNodeId} data._visibleHandleCount from ${currentCount} to ${nextCount}`);
-              // Return a *new* node object with the updated data
               return {
                 ...node,
                 data: {
                   ...node.data,
-                  _visibleHandleCount: nextCount // Store the new count in data
+                  _visibleHandleCount: nextCount
                 }
               };
-            } else {
-              console.log(`WorkflowEditor: Node ${targetNodeId} handle count (${currentCount}) already sufficient for index ${inputIndex}.`);
             }
           }
-          return node; // Return unchanged node
+          return node;
         })
       );
     }
-    // --- End handle count update logic ---
-  }, [setEdges, setNodes, disabled]); // Added setNodes dependency back
+  }, [setEdges, setNodes, disabled]);
 
   // --- Workflow Actions ---
 
@@ -342,11 +289,9 @@ const WorkflowEditor = forwardRef(({
     const nodeLabel = `${NODE_TYPES[selectedNodeType]} ${nodeIdCounterRef.current - 1}`;
     const nodeComponentType = nodeComponentMap[selectedNodeType];
     
-    // Determine position (e.g., center of viewport or offset)
-    // This requires access to the reactFlowInstance, which might not be ready immediately.
-    // A simpler approach is a fixed offset or relative position.
+    // Determine position
     const position = { 
-      x: Math.random() * 400 + 100, // Random position for now
+      x: Math.random() * 400 + 100,
       y: Math.random() * 200 + 100 
     }; 
     
@@ -356,7 +301,7 @@ const WorkflowEditor = forwardRef(({
       defaultConfig = {
         type: 'model',
         name: nodeLabel,
-        model: '', // Default empty model
+        model: '',
         system_instruction: '',
         model_parameters: { temperature: 0.7, top_p: 1.0, max_tokens: 1000 }
       };
@@ -377,7 +322,7 @@ const WorkflowEditor = forwardRef(({
       defaultConfig = { type: 'text', name: 'Text', text_content: '' };
     } else {
       console.error(`Unknown node type: ${selectedNodeType}`);
-      return; // Exit if type is unknown
+      return;
     }
     
     const newNode = {
@@ -385,9 +330,9 @@ const WorkflowEditor = forwardRef(({
       type: nodeComponentType,
       position,
       data: {
-        ...defaultConfig, // Spread the default config
-        label: nodeLabel, // Set initial label
-        onConfigChange: handleNodeConfigChange // Pass the callback
+        ...defaultConfig,
+        label: nodeLabel,
+        onConfigChange: handleNodeConfigChange
       }
     };
     
@@ -397,48 +342,69 @@ const WorkflowEditor = forwardRef(({
   }, [selectedNodeType, setNodes, handleNodeConfigChange, disabled]);
 
   // Save the current workflow state
-  const saveWorkflow = useCallback(() => {
-    if (disabled) return;
+  const saveWorkflow = useCallback(async () => {
+    if (disabled || isSaving) return;
     
-    // Transform React Flow state back into the workflow structure
-    const updatedNodes = {};
-    nodes.forEach(node => {
-      // Extract the core configuration from node.data, excluding React Flow specific stuff like 'label' and 'onConfigChange'
-      const { label, onConfigChange, ...configData } = node.data;
-      updatedNodes[node.id] = {
-        ...configData, // The actual configuration
-        position: node.position // Save the position
+    setIsSaving(true);
+    
+    try {
+      // Use our utility to transform React Flow state back into API format
+      const apiFormatData = reactFlowToApi(nodes, edges, nodeComponentMap);
+      
+      // Prepare the workflow data for saving
+      const workflowData = {
+        name: workflowName,
+        description: workflowDescription,
+        data: apiFormatData
       };
-    });
-    
-    const updatedConnections = edges.map(edge => ({
-      source_node_id: edge.source,
-      source_handle: edge.sourceHandle || null, // Ensure null if undefined
-      target_node_id: edge.target,
-      target_handle: edge.targetHandle || null // Ensure null if undefined
-    }));
-    
-    const updatedWorkflow = {
-      ...(workflow || {}), // Preserve existing ID and other top-level fields
-      name: workflowName,
-      description: workflowDescription,
-      nodes: updatedNodes,
-      connections: updatedConnections,
-      updated_at: new Date().toISOString() // Add/update timestamp
-    };
-    
-    console.log("Saving workflow:", { 
-      id: updatedWorkflow.id, 
-      name: updatedWorkflow.name, 
-      nodeCount: Object.keys(updatedNodes).length, 
-      connectionCount: updatedConnections.length 
-    });
-    
-    setWorkflow(updatedWorkflow); // Call the parent's update function
-    setHasUnsavedChanges(false); // Reset flag after saving
-    toast.success(`Workflow '${workflowName}' saved.`);
-    
-  }, [nodes, edges, workflowName, workflowDescription, setWorkflow, workflow, disabled]);
+      
+      let savedWorkflow;
+      
+      // Check if we're updating an existing workflow or creating a new one
+      if (workflow?.id) {
+        console.log(`Updating existing workflow (ID: ${workflow.id})`);
+        savedWorkflow = await api.updateWorkflow(workflow.id, workflowData);
+        toast.success(`Workflow "${savedWorkflow.name}" updated to v${savedWorkflow.version}`);
+      } else {
+        console.log('Creating new workflow');
+        savedWorkflow = await api.createWorkflow(workflowData);
+        toast.success(`Workflow "${savedWorkflow.name}" created`);
+      }
+      
+      // Update state with the saved workflow
+      setWorkflow(savedWorkflow);
+      setHasUnsavedChanges(false);
+      previousWorkflowRef.current = savedWorkflow;
+      
+      console.log("Workflow saved successfully:", { 
+        id: savedWorkflow.id, 
+        name: savedWorkflow.name, 
+        version: savedWorkflow.version
+      });
+      
+    } catch (error) {
+      console.error("Error saving workflow:", error);
+      
+      // Handle version conflict errors specially
+      if (error.response?.status === 409) {
+        toast.error("Workflow was modified elsewhere. Please refresh and try again.");
+      } else {
+        toast.error(`Failed to save workflow: ${error.response?.data?.detail || error.message}`);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  }, [
+    nodes, 
+    edges, 
+    workflowName, 
+    workflowDescription, 
+    workflow, 
+    setWorkflow, 
+    disabled, 
+    isSaving, 
+    nodeComponentMap
+  ]);
 
   // Handle workflow name change
   const handleNameChange = (e) => {
@@ -464,7 +430,7 @@ const WorkflowEditor = forwardRef(({
   const addNodeButton = (
     <button 
       onClick={addNode} 
-      className="p-2 bg-blue-500 text-white rounded-r-md hover:bg-blue-600 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed" // Adjusted styling for integration
+      className="p-2 bg-blue-500 text-white rounded-r-md hover:bg-blue-600 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
       disabled={disabled}
       title="Add Selected Node Type"
     >
@@ -472,57 +438,85 @@ const WorkflowEditor = forwardRef(({
     </button>
   );
 
+  // Add 'beforeunload' event listener to warn about unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (hasUnsavedChanges) {
+        // Standard mechanism to trigger the browser's native confirmation dialog
+        e.preventDefault();
+        e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    // Cleanup function to remove the listener when component unmounts
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
   return (
     <div className="flex flex-col h-[70vh] border rounded-lg overflow-hidden">
       {/* Toolbar */}
       <div className="p-2 border-b bg-gray-50 flex items-center space-x-4 justify-between">
         {/* Left Group: Workflow Info */}
         <div className="flex items-center space-x-2 flex-grow mr-4">
-           <input 
-             type="text"
-             value={workflowName}
-             onChange={handleNameChange}
-             placeholder="Workflow Name"
-             className="px-2 py-1 border rounded text-sm font-medium focus:ring-blue-500 focus:border-blue-500"
-             disabled={disabled}
-           />
-           <input 
-             type="text"
-             value={workflowDescription}
-             onChange={handleDescriptionChange}
-             placeholder="Workflow Description (optional)"
-             className="px-2 py-1 border rounded text-sm flex-grow focus:ring-blue-500 focus:border-blue-500"
-             disabled={disabled}
-           />
+          <input 
+            type="text"
+            value={workflowName}
+            onChange={handleNameChange}
+            placeholder="Workflow Name"
+            className="px-2 py-1 border rounded text-sm font-medium focus:ring-blue-500 focus:border-blue-500"
+            disabled={disabled}
+          />
+          <input 
+            type="text"
+            value={workflowDescription}
+            onChange={handleDescriptionChange}
+            placeholder="Workflow Description (optional)"
+            className="px-2 py-1 border rounded text-sm flex-grow focus:ring-blue-500 focus:border-blue-500"
+            disabled={disabled}
+          />
         </div>
         
-        {/* Center Group: Node Management - Combined Select and Add Button */}
+        {/* Center Group: Node Management */}
         <div className="flex items-center border-l border-r px-4">
           <CustomSelect
             options={nodeTypeOptions}
             value={selectedNodeType}
             onChange={setSelectedNodeType}
             disabled={disabled}
-            actionButton={addNodeButton} // Pass the button here
-            className="w-48" // Adjust width as needed, maybe wider now
+            actionButton={addNodeButton}
+            className="w-48"
           />
-          {/* Removed the standalone Add Node button */}
         </div>
         
         {/* Right Group: Workflow Actions */}
         <div className="flex items-center space-x-2 pl-4">
-          {/* Save button removed as workflow will be saved automatically when modal closes */}
+          {/* Save Button */}
+          <button
+            onClick={saveWorkflow}
+            disabled={disabled || isSaving || !hasUnsavedChanges}
+            className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+            title={hasUnsavedChanges ? "Save workflow changes" : "No changes to save"}
+          >
+            {isSaving ? (
+              <>
+                <Icon name="spinner" className="w-4 h-4 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <span>Save</span>
+            )}
+          </button>
           
-          {/* Action Buttons */} 
+          {/* Other Action Buttons */} 
           {onNew && (
             <button 
-              onClick={openNewConfirmModal} // Changed onClick to open modal handler
+              onClick={openNewConfirmModal}
               className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
               disabled={disabled}
               title="Create New Workflow"
             >
               New Workflow
-               {/* <span>New</span> */} {/* Optionally hide text for space */}
             </button>
           )}
           {onImport && (
@@ -532,8 +526,7 @@ const WorkflowEditor = forwardRef(({
               disabled={disabled}
               title="Import Workflow from JSON"
             >
-               <Icon name="upload" className="w-4 h-4" />
-               {/* <span>Import</span> */} {/* Optionally hide text for space */}
+              <Icon name="upload" className="w-4 h-4" />
             </button>
           )}
           {onExport && (
@@ -543,8 +536,7 @@ const WorkflowEditor = forwardRef(({
               disabled={disabled || !workflow} 
               title="Export Workflow to JSON"
             >
-               <Icon name="download" className="w-4 h-4" />
-               {/* <span>Export</span> */} {/* Optionally hide text for space */}
+              <Icon name="download" className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -555,13 +547,13 @@ const WorkflowEditor = forwardRef(({
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={handleNodesChange} // Use the combined handler
-          onEdgesChange={handleEdgesChange} // Use the combined handler
+          onNodesChange={handleNodesChange}
+          onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           nodeTypes={nodeTypes}
           fitView
-          className="bg-gradient-to-br from-blue-50 to-indigo-100" // Example background
-          deleteKeyCode={disabled ? null : 'Backspace'} // Disable delete if editor is disabled
+          className="bg-gradient-to-br from-blue-50 to-indigo-100"
+          deleteKeyCode={disabled ? null : 'Backspace'}
           nodesDraggable={!disabled}
           nodesConnectable={!disabled}
           elementsSelectable={!disabled}
@@ -580,7 +572,7 @@ const WorkflowEditor = forwardRef(({
         title="Discard Unsaved Changes?"
         message="Creating a new workflow will discard any unsaved changes to the current one. Consider exporting first if you want to save it."
         confirmButtonText="Discard and Create New"
-        confirmButtonVariant="danger" // Use danger variant for discarding
+        confirmButtonVariant="danger"
       />
     </div>
   );
