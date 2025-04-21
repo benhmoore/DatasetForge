@@ -282,8 +282,89 @@ const api = {
   
   deleteSeedBank: (seedBankId) => apiClient.delete(`/seed_banks/${seedBankId}`)
     .then(response => response.data),
-    
-  // Workflow API endpoints
+  
+  // Workflow Management API endpoints
+  getWorkflows: (page = 1, size = 50) => 
+    apiClient
+      .get("/workflows", { params: { page, size } })
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          "API Error fetching workflows:",
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+
+  getWorkflowById: (id) =>
+    apiClient
+      .get(`/workflows/${id}`)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          `API Error fetching workflow ${id}:`,
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+
+  createWorkflow: (workflow) =>
+    apiClient
+      .post("/workflows", workflow)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          "API Error creating workflow:",
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+
+  updateWorkflow: (id, workflow) =>
+    apiClient
+      .put(`/workflows/${id}`, workflow)
+      .then((response) => response.data)
+      .catch((error) => {
+        // Log specific conflict errors, but primary handling is in the component
+        if (error.response?.status === 409) {
+          console.warn(
+            `API Conflict updating workflow ${id}:`,
+            error.response.data
+          );
+        } else {
+          console.error(
+            `API Error updating workflow ${id}:`,
+            error.response?.data || error.message
+          );
+        }
+        throw error;
+      }),
+
+  deleteWorkflow: (id) =>
+    apiClient
+      .delete(`/workflows/${id}`)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          `API Error deleting workflow ${id}:`,
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+
+  duplicateWorkflow: (id) =>
+    apiClient
+      .post(`/workflows/${id}/duplicate`)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          `API Error duplicating workflow ${id}:`,
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+  
+  // Workflow Execution API endpoints
   executeWorkflow: (workflow, templateOutput, inputData = {}, debugMode = false) => {
     // Log what we're sending to help debugging
     console.log('Workflow execution input:', {

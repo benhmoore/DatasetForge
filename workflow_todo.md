@@ -27,28 +27,28 @@
 -   [x] Create comprehensive test file for workflow endpoints
 -   [x] Create verification script to validate implementation
 
-## Phase 2: Frontend Integration
+## Phase 2: Frontend Integration (IN PROGRESS)
 
 ### API Client
 
--   [ ] Update `apiClient.js` with workflow methods
-    -   [ ] `getWorkflows` - Fetch paginated list
-    -   [ ] `getWorkflowById` - Fetch single workflow
-    -   [ ] `createWorkflow` - Create new workflow
-    -   [ ] `updateWorkflow` - Update existing workflow
-    -   [ ] `deleteWorkflow` - Delete workflow
-    -   [ ] `duplicateWorkflow` - Duplicate workflow
+-   [x] Update `apiClient.js` with workflow methods
+    -   [x] `getWorkflows` - Fetch paginated list
+    -   [x] `getWorkflowById` - Fetch single workflow
+    -   [x] `createWorkflow` - Create new workflow
+    -   [x] `updateWorkflow` - Update existing workflow
+    -   [x] `deleteWorkflow` - Delete workflow
+    -   [x] `duplicateWorkflow` - Duplicate workflow
 
 ### UI Components
 
--   [ ] Create `WorkflowSelector` component
-    -   [ ] Implement pagination controls
-    -   [ ] Add delete and duplicate functionality
-    -   [ ] Handle loading and error states
--   [ ] Create `WorkflowSelectionModal` component
-    -   [ ] Embed selector component
-    -   [ ] Add "Create New Workflow" button
-    -   [ ] Implement modal open/close logic
+-   [x] Create `WorkflowSelector` component
+    -   [x] Implement pagination controls
+    -   [x] Add delete and duplicate functionality
+    -   [x] Handle loading and error states
+-   [x] Create `WorkflowSelectionModal` component
+    -   [x] Embed selector component
+    -   [x] Add "Create New Workflow" button
+    -   [x] Implement modal open/close logic
 
 ### Existing Component Updates
 
