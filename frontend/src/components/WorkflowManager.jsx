@@ -96,9 +96,22 @@ const WorkflowManager = ({
     try {
       const parsed = JSON.parse(workflowJson);
       
-      // Basic validation
+      // Basic validation with more detailed error messages
+      if (!parsed) {
+        toast.error('Invalid workflow format. Unable to parse JSON.');
+        setIsSaving(false);
+        return;
+      }
+      
       if (!parsed.name) {
-        toast.error('Invalid workflow format. Must include name property.');
+        toast.error('Invalid workflow format. Must include "name" property.');
+        setIsSaving(false);
+        return;
+      }
+      
+      // Validate data structure
+      if (!parsed.data && (!parsed.nodes || !parsed.connections)) {
+        toast.error('Invalid workflow format. Must include either "data" object or "nodes"/"connections" fields.');
         setIsSaving(false);
         return;
       }

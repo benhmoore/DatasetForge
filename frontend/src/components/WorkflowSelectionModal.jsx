@@ -4,13 +4,30 @@ import ConfirmationModal from "./ConfirmationModal"; // Re-use existing modal co
 import WorkflowSelector from "./WorkflowSelector";
 import Icon from "./Icons";
 
-// Default empty workflow structure for creating a new one
+/**
+ * Default template for creating new workflows
+ * This structure matches the backend API's expected format:
+ * - name: String - Name of the workflow
+ * - description: String - Optional description
+ * - data: Object - Contains nodes and connections
+ *   - nodes: Object - Map of node IDs to node configurations
+ *   - connections: Array - List of connections between nodes
+ */
 const NEW_WORKFLOW_TEMPLATE = {
   name: "New Workflow",
   description: "",
-  data: { nodes: {}, connections: [] }, // Match backend 'data' structure expected by API
+  data: { nodes: {}, connections: [] },
 };
 
+/**
+ * Modal component for browsing and selecting workflows
+ * Allows users to select an existing workflow or create a new one
+ * 
+ * @param {boolean} isOpen - Whether the modal is currently visible
+ * @param {function} onClose - Function to call when closing the modal
+ * @param {function} onSelect - Function to call when a workflow is selected or created
+ * @param {number} currentWorkflowId - ID of the currently active workflow (for highlighting)
+ */
 function WorkflowSelectionModal({
   isOpen,
   onClose,

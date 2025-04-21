@@ -165,7 +165,16 @@ const WorkflowEditor = forwardRef(({
 
       } catch (error) {
         console.error("Error loading workflow into editor:", error);
-        toast.error("Failed to load workflow into editor.");
+        
+        // Provide more specific error message based on error type
+        if (error.message?.includes("nodes")) {
+          toast.error("Failed to load workflow: Invalid node structure");
+        } else if (error.message?.includes("connections")) {
+          toast.error("Failed to load workflow: Invalid connection structure");
+        } else {
+          toast.error("Failed to load workflow into editor: " + (error.message || "Unknown error"));
+        }
+        
         // Reset state to a safe default
         setNodes([]);
         setEdges([]);

@@ -187,10 +187,8 @@ const Generate = ({ context }) => {
     }
   };
   
-  // Save workflow enabled setting to localStorage
+  // When workflow mode is toggled, trigger workflows fetch if enabled
   useEffect(() => {
-    localStorage.setItem('datasetforge_workflowEnabled', workflowEnabled.toString());
-    
     // If workflow mode was just enabled, fetch workflows
     if (workflowEnabled) {
       fetchWorkflows();

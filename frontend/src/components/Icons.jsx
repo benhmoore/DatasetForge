@@ -35,7 +35,8 @@ import {
   LanguageIcon,
   Square2StackIcon,
   PencilSquareIcon,
-  ArrowsPointingOutIcon
+  ArrowsPointingOutIcon,
+  CommandLineIcon
 
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
@@ -78,6 +79,7 @@ const icons = {
   flow: { outline: ArrowsPointingOutIcon },
   edit: { outline: PencilSquareIcon },
   copy: { outline: Square2StackIcon },
+  workflow: { outline: CommandLineIcon },
 };
 
 export default function Icon({ name, variant = 'outline', className = '', ...props }) {
