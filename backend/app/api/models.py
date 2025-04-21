@@ -82,12 +82,10 @@ class Workflow(SQLModel, table=True):
     description: Optional[str] = None
     data: Dict[str, Any] = Field(sa_column=Column(JSON), default={})
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        sa_column=Column("created_at", type_=datetime, nullable=False)
+        default_factory=lambda: datetime.now(timezone.utc)
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        sa_column=Column("updated_at", type_=datetime, nullable=False)
+        default_factory=lambda: datetime.now(timezone.utc)
     )
     version: int = Field(default=1)
 
