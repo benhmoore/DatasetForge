@@ -41,7 +41,7 @@ async def get_workflows(
 
     # Efficient count for pagination total
     total_query = select(func.count()).select_from(Workflow).where(Workflow.owner_id == user.id)
-    total = session.exec(total_query).scalar_one_or_none() or 0  # Handle case with no workflows
+    total = session.exec(total_query).first() or 0  # Handle case with no workflows
 
     # Apply pagination limits
     query = query.offset((page - 1) * size).limit(size)
