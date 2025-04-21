@@ -1541,29 +1541,44 @@ const Generate = ({ context }) => {
   const handleWorkflowSelectedFromModal = (workflow) => {
     if (!workflow) return;
     
+    console.log("Workflow selected from modal:", workflow);
+    
     // If selecting a new workflow template
     if (workflow.isNew) {
+      console.log("Creating new workflow from template");
       // Create a new workflow via API
       api.createWorkflow(workflow)
         .then(createdWorkflow => {
-          setCurrentWorkflow(createdWorkflow);
+          console.log("Workflow created successfully:", createdWorkflow);
           setSelectedWorkflowId(createdWorkflow.id);
-          toast.success(`Created new workflow "${createdWorkflow.name}"`);
-          // Refresh the workflow list
-          fetchWorkflows();
+          
+          // Set workflow AFTER closing modal (avoids flicker)
+          setIsWorkflowModalOpen(false);
+          setTimeout(() => {
+            setCurrentWorkflow(createdWorkflow);
+            toast.success(`Created new workflow "${createdWorkflow.name}"`);
+            // Refresh the workflow list
+            fetchWorkflows();
+          }, 50);
         })
         .catch(error => {
           console.error('Failed to create workflow:', error);
           toast.error('Failed to create new workflow');
+          setIsWorkflowModalOpen(false);
         });
     } else {
-      // Load existing workflow
-      setCurrentWorkflow(workflow);
+      // Load existing workflow (already loaded from API)
+      console.log("Selected existing workflow:", workflow.id);
       setSelectedWorkflowId(workflow.id);
+      
+      // Close modal first
+      setIsWorkflowModalOpen(false);
+      
+      // Small delay to ensure modal is closed before setting workflow
+      setTimeout(() => {
+        setCurrentWorkflow(workflow);
+      }, 50);
     }
-    
-    // Close the modal
-    setIsWorkflowModalOpen(false);
   };
 
   // Handler for workflow import/export
@@ -1578,13 +1593,25 @@ const Generate = ({ context }) => {
 
   // Handler to open the workflow modal
   const handleOpenWorkflowModal = useCallback(() => {
-    // If opened via "Browse All", we want to show the selection modal first
-    if (currentWorkflow) {
-      // Keep existing workflow if editing a current workflow
+    // Check if the button that initiated this was "Browse All" vs "Manage Workflow" or "Edit"
+    const isBrowseAll = !currentWorkflow || 
+                        (event && event.target && event.target.innerText === "Browse All");
+    
+    console.log("handleOpenWorkflowModal called with:", {
+      isBrowseAll,
+      hasCurrentWorkflow: !!currentWorkflow
+    });
+    
+    if (isBrowseAll) {
+      // Force null workflow to show selection modal
+      console.log("Opening workflow selection modal (Browse All)");
+      // First clear the current workflow to prevent the editor from showing
+      setCurrentWorkflow(null);
+      // Then open the modal
       setIsWorkflowModalOpen(true);
     } else {
-      // If no current workflow, clear it to ensure selection modal shows
-      setCurrentWorkflow(null);
+      // Editing existing workflow - open the editor directly
+      console.log("Opening workflow editor directly");
       setIsWorkflowModalOpen(true);
     }
   }, [currentWorkflow]);
@@ -1691,7 +1718,11 @@ const Generate = ({ context }) => {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-gray-600">Selected Workflow:</span>
                   <button
-                    onClick={handleOpenWorkflowModal}
+                    onClick={() => {
+                      // Clear current workflow first to force selection modal
+                      setCurrentWorkflow(null); 
+                      setIsWorkflowModalOpen(true);
+                    }}
                     className="text-xs text-blue-600 hover:text-blue-800 py-0.5 px-1.5 rounded hover:bg-blue-50 transition-colors"
                     title="Browse all workflows"
                     disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
@@ -1840,14 +1871,12 @@ const Generate = ({ context }) => {
       </div>
       
       {/* Workflow Selection Modal (only show when workflow manager isn't shown) */}
-      {isWorkflowModalOpen && !currentWorkflow && (
-        <WorkflowSelectionModal
-          isOpen={isWorkflowModalOpen}
-          onClose={handleCloseWorkflowModal}
-          onSelect={handleWorkflowSelectedFromModal}
-          currentWorkflowId={selectedWorkflowId}
-        />
-      )}
+      <WorkflowSelectionModal
+        isOpen={isWorkflowModalOpen && !currentWorkflow}
+        onClose={handleCloseWorkflowModal}
+        onSelect={handleWorkflowSelectedFromModal}
+        currentWorkflowId={selectedWorkflowId}
+      />
       
       {/* Workflow Manager Modal */}
       {isWorkflowModalOpen && currentWorkflow && (
