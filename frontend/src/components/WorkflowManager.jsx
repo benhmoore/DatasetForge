@@ -53,20 +53,25 @@ const WorkflowManager = ({
         showJsonEditor
       });
       
-      if (showJsonEditor) {
-        // If in JSON editor mode, try to parse and save the JSON
-        handleSaveJsonToApi();
-      } else {
-        // If in visual editor mode, use the editor's save method via ref
-        if (workflowEditorRef.current && workflowEditorRef.current.saveWorkflow) {
-          const didSave = workflowEditorRef.current.saveWorkflow();
-          if (didSave) {
-            console.log("WorkflowManager: Successfully triggered save via editor ref");
-          } else {
-            console.log("WorkflowManager: No changes to save in editor");
-          }
+      // Only auto-save if we're actually closing the modal, not just toggling JSON editor
+      const isClosingModal = saveRequest !== "toggle_json_editor";
+      
+      if (isClosingModal) {
+        if (showJsonEditor) {
+          // If in JSON editor mode, try to parse and save the JSON
+          handleSaveJsonToApi();
         } else {
-          console.warn("WorkflowManager: Could not access editor save method");
+          // If in visual editor mode, use the editor's save method via ref
+          if (workflowEditorRef.current && workflowEditorRef.current.saveWorkflow) {
+            const didSave = workflowEditorRef.current.saveWorkflow();
+            if (didSave) {
+              console.log("WorkflowManager: Successfully triggered save via editor ref");
+            } else {
+              console.log("WorkflowManager: No changes to save in editor");
+            }
+          } else {
+            console.warn("WorkflowManager: Could not access editor save method");
+          }
         }
       }
     }
@@ -76,11 +81,14 @@ const WorkflowManager = ({
   useEffect(() => {
     if (workflow) {
       console.log("WorkflowManager: workflow updated", workflow?.id);
-      setWorkflowJson(JSON.stringify(workflow, null, 2));
+      // Preserve existing format in JSON editor if already editing
+      if (!showJsonEditor || !workflowJson) {
+        setWorkflowJson(JSON.stringify(workflow, null, 2));
+      }
     } else {
       setWorkflowJson('');
     }
-  }, [workflow]);
+  }, [workflow, showJsonEditor]);
   
   // Parse JSON and update workflow
   const handleJsonChange = (e) => {
@@ -117,10 +125,11 @@ const WorkflowManager = ({
       }
       
       // Extract the workflow data for API
+      // Check if data is already in the expected format
       const workflowData = {
         name: parsed.name,
         description: parsed.description || '',
-        data: {
+        data: parsed.data || {
           nodes: parsed.nodes || {},
           connections: parsed.connections || []
         }
@@ -301,7 +310,11 @@ const WorkflowManager = ({
         <div className="flex space-x-2">
           <button
             className={`px-3 py-1 ${showJsonEditor ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'} hover:bg-blue-700 hover:text-white rounded transition`}
-            onClick={() => setShowJsonEditor(!showJsonEditor)}
+            onClick={() => {
+              // Set a special save request that won't trigger auto-save
+              if (setWorkflow) setWorkflow(currentWorkflow => ({...currentWorkflow, _saveRequestId: "toggle_json_editor"}));
+              setShowJsonEditor(!showJsonEditor);
+            }}
             disabled={disabled || isSaving}
           >
             {showJsonEditor ? 'Visual Editor' : 'JSON Editor'}
