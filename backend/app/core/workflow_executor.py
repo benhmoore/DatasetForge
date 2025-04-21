@@ -599,6 +599,7 @@ class WorkflowExecutor:
                 final_user_prompt = model_instruction_template + appended_text
 
             # --- Model Parameters ---
+            from ..api.schemas import ModelParameters
             model_parameters_dict = node_config.get("model_parameters")
             model_parameters = ModelParameters() # Use defaults
             if model_parameters_dict and isinstance(model_parameters_dict, dict):
