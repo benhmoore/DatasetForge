@@ -52,9 +52,9 @@ const Generate = ({ context }) => {
   const abortControllerRef = useRef(null);
 
   // Calculate counts for the dynamic save button
-  const selectedCount = selectedVariations.size;
-  const validVariationsCount = variations.filter(v => !v.isGenerating && !v.error).length;
-  const totalVariationsCount = variations.length;
+  const selectedCount = selectedVariations?.size || 0;
+  const validVariationsCount = (variations || []).filter(v => !v.isGenerating && !v.error).length;
+  const totalVariationsCount = variations?.length || 0;
 
   useEffect(() => {
     variationsRef.current = variations;
@@ -1833,7 +1833,7 @@ const Generate = ({ context }) => {
         <div className="px-4 pt-4">
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
 
-          {variations.length === 0 && !isGenerating ? (
+          {(variations && variations.length === 0 && !isGenerating) ? (
             <div className="p-6 bg-gray-50 rounded-lg border border-gray-200 text-center">
               <p className="text-gray-500">
                 {selectedDataset?.archived
@@ -1843,7 +1843,7 @@ const Generate = ({ context }) => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {variations.map((variation) => (
+              {(variations || []).map((variation) => (
                 <VariationCard
                   key={variation.id}
                   id={variation.id} // Pass id
@@ -1851,7 +1851,7 @@ const Generate = ({ context }) => {
                   output={variation.output}
                   tool_calls={variation.tool_calls}
                   processed_prompt={variation.processed_prompt}
-                  isSelected={selectedVariations.has(variation.id)} // Use selected state
+                  isSelected={selectedVariations?.has(variation.id)} // Use selected state
                   isGenerating={variation.isGenerating || false}
                   isParaphrasing={isParaphrasing}
                   error={variation.error || null}

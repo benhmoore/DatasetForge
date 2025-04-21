@@ -397,7 +397,15 @@ const api = {
       nodes: nodes ? Object.keys(nodes).length : 0,
       connections: connections ? (connections.length || 0) : 0,
     });
-    
+
+    // Create a properly structured workflow object for execution
+    const normalizedWorkflow = {
+      id: workflow.id,
+      name: workflow.name,
+      nodes: nodes || {},
+      connections: connections || []
+    };
+
     // Use fetch API for streaming
     const response = await fetch('/api/workflow/execute/stream', {
       method: 'POST',
@@ -406,7 +414,7 @@ const api = {
         'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
       },
       body: JSON.stringify({
-        workflow,
+        workflow: normalizedWorkflow, // Send normalized workflow structure
         template_output: templateOutput,
         input_data: inputData,
         debug_mode: debugMode
