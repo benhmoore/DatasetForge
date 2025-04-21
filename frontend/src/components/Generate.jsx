@@ -1578,8 +1578,16 @@ const Generate = ({ context }) => {
 
   // Handler to open the workflow modal
   const handleOpenWorkflowModal = useCallback(() => {
-    setIsWorkflowModalOpen(true);
-  }, []);
+    // If opened via "Browse All", we want to show the selection modal first
+    if (currentWorkflow) {
+      // Keep existing workflow if editing a current workflow
+      setIsWorkflowModalOpen(true);
+    } else {
+      // If no current workflow, clear it to ensure selection modal shows
+      setCurrentWorkflow(null);
+      setIsWorkflowModalOpen(true);
+    }
+  }, [currentWorkflow]);
 
   // Handler to close the workflow modal
   const handleCloseWorkflowModal = useCallback(() => {
@@ -1831,13 +1839,15 @@ const Generate = ({ context }) => {
         </div>
       </div>
       
-      {/* Workflow Selection Modal */}
-      <WorkflowSelectionModal
-        isOpen={isWorkflowModalOpen}
-        onClose={handleCloseWorkflowModal}
-        onSelect={handleWorkflowSelectedFromModal}
-        currentWorkflowId={selectedWorkflowId}
-      />
+      {/* Workflow Selection Modal (only show when workflow manager isn't shown) */}
+      {isWorkflowModalOpen && !currentWorkflow && (
+        <WorkflowSelectionModal
+          isOpen={isWorkflowModalOpen}
+          onClose={handleCloseWorkflowModal}
+          onSelect={handleWorkflowSelectedFromModal}
+          currentWorkflowId={selectedWorkflowId}
+        />
+      )}
       
       {/* Workflow Manager Modal */}
       {isWorkflowModalOpen && currentWorkflow && (
