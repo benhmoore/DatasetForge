@@ -4,26 +4,26 @@
 
 ### Models & Schemas
 
--   [ ] Create `Workflow` model in `models.py`
-    -   [ ] Include fields: id, owner_id, name, description, data, created_at, updated_at, version
-    -   [ ] Set up appropriate SQLModel table configuration and constraints
--   [ ] Create schema models in `schemas.py`
-    -   [ ] Implement `WorkflowBase`, `WorkflowCreate`, `WorkflowRead`, `WorkflowUpdate` classes
-    -   [ ] Set up pagination schema (`WorkflowPagination`)
+-   [x] Create `Workflow` model in `models.py`
+    -   [x] Include fields: id, owner_id, name, description, data, created_at, updated_at, version
+    -   [x] Set up appropriate SQLModel table configuration and constraints
+-   [x] Create schema models in `schemas.py`
+    -   [x] Implement `WorkflowBase`, `WorkflowCreate`, `WorkflowRead`, `WorkflowUpdate` classes
+    -   [x] Set up pagination schema (`WorkflowPagination`)
 
 ### API Endpoints
 
--   [ ] Create CRUD endpoints in `workflows.py`
-    -   [ ] GET `/workflows` - List workflows with pagination
-    -   [ ] GET `/workflows/{workflow_id}` - Get single workflow
-    -   [ ] POST `/workflows` - Create new workflow
-    -   [ ] PUT `/workflows/{workflow_id}` - Update workflow with OCC
-    -   [ ] DELETE `/workflows/{workflow_id}` - Delete workflow
-    -   [ ] POST `/workflows/{workflow_id}/duplicate` - Duplicate workflow
+-   [x] Create CRUD endpoints in `workflows.py`
+    -   [x] GET `/workflows` - List workflows with pagination
+    -   [x] GET `/workflows/{workflow_id}` - Get single workflow
+    -   [x] POST `/workflows` - Create new workflow
+    -   [x] PUT `/workflows/{workflow_id}` - Update workflow with OCC
+    -   [x] DELETE `/workflows/{workflow_id}` - Delete workflow
+    -   [x] POST `/workflows/{workflow_id}/duplicate` - Duplicate workflow
 
 ### Database & Testing
 
--   [ ] Ensure database schema is created when database is initialized
+-   [x] Ensure database schema is created when database is initialized
 
 ## Phase 2: Frontend Integration
 

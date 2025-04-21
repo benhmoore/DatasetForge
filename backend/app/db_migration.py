@@ -90,7 +90,7 @@ def get_default_templates():
 def migrate_database():
     """
     Migrate the database to add tool calling support columns
-    and create export_template table if needed
+    and create export_template and workflow tables if needed
     """
     # Skip migration for in-memory database (used in tests)
     if settings.DB_PATH == ":memory:":
@@ -228,6 +228,40 @@ def migrate_database():
                         template_data["archived"],
                     ),
                 )
+
+        # Check if workflow table exists
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='workflow'"
+        )
+        if not cursor.fetchone():
+            logger.info("Creating workflow table")
+            cursor.execute(
+                """
+            CREATE TABLE workflow (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                data TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL,
+                version INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY(owner_id) REFERENCES user(id)
+            )
+            """
+            )
+
+            # Create index on owner_id for faster owner-based lookups
+            cursor.execute(
+                "CREATE INDEX idx_workflow_owner_id ON workflow(owner_id)"
+            )
+            
+            # Create unique constraint on owner_id and name
+            cursor.execute(
+                "CREATE UNIQUE INDEX uq_owner_name ON workflow(owner_id, name)"
+            )
+
+            logger.info("Workflow table created successfully")
 
         # Initialize default values for existing tables
         cursor.execute(
