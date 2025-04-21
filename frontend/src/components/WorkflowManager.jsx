@@ -50,18 +50,36 @@ const WorkflowManager = ({
     if (saveRequest && visible && workflow) {
       console.log("WorkflowManager: Auto-saving workflow before closing modal", {
         saveRequest, 
-        showJsonEditor
+        showJsonEditor,
+        workflowId: workflow?.id,
+        saveRequestType: typeof saveRequest,
+        workflowSaveRequestId: workflow?._saveRequestId
       });
       
       // Only auto-save if we're actually closing the modal, not just toggling JSON editor
-      const isClosingModal = saveRequest !== "toggle_json_editor";
+      const isToggleRequest = workflow?._saveRequestId === "toggle_json_editor";
       
-      if (isClosingModal) {
+      console.log("WorkflowManager: Save decision", {
+        isToggleRequest,
+        shouldSkipSave: isToggleRequest,
+        workflowId: workflow?.id
+      });
+      
+      if (!isToggleRequest) {
         if (showJsonEditor) {
           // If in JSON editor mode, try to parse and save the JSON
+          console.log("WorkflowManager: Saving from JSON editor mode", {
+            workflowId: workflow?.id,
+            jsonLength: workflowJson?.length || 0
+          });
           handleSaveJsonToApi();
         } else {
           // If in visual editor mode, use the editor's save method via ref
+          console.log("WorkflowManager: Attempting to save via editor ref", {
+            hasRef: !!workflowEditorRef.current,
+            hasSaveMethod: !!(workflowEditorRef.current?.saveWorkflow)
+          });
+          
           if (workflowEditorRef.current && workflowEditorRef.current.saveWorkflow) {
             const didSave = workflowEditorRef.current.saveWorkflow();
             if (didSave) {
@@ -73,22 +91,49 @@ const WorkflowManager = ({
             console.warn("WorkflowManager: Could not access editor save method");
           }
         }
+      } else {
+        console.log("WorkflowManager: Skipping save due to toggle_json_editor flag");
       }
     }
-  }, [saveRequest, visible, workflow, showJsonEditor]);
+  }, [saveRequest, visible, workflow, showJsonEditor, workflowJson]);
   
   // Update JSON when workflow changes
   useEffect(() => {
+    // Skip updates triggered by toggling editor mode
+    if (workflow && workflow._saveRequestId === "toggle_json_editor") {
+      console.log("WorkflowManager: Skipping JSON update for toggle_json_editor", {
+        workflowId: workflow?.id,
+        currentJsonLength: workflowJson?.length || 0,
+        inJsonEditor: showJsonEditor
+      });
+      return;
+    }
+    
     if (workflow) {
-      console.log("WorkflowManager: workflow updated", workflow?.id);
-      // Preserve existing format in JSON editor if already editing
+      console.log("WorkflowManager: Workflow object changed - considering JSON update", {
+        workflowId: workflow?.id,
+        hasExistingJson: !!workflowJson,
+        inJsonEditor: showJsonEditor,
+        willUpdateJson: !showJsonEditor || !workflowJson
+      });
+      
+      // Only update JSON if we're not already editing in JSON mode
+      // or if we don't have any JSON content yet
       if (!showJsonEditor || !workflowJson) {
-        setWorkflowJson(JSON.stringify(workflow, null, 2));
+        const newJsonContent = JSON.stringify(workflow, null, 2);
+        console.log("WorkflowManager: Setting new JSON content", {
+          length: newJsonContent.length,
+          previewStart: newJsonContent.substring(0, 40)
+        });
+        setWorkflowJson(newJsonContent);
+      } else {
+        console.log("WorkflowManager: Preserving existing JSON editor content");
       }
     } else {
+      console.log("WorkflowManager: No workflow - clearing JSON");
       setWorkflowJson('');
     }
-  }, [workflow, showJsonEditor]);
+  }, [workflow, showJsonEditor, workflowJson]);
   
   // Parse JSON and update workflow
   const handleJsonChange = (e) => {
@@ -98,6 +143,17 @@ const WorkflowManager = ({
   // Save JSON directly to API
   const handleSaveJsonToApi = async () => {
     if (isSaving) return;
+    
+    // Skip if no JSON content or workflowJson is empty
+    if (!workflowJson || workflowJson.trim() === '') {
+      console.log("WorkflowManager: Skipping save - no JSON content to save");
+      return;
+    }
+    
+    console.log("WorkflowManager: Starting JSON save", {
+      jsonLength: workflowJson.length,
+      workflowId: workflow?.id
+    });
     
     setIsSaving(true);
     
@@ -117,8 +173,18 @@ const WorkflowManager = ({
         return;
       }
       
-      // Validate data structure
-      if (!parsed.data && (!parsed.nodes || !parsed.connections)) {
+      // Validate data structure - also log for debugging
+      const hasData = !!parsed.data;
+      const hasNodesAndConnections = !!(parsed.nodes || parsed.connections);
+      
+      console.log("WorkflowManager: Parsed workflow data", {
+        hasData,
+        hasNodes: !!parsed.nodes,
+        hasConnections: !!parsed.connections,
+        isValid: hasData || hasNodesAndConnections
+      });
+      
+      if (!hasData && !hasNodesAndConnections) {
         toast.error('Invalid workflow format. Must include either "data" object or "nodes"/"connections" fields.');
         setIsSaving(false);
         return;
@@ -135,6 +201,13 @@ const WorkflowManager = ({
         }
       };
       
+      console.log("WorkflowManager: Prepared workflow data for API", {
+        name: workflowData.name,
+        hasDescription: !!workflowData.description,
+        dataNodesCount: Object.keys(workflowData.data.nodes || {}).length,
+        dataConnectionsCount: (workflowData.data.connections || []).length
+      });
+      
       let savedWorkflow;
       
       // Determine if creating or updating
@@ -149,8 +222,11 @@ const WorkflowManager = ({
       }
       
       // Update state with saved workflow
+      console.log("WorkflowManager: JSON save successful - updating workflow state", savedWorkflow.id);
       setWorkflow(savedWorkflow);
-      setShowJsonEditor(false); // Switch to visual editor
+      
+      // Don't automatically switch back to visual editor - this can cause issues
+      // setShowJsonEditor(false);
       
     } catch (error) {
       console.error("Error saving workflow from JSON editor:", error);
@@ -311,8 +387,22 @@ const WorkflowManager = ({
           <button
             className={`px-3 py-1 ${showJsonEditor ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'} hover:bg-blue-700 hover:text-white rounded transition`}
             onClick={() => {
-              // Set a special save request that won't trigger auto-save
-              if (setWorkflow) setWorkflow(currentWorkflow => ({...currentWorkflow, _saveRequestId: "toggle_json_editor"}));
+              // Log the current state before toggle
+              console.log("WorkflowManager: Toggling editor mode", {
+                from: showJsonEditor ? "JSON" : "Visual",
+                to: showJsonEditor ? "Visual" : "JSON",
+                currentWorkflow: workflow?.id
+              });
+              
+              // Set the toggle flag directly on the workflow object to prevent auto-save
+              if (workflow && setWorkflow) {
+                const updatedWorkflow = {...workflow};
+                updatedWorkflow._saveRequestId = "toggle_json_editor";
+                console.log("WorkflowManager: Setting toggle flag on workflow", updatedWorkflow.id);
+                setWorkflow(updatedWorkflow);
+              }
+              
+              // Toggle editor mode
               setShowJsonEditor(!showJsonEditor);
             }}
             disabled={disabled || isSaving}
@@ -336,7 +426,16 @@ const WorkflowManager = ({
           <div className="flex justify-end space-x-2">
             <button
               className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded transition"
-              onClick={() => setShowJsonEditor(false)}
+              onClick={() => {
+                console.log("WorkflowManager: Canceling JSON edit and returning to visual editor");
+                // Set the toggle flag to prevent auto-save
+                if (workflow && setWorkflow) {
+                  const updatedWorkflow = {...workflow};
+                  updatedWorkflow._saveRequestId = "toggle_json_editor";
+                  setWorkflow(updatedWorkflow);
+                }
+                setShowJsonEditor(false);
+              }}
               disabled={disabled || isSaving}
             >
               Cancel
