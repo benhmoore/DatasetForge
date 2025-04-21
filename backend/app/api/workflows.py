@@ -151,10 +151,8 @@ async def update_workflow(
         return db_workflow
 
     try:
-        # Set updated_at time
-        update_dict["updated_at"] = datetime.now(timezone.utc)
-        
         # Atomically update the workflow in the database *only if* the version matches
+        # Note: updated_at is handled by SQLModel field default_factory
         stmt = (
             update(Workflow)
             .where(Workflow.id == workflow_id)
