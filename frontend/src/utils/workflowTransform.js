@@ -18,20 +18,31 @@ export const apiToReactFlow = (apiData, nodeComponentMap, handleNodeConfigChange
     return { nodes: [], edges: [] };
   }
   
-  console.log("workflowTransform: apiToReactFlow input data:", {
-    hasNodes: !!apiData.nodes,
-    nodesType: typeof apiData.nodes,
-    nodeCount: apiData.nodes ? Object.keys(apiData.nodes).length : 0,
-    hasConnections: !!apiData.connections,
-    connectionsType: typeof apiData.connections,
-    connectionsCount: apiData.connections?.length || 0,
-    firstNodeId: apiData.nodes ? Object.keys(apiData.nodes)[0] : null
+  // Normalize the data structure - handle both direct nodes and data.nodes formats
+  let normalizedData = { ...apiData };
+  
+  // Check if nodes are stored inside a 'data' property (the API format)
+  if (apiData.data && apiData.data.nodes && !apiData.nodes) {
+    console.log("workflowTransform: Found nodes in data.nodes - normalizing structure");
+    normalizedData.nodes = apiData.data.nodes;
+    normalizedData.connections = apiData.data.connections || [];
+  }
+  
+  console.log("workflowTransform: apiToReactFlow normalized input data:", {
+    hasNodes: !!normalizedData.nodes,
+    nodesType: typeof normalizedData.nodes,
+    nodeCount: normalizedData.nodes ? Object.keys(normalizedData.nodes).length : 0,
+    hasConnections: !!normalizedData.connections,
+    connectionsType: typeof normalizedData.connections,
+    connectionsCount: normalizedData.connections?.length || 0,
+    firstNodeId: normalizedData.nodes ? Object.keys(normalizedData.nodes)[0] : null,
+    isUsingDataProperty: normalizedData.nodes !== apiData.nodes
   });
 
   // Deep debug the first node if exists
-  if (apiData.nodes && Object.keys(apiData.nodes).length > 0) {
-    const firstNodeId = Object.keys(apiData.nodes)[0];
-    const firstNode = apiData.nodes[firstNodeId];
+  if (normalizedData.nodes && Object.keys(normalizedData.nodes).length > 0) {
+    const firstNodeId = Object.keys(normalizedData.nodes)[0];
+    const firstNode = normalizedData.nodes[firstNodeId];
     console.log("workflowTransform: First node data:", {
       id: firstNodeId,
       type: firstNode.type,
@@ -42,7 +53,7 @@ export const apiToReactFlow = (apiData, nodeComponentMap, handleNodeConfigChange
     });
   }
 
-  const rfNodes = Object.entries(apiData?.nodes || {}).map(([id, nodeConfig]) => {
+  const rfNodes = Object.entries(normalizedData?.nodes || {}).map(([id, nodeConfig]) => {
     // Get the appropriate React Flow component type based on the node's internal type
     const nodeType = nodeConfig.type || 'model';
     const nodeComponentType = nodeComponentMap[nodeType] || 'modelNode'; // Default fallback
@@ -72,7 +83,7 @@ export const apiToReactFlow = (apiData, nodeComponentMap, handleNodeConfigChange
     };
   });
 
-  const rfEdges = (apiData?.connections || []).map((conn, index) => {
+  const rfEdges = (normalizedData?.connections || []).map((conn, index) => {
     console.log(`workflowTransform: Creating React Flow edge ${index}:`, conn);
     
     return {
@@ -105,6 +116,12 @@ export const apiToReactFlow = (apiData, nodeComponentMap, handleNodeConfigChange
  * @returns {Object} - API compatible data { nodes: {}, connections: [] }
  */
 export const reactFlowToApi = (nodes, edges, nodeComponentMap = null) => {
+  console.log("workflowTransform: reactFlowToApi input:", {
+    nodesCount: nodes.length,
+    edgesCount: edges.length,
+    hasNodeComponentMap: !!nodeComponentMap
+  });
+
   // Create inverse mapping if not provided
   const inverseTypeMap = nodeComponentMap ? 
     Object.entries(nodeComponentMap).reduce((acc, [internalType, rfType]) => {
@@ -124,6 +141,13 @@ export const reactFlowToApi = (nodes, edges, nodeComponentMap = null) => {
       internalType = inverseTypeMap[node.type] || 'model'; // Default to 'model' if not found
     }
     
+    console.log(`workflowTransform: Converting node ${node.id} to API format:`, {
+      reactFlowType: node.type,
+      internalType: internalType,
+      label: label,
+      position: node.position
+    });
+    
     apiNodes[node.id] = {
       ...configData,
       type: internalType, // Ensure type is set
@@ -133,12 +157,29 @@ export const reactFlowToApi = (nodes, edges, nodeComponentMap = null) => {
   });
 
   // Convert edges array to connections array
-  const apiConnections = edges.map(edge => ({
-    source_node_id: edge.source,
-    source_handle: edge.sourceHandle || null,
-    target_node_id: edge.target,
-    target_handle: edge.targetHandle || null
-  }));
+  const apiConnections = edges.map(edge => {
+    console.log(`workflowTransform: Converting edge to API format:`, {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle
+    });
+    
+    return {
+      source_node_id: edge.source,
+      source_handle: edge.sourceHandle || null,
+      target_node_id: edge.target,
+      target_handle: edge.targetHandle || null
+    };
+  });
 
-  return { nodes: apiNodes, connections: apiConnections };
+  const result = { nodes: apiNodes, connections: apiConnections };
+  console.log("workflowTransform: API result structure:", {
+    nodeCount: Object.keys(result.nodes).length,
+    connectionCount: result.connections.length,
+    firstNodeId: Object.keys(result.nodes)[0] || null
+  });
+
+  return result;
 };
