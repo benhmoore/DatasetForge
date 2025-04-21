@@ -562,19 +562,41 @@ const Generate = ({ context }) => {
                     const targetIndex = updated.findIndex(v => v.id === origVariationId);
                     
                     if (targetIndex !== -1) {
-                      // Extract the output content
-                      const finalOutput = progressData.result?.final_output?.output || '';
+                      const baseVariation = updated[targetIndex];
                       
+                      // Extract information from the single output node result, if present
+                      let nodeId = null;
+                      let nodeName = null;
+                      let outputContent = "";
+                      
+                      if (outputNodeResults.length === 1) {
+                        // Get data from the output node
+                        const nodeResult = outputNodeResults[0];
+                        nodeId = nodeResult.node_id;
+                        nodeName = nodeResult.node_name || nodeId;
+                        outputContent = nodeResult.output?.output || "";
+                      } else {
+                        // No output nodes found, try to get from final_output
+                        outputContent = progressData.result?.final_output?.output || "";
+                      }
+                      
+                      // Update the variation with the workflow result
                       updated[targetIndex] = {
                         ...baseVariation,
                         output: outputContent,
-                        variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
+                        // Only update variation name if we have a node name
+                        ...(nodeName && {
+                          variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`
+                        }),
                         isGenerating: false,
                         error: null,
                         template_id: data.template_id,
                         _source: 'workflow_output',
-                        _output_node_id: nodeId,
-                        _output_node_name: nodeName,
+                        // Only set output node info if we have a node ID
+                        ...(nodeId && {
+                          _output_node_id: nodeId,
+                          _output_node_name: nodeName
+                        }),
                         workflow_results: progressData.result,
                         workflow_progress: {
                           ...baseVariation.workflow_progress,
@@ -582,28 +604,6 @@ const Generate = ({ context }) => {
                           status: 'complete'
                         }
                       };
-                    } else {
-                      // Create new variations for additional outputs
-                      const newVariationId = `${origVariationId}-output-${nodeId}-${Date.now()}`;
-                      
-                      newVariations.push({
-                        ...baseVariation,
-                        id: newVariationId,
-                        output: outputContent,
-                        variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
-                        isGenerating: false,
-                        error: null,
-                        template_id: data.template_id,
-                        _source: 'workflow_output',
-                        _output_node_id: nodeId,
-                        _output_node_name: nodeName,
-                        workflow_results: progressData.result,
-                        workflow_progress: {
-                          ...baseVariation.workflow_progress,
-                          completed_at: new Date().toISOString(),
-                          status: 'complete'
-                        }
-                      });
                     }
                   });
                 } else {
@@ -1219,20 +1219,31 @@ const Generate = ({ context }) => {
         const outputNodes = Object.keys(outputNodeResults);
         
         if (outputNodes.length > 0) {
-          // Just use the first output node result
-          const firstNodeId = outputNodes[0];
-          const nodeOutput = outputNodeResults[firstNodeId];
-          workflowOutput = nodeOutput.output || "";
-          
-          // Update the node ID and name
-          updated[targetIndex]._output_node_id = firstNodeId;
-          updated[targetIndex]._output_node_name = nodeOutput.name || firstNodeId;
-          
-          // Update variation name with node name
-          if (nodeOutput.name) {
-            // Extract the base variation name (before any parenthesis)
-            const baseName = updated[targetIndex].variation.split(' (')[0];
-            updated[targetIndex].variation = `${baseName} (${nodeOutput.name})`;
+          // If this is regenerating a specific output node, use that node
+          const existingOutputNodeId = updated[targetIndex]._output_node_id;
+          if (existingOutputNodeId && outputNodeResults[existingOutputNodeId]) {
+            // Use the specific output node that matches the original
+            const nodeOutput = outputNodeResults[existingOutputNodeId];
+            workflowOutput = nodeOutput.output || "";
+            
+            // Keep the existing node ID and name for consistency
+            // The node name is already in the variation name
+          } else {
+            // Just use the first output node result
+            const firstNodeId = outputNodes[0];
+            const nodeOutput = outputNodeResults[firstNodeId];
+            workflowOutput = nodeOutput.output || "";
+            
+            // Update the node ID and name
+            updated[targetIndex]._output_node_id = firstNodeId;
+            updated[targetIndex]._output_node_name = nodeOutput.name || firstNodeId;
+            
+            // Update variation name with node name
+            if (nodeOutput.name) {
+              // Extract the base variation name (before any parenthesis)
+              const baseName = updated[targetIndex].variation.split(' (')[0];
+              updated[targetIndex].variation = `${baseName} (${nodeOutput.name})`;
+            }
           }
         } else {
           // Try to get output from different places
@@ -1254,8 +1265,8 @@ const Generate = ({ context }) => {
             // Look for the last result with an output
             const results = progressData.result.results;
             for (let i = results.length - 1; i >= 0; i--) {
-              if (results[i].output) {
-                workflowOutput = results[i].output;
+              if (results[i].output?.output) {
+                workflowOutput = results[i].output.output;
                 break;
               }
             }
