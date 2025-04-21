@@ -1583,17 +1583,26 @@ const Generate = ({ context }) => {
 
   // Handler to close the workflow modal
   const handleCloseWorkflowModal = useCallback(() => {
-    // Trigger save in WorkflowEditor before closing
-    if (currentWorkflow) {
+    // Only trigger save if we're editing, not if we're just selecting from the list
+    if (currentWorkflow && !isWorkflowModalOpen) {
       console.log("Generate: Requesting workflow save before closing modal");
       setWorkflowSaveRequest(Date.now()); // Use timestamp to trigger save
+    } else if (currentWorkflow) {
+      // If we're just selecting and not editing, don't save
+      console.log("Generate: Closing workflow modal without saving");
+      if (currentWorkflow) {
+        const updatedWorkflow = {...currentWorkflow};
+        updatedWorkflow._saveRequestId = "close_no_save";
+        setCurrentWorkflow(updatedWorkflow);
+      }
+      setWorkflowSaveRequest("close_no_save");
     }
     
     // Set a small delay to ensure save completes before closing
     setTimeout(() => {
       setIsWorkflowModalOpen(false);
     }, 100);
-  }, [currentWorkflow]);
+  }, [currentWorkflow, isWorkflowModalOpen]);
 
   // Determine button text and action based on selected variations
   const saveButtonText = selectedCount > 0

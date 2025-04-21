@@ -56,23 +56,33 @@ const WorkflowManager = ({
         workflowSaveRequestId: workflow?._saveRequestId
       });
       
-      // Only auto-save if we're actually closing the modal, not just toggling JSON editor
+      // Check if this is a toggle editor request or a close request
       const isToggleRequest = workflow?._saveRequestId === "toggle_json_editor";
+      // Check if it's a close request but no changes are made
+      const isCloseRequest = saveRequest === "close_no_save" || workflow._saveRequestId === "close_no_save";
       
       console.log("WorkflowManager: Save decision", {
         isToggleRequest,
-        shouldSkipSave: isToggleRequest,
+        isCloseRequest,
+        shouldSkipSave: isToggleRequest || isCloseRequest,
         workflowId: workflow?.id
       });
       
-      if (!isToggleRequest) {
+      // Skip save if it's a toggle request or close_no_save request
+      if (!isToggleRequest && !isCloseRequest) {
         if (showJsonEditor) {
           // If in JSON editor mode, try to parse and save the JSON
           console.log("WorkflowManager: Saving from JSON editor mode", {
             workflowId: workflow?.id,
             jsonLength: workflowJson?.length || 0
           });
-          handleSaveJsonToApi();
+          
+          // Only save if we actually have JSON content that's been modified
+          if (workflowJson && workflowJson.trim() !== '') {
+            handleSaveJsonToApi();
+          } else {
+            console.log("WorkflowManager: No JSON content to save");
+          }
         } else {
           // If in visual editor mode, use the editor's save method via ref
           console.log("WorkflowManager: Attempting to save via editor ref", {
@@ -92,7 +102,7 @@ const WorkflowManager = ({
           }
         }
       } else {
-        console.log("WorkflowManager: Skipping save due to toggle_json_editor flag");
+        console.log("WorkflowManager: Skipping save due to editor toggle or close without save flag");
       }
     }
   }, [saveRequest, visible, workflow, showJsonEditor, workflowJson]);
