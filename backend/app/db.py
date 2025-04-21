@@ -34,6 +34,15 @@ def get_session():
     """Dependency for getting DB session"""
     with Session(engine) as session:
         yield session
+        
+        
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def get_session_context():
+    """Async context manager for database sessions"""
+    with Session(engine) as session:
+        yield session
 
 
 # Auto initialize in-memory database with tables and migrations

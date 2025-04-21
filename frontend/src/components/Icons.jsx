@@ -32,7 +32,11 @@ import {
   EllipsisVerticalIcon,
   SparklesIcon,
   ArrowUpTrayIcon,
-  LanguageIcon
+  LanguageIcon,
+  Square2StackIcon,
+  PencilSquareIcon,
+  ArrowsPointingOutIcon
+
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 
@@ -63,14 +67,17 @@ const icons = {
   duplicate: { outline: DocumentDuplicateIcon },
   switch: { outline: ArrowsRightLeftIcon },
   code: { outline: CodeBracketIcon },
-  tools: { outline: WrenchScrewdriverIcon },
+  tool: { outline: WrenchScrewdriverIcon },
   check: { outline: CheckIcon },
-  warning: { outline: ExclamationCircleIcon },
+  alert: { outline: ExclamationCircleIcon },
   newDocument: { outline: DocumentPlusIcon },
   settings: { outline: AdjustmentsHorizontalIcon },
   more: { outline: EllipsisVerticalIcon },
   sparkles: { outline: SparklesIcon },
   language: { outline: LanguageIcon },
+  flow: { outline: ArrowsPointingOutIcon },
+  edit: { outline: PencilSquareIcon },
+  copy: { outline: Square2StackIcon },
 };
 
 export default function Icon({ name, variant = 'outline', className = '', ...props }) {
@@ -78,4 +85,3 @@ export default function Icon({ name, variant = 'outline', className = '', ...pro
   if (!IconComponent) return null;
   return <IconComponent className={className} {...props} />;
 }
-

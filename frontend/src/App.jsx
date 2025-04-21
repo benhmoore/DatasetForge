@@ -31,7 +31,6 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>

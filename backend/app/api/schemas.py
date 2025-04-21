@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, validator
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Union
 from datetime import datetime
 
 
@@ -189,3 +189,93 @@ class ParaphraseSeedsResponse(BaseModel):
 # Export schemas
 class ExportRequest(BaseModel):
     template_id: Optional[int] = None
+
+
+# Workflow schemas - used for API validation but not database storage
+class NodePosition(BaseModel):
+    x: float
+    y: float
+
+
+class BaseNodeConfig(BaseModel):
+    id: str
+    type: str
+    name: str
+    position: NodePosition
+
+
+class ModelNodeConfig(BaseNodeConfig):
+    type: str = "model"
+    model: Optional[str] = None
+    system_instruction: Optional[str] = None  # User can edit directly
+    template_id: Optional[int] = None
+    model_parameters: Optional[ModelParameters] = None
+    inputs: Optional[List[Dict[str, Any]]] = Field(default_factory=list)  # List of input objects with id and connected state
+
+
+class TransformNodeConfig(BaseNodeConfig):
+    type: str = "transform"
+    pattern: str
+    replacement: str
+    is_regex: bool = False
+    apply_to_field: str = "output"  # Which field to transform (output, system_prompt, etc.)
+
+
+class InputNodeConfig(BaseNodeConfig):
+    type: str = "input"
+    fields: Optional[List[str]] = None
+
+
+class OutputNodeConfig(BaseNodeConfig):
+    type: str = "output"
+    field: str = "output"
+
+
+class TemplateNodeConfig(BaseNodeConfig):
+    type: str = "template"
+    template_id: int
+    instruction: Optional[str] = None  # Additional instruction to add to the template's system prompt
+
+
+class NodeConnection(BaseModel):
+    source_node_id: str
+    target_node_id: str
+    source_handle: Optional[str] = None
+    target_handle: Optional[str] = None
+
+
+class Workflow(BaseModel):
+    id: Optional[str] = None
+    name: str
+    description: Optional[str] = None
+    nodes: Dict[str, Dict[str, Any]]  # Maps node IDs to node configurations
+    connections: List[Dict[str, Any]]
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class WorkflowExecuteRequest(BaseModel):
+    workflow: Workflow
+    seed_data: SeedData
+    debug_mode: bool = False
+
+
+class NodeExecutionResult(BaseModel):
+    node_id: str
+    node_type: str
+    node_name: Optional[str] = None  # Add this field
+    input: Dict[str, Any]
+    output: Dict[str, Any]
+    execution_time: float
+    status: str = "success"  # success, error
+    error_message: Optional[str] = None
+
+
+class WorkflowExecutionResult(BaseModel):
+    workflow_id: str
+    results: List[NodeExecutionResult]
+    seed_data: SeedData
+    final_output: Dict[str, Any]
+    execution_time: float
+    status: str = "success"  # success, error, partial_success
+    meta: Optional[Dict[str, Any]] = None  # Additional metadata about the workflow execution

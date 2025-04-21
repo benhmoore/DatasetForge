@@ -281,7 +281,160 @@ const api = {
     .then(response => response.data),
   
   deleteSeedBank: (seedBankId) => apiClient.delete(`/seed_banks/${seedBankId}`)
-    .then(response => response.data)
+    .then(response => response.data),
+    
+  // Workflow API endpoints
+  executeWorkflow: (workflow, templateOutput, inputData = {}, debugMode = false) => {
+    // Log what we're sending to help debugging
+    console.log('Workflow execution input:', {
+      templateOutputType: typeof templateOutput,
+      isString: typeof templateOutput === 'string',
+      hasOutput: typeof templateOutput === 'object' && templateOutput && 'output' in templateOutput
+    });
+    
+    return apiClient.post('/workflow/execute', {
+      workflow,
+      template_output: templateOutput,
+      input_data: inputData,
+      debug_mode: debugMode
+    }).then(response => response.data);
+  },
+  
+  executeWorkflowStep: (nodeConfig, inputs) => apiClient.post('/workflow/execute_step', {
+    node_config: nodeConfig,
+    inputs
+  }).then(response => response.data),
+  
+  // Streaming workflow execution
+  executeWorkflowWithStream: async (workflow, templateOutput, inputData = {}, onData, signal, debugMode = false) => {
+    console.log('Sending workflow execution request:', {
+      workflow: workflow.id || 'unnamed-workflow',
+      nodes: Object.keys(workflow.nodes).length,
+      connections: workflow.connections.length,
+    });
+    
+    // Use fetch API for streaming
+    const response = await fetch('/api/workflow/execute/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
+      },
+      body: JSON.stringify({
+        workflow,
+        template_output: templateOutput,
+        input_data: inputData,
+        debug_mode: debugMode
+      }),
+      // Log key info about what we're sending
+      ...(() => {
+        console.log('Streaming workflow execution input:', {
+          templateOutputType: typeof templateOutput,
+          templateOutputLength: typeof templateOutput === 'string' ? templateOutput.length : 'not-string',
+          inputDataKeys: Object.keys(inputData || {})
+        });
+        return {}; // Return empty object to spread (no effect)
+      })(),
+      signal: signal // Pass the signal to fetch
+    });
+
+    if (!response.ok) {
+      // Handle non-2xx responses including AbortError
+      if (signal?.aborted) {
+        console.log('Workflow execution request aborted.');
+        throw new DOMException('Aborted', 'AbortError'); 
+      }
+      const errorText = await response.text();
+      console.error('Workflow execution request failed:', response.status, errorText);
+      throw new Error(`Workflow execution failed: ${response.status} ${errorText || response.statusText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is null');
+    }
+
+    // Process the stream
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResult = null;
+
+    try {
+      while (true) {
+        // Check if aborted before reading
+        if (signal?.aborted) {
+          console.log('Workflow execution stream aborted during processing.');
+          reader.cancel('Aborted by user'); // Cancel the reader
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        
+        // Check if aborted after reading
+        if (signal?.aborted) {
+          console.log('Workflow execution stream aborted after read.');
+          reader.cancel('Aborted by user');
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep the last partial line in the buffer
+
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const jsonData = JSON.parse(line);
+              
+              // Store final result if we get a complete message
+              if (jsonData.type === 'complete') {
+                finalResult = jsonData.result;
+              }
+              
+              if (onData) {
+                onData(jsonData); // Call the callback with the parsed JSON object
+              }
+            } catch (e) {
+              console.error('Failed to parse JSON line:', line, e);
+              if (onData) {
+                onData({ type: 'error', error: `Failed to parse stream data: ${line}` });
+              }
+            }
+          }
+        }
+      }
+      
+      // Process any remaining data in the buffer
+      if (buffer.trim()) {
+        try {
+          const jsonData = JSON.parse(buffer);
+          if (jsonData.type === 'complete') {
+            finalResult = jsonData.result;
+          }
+          if (onData) {
+            onData(jsonData);
+          }
+        } catch (e) {
+          console.error('Failed to parse final JSON buffer:', buffer, e);
+          if (onData) {
+            onData({ type: 'error', error: `Failed to parse final stream data: ${buffer}` });
+          }
+        }
+      }
+      
+      return finalResult;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('Workflow execution fetch aborted successfully.');
+        throw error; // Rethrow AbortError
+      }
+      console.error('Workflow execution stream failed:', error);
+      throw new Error(`Workflow execution stream failed: ${error.message}`);
+    }
+  }
 };
 
 export default api;

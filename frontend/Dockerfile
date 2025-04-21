@@ -7,6 +7,7 @@ COPY package.json package-lock.json ./
 
 # Install dependencies
 RUN npm ci
+RUN npm install
 
 # avoid host mounts clobbering dependencies
 VOLUME ["/app/node_modules"]

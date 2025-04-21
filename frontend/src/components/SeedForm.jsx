@@ -97,6 +97,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
   const [isSeedBankModalOpen, setIsSeedBankModalOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState({}); // { seedIndex: { slotName: true } }
   const [isInitialized, setIsInitialized] = useState(false); // Track if initial load/reset is done
+  const [isPreviewCollapsed, setIsPreviewCollapsed] = useState(true); // State for prompt preview collapse
 
   // Determine disabled state based on generation, paraphrasing, or archived dataset
   const isDisabled = isGenerating || isParaphrasing || !!selectedDataset?.archived;
@@ -864,11 +865,25 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
 
           {promptPreview && !totalErrorCount && (
             <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Prompt Preview:</label>
-              <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">{promptPreview}</p>
+              <div className="flex justify-between items-center mb-1 cursor-pointer" onClick={() => setIsPreviewCollapsed(!isPreviewCollapsed)}>
+                <label className="block text-xs font-medium text-gray-500">Prompt Preview:</label>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600"
+                  aria-expanded={!isPreviewCollapsed}
+                  aria-controls="prompt-preview-content"
+                >
+                  <Icon name={isPreviewCollapsed ? 'chevronDown' : 'chevronUp'} className="w-4 h-4" />
+                </button>
+              </div>
+              {!isPreviewCollapsed && (
+                <p id="prompt-preview-content" className="text-sm text-gray-700 whitespace-pre-wrap break-words pt-1">
+                  {promptPreview}
+                </p>
+              )}
             </div>
           )}
-          
+
           <div>
             <CustomSlider
               label="Variations per Seed"
