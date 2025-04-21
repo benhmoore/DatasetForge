@@ -125,12 +125,41 @@ const WorkflowEditor = forwardRef(({
     const incomingWorkflow = workflow || { name: 'New Workflow', description: '', nodes: {}, connections: [] };
     const previousWorkflow = previousWorkflowRef.current || { name: 'New Workflow', description: '', nodes: {}, connections: [] };
 
+    // Deep debug log the input workflow structure 
+    console.log("WorkflowEditor - DETAILED DEBUG: Incoming workflow structure:", {
+      workflowId: incomingWorkflow.id,
+      hasDataProperty: !!incomingWorkflow.data,
+      hasDirectNodesProperty: !!incomingWorkflow.nodes,
+      dataNodesCount: incomingWorkflow.data?.nodes ? Object.keys(incomingWorkflow.data.nodes).length : 0,
+      dataConnectionsCount: incomingWorkflow.data?.connections?.length || 0,
+      topLevelNodesCount: incomingWorkflow.nodes ? Object.keys(incomingWorkflow.nodes).length : 0,
+      fullData: incomingWorkflow
+    });
+    
+    // Normalize the workflow structure - ensure we're getting nodes from either data.nodes or nodes property
+    let normalizedWorkflow = {...incomingWorkflow};
+    
+    // If nodes/connections are inside data property (API format), bring them to top level for comparison
+    if (incomingWorkflow.data?.nodes && !incomingWorkflow.nodes) {
+      console.log("WorkflowEditor: Moving nodes/connections from data property to top level for processing");
+      normalizedWorkflow.nodes = incomingWorkflow.data.nodes;
+      normalizedWorkflow.connections = incomingWorkflow.data.connections || [];
+    }
+
     // Compare relevant parts to see if an update is needed
-    const nameChanged = incomingWorkflow.name !== previousWorkflow.name;
-    const descriptionChanged = incomingWorkflow.description !== previousWorkflow.description;
+    const nameChanged = normalizedWorkflow.name !== previousWorkflow.name;
+    const descriptionChanged = normalizedWorkflow.description !== previousWorkflow.description;
     // Use isEqual for deep comparison of nodes and connections objects/arrays
-    const nodesChanged = !isEqual(incomingWorkflow.nodes, previousWorkflow.nodes);
-    const connectionsChanged = !isEqual(incomingWorkflow.connections, previousWorkflow.connections);
+    const nodesChanged = !isEqual(normalizedWorkflow.nodes, previousWorkflow.nodes);
+    const connectionsChanged = !isEqual(normalizedWorkflow.connections, previousWorkflow.connections);
+
+    console.log("WorkflowEditor: Change detection", {
+      nameChanged,
+      descriptionChanged,
+      nodesChanged,
+      connectionsChanged,
+      isNewWorkflowInstance: workflow !== previousWorkflowRef.current
+    });
 
     if (workflow !== previousWorkflowRef.current || nameChanged || descriptionChanged || nodesChanged || connectionsChanged) {
       console.log("Workflow prop changed or content differs. Loading into editor.");
@@ -138,33 +167,60 @@ const WorkflowEditor = forwardRef(({
       try {
         // Find the highest node ID to update counter
         let maxId = 0;
-        Object.keys(incomingWorkflow.nodes || {}).forEach(nodeId => {
+        const nodeKeys = Object.keys(normalizedWorkflow.nodes || {});
+        console.log("WorkflowEditor: Processing node IDs", {
+          nodeCount: nodeKeys.length,
+          nodeIds: nodeKeys
+        });
+        
+        nodeKeys.forEach(nodeId => {
           const idNumber = parseInt(nodeId.replace(/[^0-9]/g, ''), 10);
           if (!isNaN(idNumber) && idNumber > maxId) {
             maxId = idNumber;
           }
         });
+        
         nodeIdCounterRef.current = maxId + 1;
+        console.log(`WorkflowEditor: Set node ID counter to ${nodeIdCounterRef.current}`);
         
         // Use our utility to transform from API format to React Flow format
+        console.log("WorkflowEditor: Calling apiToReactFlow with:", {
+          hasNodes: !!normalizedWorkflow.nodes,
+          nodeCount: Object.keys(normalizedWorkflow.nodes || {}).length,
+          connectionCount: (normalizedWorkflow.connections || []).length
+        });
+        
         const { nodes: reactFlowNodes, edges: reactFlowEdges } = 
-          apiToReactFlow(incomingWorkflow, nodeComponentMap, handleNodeConfigChange);
+          apiToReactFlow(normalizedWorkflow, nodeComponentMap, handleNodeConfigChange);
+        
+        console.log("WorkflowEditor: apiToReactFlow result:", {
+          reactFlowNodesCount: reactFlowNodes.length,
+          reactFlowEdgesCount: reactFlowEdges.length,
+          firstNodePreview: reactFlowNodes[0] ? {
+            id: reactFlowNodes[0].id, 
+            type: reactFlowNodes[0].type,
+            data: reactFlowNodes[0].data
+          } : 'no nodes'
+        });
         
         setNodes(reactFlowNodes);
         setEdges(reactFlowEdges);
-        setWorkflowName(incomingWorkflow.name);
-        setWorkflowDescription(incomingWorkflow.description || '');
+        setWorkflowName(normalizedWorkflow.name);
+        setWorkflowDescription(normalizedWorkflow.description || '');
         setHasUnsavedChanges(false); // Reset unsaved changes flag after loading
         previousWorkflowRef.current = workflow; // Update the ref to the current workflow prop
         
         console.log("Workflow loaded into editor state:", { 
           nodeCount: reactFlowNodes.length, 
           edgeCount: reactFlowEdges.length,
-          name: incomingWorkflow.name
+          name: normalizedWorkflow.name
         });
 
       } catch (error) {
         console.error("Error loading workflow into editor:", error);
+        
+        // Log the failing data structure for debugging
+        console.error("Failed workflow data:", normalizedWorkflow);
         
         // Provide more specific error message based on error type
         if (error.message?.includes("nodes")) {

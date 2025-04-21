@@ -14,18 +14,51 @@
  */
 export const apiToReactFlow = (apiData, nodeComponentMap, handleNodeConfigChange) => {
   if (!apiData) {
+    console.log("workflowTransform: apiToReactFlow - No input data, returning empty result");
     return { nodes: [], edges: [] };
+  }
+  
+  console.log("workflowTransform: apiToReactFlow input data:", {
+    hasNodes: !!apiData.nodes,
+    nodesType: typeof apiData.nodes,
+    nodeCount: apiData.nodes ? Object.keys(apiData.nodes).length : 0,
+    hasConnections: !!apiData.connections,
+    connectionsType: typeof apiData.connections,
+    connectionsCount: apiData.connections?.length || 0,
+    firstNodeId: apiData.nodes ? Object.keys(apiData.nodes)[0] : null
+  });
+
+  // Deep debug the first node if exists
+  if (apiData.nodes && Object.keys(apiData.nodes).length > 0) {
+    const firstNodeId = Object.keys(apiData.nodes)[0];
+    const firstNode = apiData.nodes[firstNodeId];
+    console.log("workflowTransform: First node data:", {
+      id: firstNodeId,
+      type: firstNode.type,
+      name: firstNode.name,
+      hasPosition: !!firstNode.position,
+      position: firstNode.position,
+      otherKeys: Object.keys(firstNode).filter(k => !['id', 'type', 'name', 'position'].includes(k))
+    });
   }
 
   const rfNodes = Object.entries(apiData?.nodes || {}).map(([id, nodeConfig]) => {
     // Get the appropriate React Flow component type based on the node's internal type
-    const nodeComponentType = nodeComponentMap[nodeConfig.type] || 'modelNode'; // Default fallback
+    const nodeType = nodeConfig.type || 'model';
+    const nodeComponentType = nodeComponentMap[nodeType] || 'modelNode'; // Default fallback
     
     // Use the configured position or provide a default
     const position = nodeConfig.position || { x: 100, y: 100 };
     
     // Set the label to the node's name or a default based on type
     const label = nodeConfig.name || nodeConfig.type || 'Node';
+    
+    console.log(`workflowTransform: Creating React Flow node for ${id}:`, {
+      originalType: nodeType,
+      mappedType: nodeComponentType,
+      position,
+      label
+    });
     
     return {
       id,
@@ -39,22 +72,26 @@ export const apiToReactFlow = (apiData, nodeComponentMap, handleNodeConfigChange
     };
   });
 
-  const rfEdges = (apiData?.connections || []).map((conn, index) => ({
-    id: `edge-${conn.source_node_id}-${conn.source_handle || 'default'}-${conn.target_node_id}-${conn.target_handle || 'default'}`,
-    source: conn.source_node_id,
-    target: conn.target_node_id,
-    sourceHandle: conn.source_handle || null,
-    targetHandle: conn.target_handle || null,
-    type: 'smoothstep', // Default edge type
-    animated: true,
-    style: { stroke: '#3b82f6' },
-    markerEnd: {
-      type: 'arrowclosed',
-      width: 15,
-      height: 15,
-      color: '#3b82f6'
-    }
-  }));
+  const rfEdges = (apiData?.connections || []).map((conn, index) => {
+    console.log(`workflowTransform: Creating React Flow edge ${index}:`, conn);
+    
+    return {
+      id: `edge-${conn.source_node_id}-${conn.source_handle || 'default'}-${conn.target_node_id}-${conn.target_handle || 'default'}`,
+      source: conn.source_node_id,
+      target: conn.target_node_id,
+      sourceHandle: conn.source_handle || null,
+      targetHandle: conn.target_handle || null,
+      type: 'smoothstep', // Default edge type
+      animated: true,
+      style: { stroke: '#3b82f6' },
+      markerEnd: {
+        type: 'arrowclosed',
+        width: 15,
+        height: 15,
+        color: '#3b82f6'
+      }
+    };
+  });
 
   return { nodes: rfNodes, edges: rfEdges };
 };
