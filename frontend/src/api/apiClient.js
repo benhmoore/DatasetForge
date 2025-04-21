@@ -388,10 +388,14 @@ const api = {
   
   // Streaming workflow execution
   executeWorkflowWithStream: async (workflow, templateOutput, inputData = {}, onData, signal, debugMode = false) => {
+    // Normalize workflow structure to handle both direct and nested nodes/connections
+    const nodes = workflow.data?.nodes || workflow.nodes;
+    const connections = workflow.data?.connections || workflow.connections;
+
     console.log('Sending workflow execution request:', {
       workflow: workflow.id || 'unnamed-workflow',
-      nodes: Object.keys(workflow.nodes).length,
-      connections: workflow.connections.length,
+      nodes: nodes ? Object.keys(nodes).length : 0,
+      connections: connections ? (connections.length || 0) : 0,
     });
     
     // Use fetch API for streaming
