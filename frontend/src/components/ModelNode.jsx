@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { Position, useUpdateNodeInternals } from '@xyflow/react';
 import CustomSelect from './CustomSelect';
@@ -7,9 +7,25 @@ import api from '../api/apiClient';
 import NodeBase from './NodeBase';
 
 /**
+ * Extract slot names from instruction text
+ * Matches patterns like {slotName}
+ */
+const extractSlots = (instructionText) => {
+  if (!instructionText) return [];
+  
+  // Match patterns like {slotName}
+  const slotRegex = /{([^{}]+)}/g;
+  const matches = [...(instructionText.matchAll(slotRegex) || [])];
+  
+  // Extract slot names and remove duplicates
+  const slots = [...new Set(matches.map(match => match[1]))];
+  
+  return slots;
+};
+
+/**
  * ModelNode component for configuring a model node in a workflow
- * Uses indexed inputs (input_0, input_1, etc.) instead of named inputs
- * Reads the required handle count from data._visibleHandleCount
+ * Dynamically creates input handles based on slots in the model instruction
  */
 const ModelNode = ({ 
   data,
@@ -17,13 +33,12 @@ const ModelNode = ({
   disabled = false,
   isConnectable = true
 }) => {
-  // Destructure config, callback, and the handle count from data
+  // Destructure config, callback from data
   const { 
     onConfigChange, 
     model = '', 
-    model_instruction = '', // Renamed from system_instruction
-    model_parameters = { temperature: 0.7, top_p: 1.0, max_tokens: 1000 },
-    _visibleHandleCount = 1 // Read count from data, default to 1
+    model_instruction = '', 
+    model_parameters = { temperature: 0.7, top_p: 1.0, max_tokens: 1000 }
   } = data;
 
   // State for models and loading status
@@ -33,6 +48,12 @@ const ModelNode = ({
   // Hook to notify React Flow about internal changes (like adding/removing handles)
   const updateNodeInternals = useUpdateNodeInternals();
 
+  // Extract slots from the model instruction (memoized to prevent re-renders)
+  const slots = useMemo(() => 
+    extractSlots(model_instruction),
+    [model_instruction]
+  );
+  
   // Fetch available models on component mount
   useEffect(() => {
     const fetchModels = async () => {
@@ -50,12 +71,22 @@ const ModelNode = ({
     fetchModels();
   }, []);
 
-  // Effect to update React Flow internals when the handle count prop changes
+  // Store previous slots to compare
+  const [prevSlots, setPrevSlots] = useState([]);
+
+  // Effect to update React Flow internals ONLY when slots actually change
   useEffect(() => {
-    // Call this whenever the number of handles derived from props changes
-    console.log(`ModelNode (${id}): data._visibleHandleCount changed to ${_visibleHandleCount}. Updating internals.`);
-    updateNodeInternals(id);
-  }, [_visibleHandleCount, id, updateNodeInternals]); // Depend on the prop value
+    // Check if slots array has actually changed
+    const slotsChanged = 
+      prevSlots.length !== slots.length || 
+      slots.some((slot, index) => slot !== prevSlots[index]);
+    
+    if (slotsChanged) {
+      console.log(`ModelNode (${id}): Slots changed to [${slots.join(', ')}]. Updating internals.`);
+      updateNodeInternals(id);
+      setPrevSlots(slots);
+    }
+  }, [slots, id, updateNodeInternals, prevSlots]);
 
   // Handle model selection
   const handleModelChange = (selectedModelName) => {
@@ -86,21 +117,34 @@ const ModelNode = ({
   };
 
   // --- Generate Input Handles --- 
-  const inputHandles = [];
-  // Create only the visible handles based on the prop value
-  // Ensure count is at least 1
-  const handleCountToRender = Math.max(1, _visibleHandleCount);
-  console.log(`ModelNode (${id}): Rendering ${handleCountToRender} handles.`);
-  
-  for (let i = 0; i < handleCountToRender; i++) {
-    inputHandles.push({
-      id: `input_${i}`, // Use the standardized ID format
-      type: 'target',
-      position: Position.Left,
-      label: `Input ${i}`,
-      // No onConnect needed here anymore
-    });
-  }
+  // Memoize the input handles to prevent unnecessary re-renders
+  const inputHandles = useMemo(() => {
+    const handles = [];
+    
+    // Add slot-based handles - always use the slot name directly in the ID
+    if (slots.length > 0) {
+      slots.forEach(slot => {
+        handles.push({
+          id: `input_${slot}`,  // Use the slot name directly in the ID
+          type: 'target',
+          position: Position.Left,
+          label: slot,
+          slotName: slot, // Store slot name for clarity
+        });
+      });
+    } else {
+      // Ensure there's at least one default input if no slots
+      handles.push({
+        id: `input_default`,
+        type: 'target',
+        position: Position.Left,
+        label: 'Input',
+      });
+    }
+    
+    console.log(`ModelNode (${id}): Rendering ${handles.length} handles: [${handles.map(h => h.label).join(', ')}]`);
+    return handles;
+  }, [slots, id]);
 
   // Model options for dropdown
   const modelOptions = models.map(m => ({
@@ -116,7 +160,6 @@ const ModelNode = ({
       disabled={disabled} 
       nodeType="model"
       iconName="cpu"
-      // Pass the dynamically generated handles based on the prop
       inputHandles={inputHandles} 
     >
       {/* Model selection */}
@@ -144,13 +187,13 @@ const ModelNode = ({
           onChange={handleModelInstructionChange}
           className="w-full p-2 border rounded text-sm"
           rows={4}
-          placeholder="Enter instructions for the model. Use {input_0}, {input_1}, etc. to reference inputs."
+          placeholder="Enter instructions for the model. Use {slot_name} to create input slots."
           disabled={disabled}
         />
         
         <div className="text-xs text-gray-500 mt-1">
-          <p>Reference inputs using <code>{'{input_0}'}</code>, <code>{'{input_1}'}</code>, etc.</p>
-          <p>The first input is always used as the user prompt if not referenced in model instruction.</p>
+          <p>Use <code>{'{slot_name}'}</code> syntax to create labeled input slots.</p>
+          <p>Example: "Process this story by {'{author}'}: {'{story}'}" creates 'author' and 'story' inputs.</p>
         </div>
       </div>
       

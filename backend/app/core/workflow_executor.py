@@ -435,6 +435,7 @@ class WorkflowExecutor:
         Determine the inputs for a node based on connections and previous outputs.
         Simplifies connection handling by collecting all inputs into an array.
         Enhanced with better error handling for None values.
+        Now supports named inputs via input_map.
 
         Args:
             node_id: The ID of the node
@@ -443,7 +444,9 @@ class WorkflowExecutor:
             initial_data: Initial data for the workflow
 
         Returns:
-            Dict[str, Any]: The inputs for the node, with 'inputs' key containing an array of all inputs
+            Dict[str, Any]: The inputs for the node, with:
+                - 'inputs' key containing an array of all inputs (positional)
+                - 'input_map' key containing a map of slot names to values (named)
         """
         # Special case for input nodes: give them template_output directly
         if node_id.startswith("input"):
@@ -464,6 +467,8 @@ class WorkflowExecutor:
 
                 # Also provide it as first element in inputs array for consistency
                 node_inputs["inputs"] = [template_output]
+                # Initialize the input_map for named inputs
+                node_inputs["input_map"] = {"template_output": template_output}
 
                 if self.debug_mode:
                     logger.debug(f"Providing template_output to input node {node_id}")
@@ -471,7 +476,10 @@ class WorkflowExecutor:
             return node_inputs
 
         # For all non-input nodes, initialize with a simple structure
-        node_inputs = {"inputs": []}  # All inputs will be collected in this array
+        node_inputs = {
+            "inputs": [],  # All inputs will be collected in this array (positional)
+            "input_map": {}  # Named inputs will be collected in this map
+        }
 
         # Find connections where this node is the target
         input_connections = [
@@ -493,6 +501,8 @@ class WorkflowExecutor:
         for connection in input_connections:
             source_id = connection.get("source_node_id")
             source_handle = connection.get("source_handle", "output")
+            target_handle = connection.get("target_handle", "input_0")
+            target_slot = connection.get("target_slot")  # Get the slot name if available
 
             if source_id in node_outputs:
                 connected_input = True
@@ -536,8 +546,31 @@ class WorkflowExecutor:
                     if output_value is None:
                         output_value = ""
 
-                # Add to the inputs array
+                # Add to the inputs array (positional)
                 node_inputs["inputs"].append(output_value)
+                
+                # Add to input_map using the slot name from the connection or target handle
+                if target_slot:
+                    # Use the explicit slot name from the connection if available
+                    slot_name = target_slot
+                    node_inputs["input_map"][slot_name] = output_value
+                    if self.debug_mode:
+                        logger.debug(
+                            f"Added input from {source_id}.{source_handle} to named slot '{slot_name}'"
+                        )
+                elif target_handle.startswith("input_"):
+                    # Extract the slot name from the target handle
+                    slot_name = target_handle.replace("input_", "")
+                    if slot_name != "default" and not slot_name.isdigit():
+                        # This is a named slot in the handle ID
+                        node_inputs["input_map"][slot_name] = output_value
+                        if self.debug_mode:
+                            logger.debug(
+                                f"Added input from {source_id}.{source_handle} to named slot '{slot_name}' (from handle)"
+                            )
+                    else:
+                        # Add using the target handle as-is for backward compatibility
+                        node_inputs["input_map"][target_handle] = output_value
 
                 if self.debug_mode:
                     if isinstance(output_value, str):
@@ -593,7 +626,13 @@ class WorkflowExecutor:
             node_id = node_config.get("id", "unknown_model_node")
             model = node_config.get("model")
             if not model:
-                raise ValueError(f"Model name is required for model node '{node_id}'")
+                error_msg = f"No model selected for node '{node_id}'. Please select a model in the workflow editor."
+                logger.warning(error_msg)
+                return {
+                    "output": error_msg,
+                    "error": "model_missing",
+                    "timestamp": self._get_timestamp(),
+                }
 
             # Get the base model instruction from config (renamed from user_prompt/system_instruction)
             model_instruction_template = node_config.get("model_instruction", "")
@@ -611,9 +650,12 @@ class WorkflowExecutor:
 
             # --- Construct Final User Prompt (which is based on model_instruction) ---
             final_user_prompt = ""
-            placeholders = set(
-                re.findall(r"\{input_(\d+)\}", model_instruction_template)
-            )
+            # Match both old indexed format {input_0} and new named format {slot_name}
+            # We extract all placeholders first for processing
+            all_placeholders = re.findall(r"\{([^{}]+)\}", model_instruction_template)
+            
+            # Get input map (named inputs) from node_inputs
+            input_map = node_inputs.get("input_map", {})
 
             if not input_array:
                 # No inputs, use the template directly
@@ -622,66 +664,75 @@ class WorkflowExecutor:
                     logger.debug(
                         f"Model node {node_id}: No inputs provided. Using model instruction template directly."
                     )
-            elif placeholders:
+            elif all_placeholders:
                 # Placeholders found, substitute them
                 processed_prompt = model_instruction_template
-                max_index_referenced = -1
-
-                for idx_str in placeholders:
-                    try:
-                        idx = int(idx_str)
-                        max_index_referenced = max(max_index_referenced, idx)
-                        if idx < len(input_array):
-                            placeholder = f"{{input_{idx}}}"
-                            input_value = str(input_array[idx])
-                            processed_prompt = processed_prompt.replace(
-                                placeholder, input_value
+                referenced_slots = set()
+                
+                # Replace placeholders with values from input_map
+                for placeholder in all_placeholders:
+                    placeholder_pattern = f"{{{placeholder}}}"
+                    
+                    # Check if this placeholder is available in input_map
+                    if placeholder in input_map:
+                        input_value = str(input_map[placeholder])
+                        processed_prompt = processed_prompt.replace(
+                            placeholder_pattern, input_value
+                        )
+                        referenced_slots.add(placeholder)
+                        if self.debug_mode:
+                            logger.debug(
+                                f"Model node {node_id}: Replaced placeholder '{placeholder}' with value."
                             )
-                        else:
-                            placeholder = f"{{input_{idx}}}"
-                            missing_msg = f"[MISSING INPUT {idx}]"
-                            processed_prompt = processed_prompt.replace(
-                                placeholder, missing_msg
-                            )
-                            logger.warning(
-                                f"Model node {node_id}: Missing input for placeholder '{placeholder}'"
-                            )
-                    except ValueError:
+                    else:
+                        # Placeholder not found in inputs
+                        missing_msg = f"[MISSING INPUT: {placeholder}]"
+                        processed_prompt = processed_prompt.replace(
+                            placeholder_pattern, missing_msg
+                        )
                         logger.warning(
-                            f"Model node {node_id}: Invalid input index '{idx_str}' in model instruction template."
+                            f"Model node {node_id}: No value found for placeholder '{placeholder}'"
                         )
 
                 final_user_prompt = processed_prompt
                 if self.debug_mode:
                     logger.debug(
-                        f"Model node {node_id}: Substituted {len(placeholders)} placeholders in model instruction."
+                        f"Model node {node_id}: Substituted {len(referenced_slots)} placeholders in model instruction."
                     )
 
-                # Append any remaining inputs *not* referenced by placeholders
-                remaining_inputs = []
-                for i, val in enumerate(input_array):
-                    if i > max_index_referenced:
-                        remaining_inputs.append(str(val))
+                # Append any unused inputs that weren't referenced by placeholders
+                unused_inputs = []
+                for key, val in input_map.items():
+                    if key not in referenced_slots and key != "input" and not key.startswith("input_"):
+                        unused_inputs.append(f"{key}: {str(val)}")
 
-                if remaining_inputs:
+                if unused_inputs:
                     appended_text = "\n\n--- Additional Inputs ---\n" + "\n".join(
-                        remaining_inputs
+                        unused_inputs
                     )
                     final_user_prompt += appended_text
                     if self.debug_mode:
                         logger.debug(
-                            f"Model node {node_id}: Appended {len(remaining_inputs)} remaining inputs not referenced by placeholders."
+                            f"Model node {node_id}: Appended {len(unused_inputs)} unused inputs not referenced by placeholders."
                         )
 
             else:
-                # No placeholders, append all inputs
+                # No placeholders, append all named inputs
                 if self.debug_mode:
                     logger.debug(
-                        f"Model node {node_id}: No placeholders found. Appending all {len(input_array)} inputs to model instruction."
+                        f"Model node {node_id}: No placeholders found. Appending all named inputs to model instruction."
                     )
 
-                inputs_as_strings = [str(inp) for inp in input_array]
-                appended_text = "\n\n--- Inputs ---\n" + "\n".join(inputs_as_strings)
+                named_inputs = []
+                for key, val in input_map.items():
+                    if key != "input" and not key.startswith("input_"):
+                        named_inputs.append(f"{key}: {str(val)}")
+                
+                if not named_inputs:
+                    # Fall back to array inputs if no named inputs
+                    named_inputs = [str(inp) for inp in input_array]
+                
+                appended_text = "\n\n--- Inputs ---\n" + "\n".join(named_inputs)
                 final_user_prompt = model_instruction_template + appended_text
 
             # --- Model Parameters ---
@@ -751,9 +802,12 @@ class WorkflowExecutor:
                 "model": node_config.get("model"),
                 "inputs_available_count": len(node_inputs.get("inputs", [])),
             }
-            # Avoid raising, return error structure consistent with NodeExecutionResult
+            error_message = f"Model execution failed: {json.dumps(error_details)}"
+            # Avoid raising, return error structure with the error in the output field
+            # This ensures compatibility with components expecting a string output
             return {
-                "error": f"Model execution failed: {json.dumps(error_details)}",
+                "output": error_message,  # Put error in output for rendering
+                "error": error_message,
                 "timestamp": self._get_timestamp(),
             }
 

@@ -163,15 +163,25 @@ export const reactFlowToApi = (nodes, edges, nodeComponentMap = null) => {
       source: edge.source,
       target: edge.target,
       sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle
+      targetHandle: edge.targetHandle,
+      slotName: edge.slotName,
+      targetSlot: edge.targetSlot
     });
     
-    return {
+    // Create the basic connection object
+    const connection = {
       source_node_id: edge.source,
       source_handle: edge.sourceHandle || null,
       target_node_id: edge.target,
       target_handle: edge.targetHandle || null
     };
+    
+    // Add slot name information if available for named placeholders
+    if (edge.targetSlot) {
+      connection.target_slot = edge.targetSlot;
+    }
+    
+    return connection;
   });
 
   const result = { nodes: apiNodes, connections: apiConnections };

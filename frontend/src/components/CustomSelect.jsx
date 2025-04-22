@@ -61,7 +61,7 @@ const CustomSelect = ({
         <button
           type="button"
           // Add conditional right padding (e.g., pr-1) when actionButton is present
-          className={`flex-grow p-2 py-0 text-left flex justify-between items-center focus:outline-none rounded-l-md ${ 
+          className={`flex-grow p-2 text-left flex justify-between items-center focus:outline-none rounded-l-md ${ 
             disabled || isLoading ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'bg-white hover:bg-gray-50'
           }`}
           onClick={() => !disabled && !isLoading && setIsOpen(!isOpen)}
@@ -79,7 +79,7 @@ const CustomSelect = ({
         </button>
         {/* Render Action Button if provided */}
         {actionButton && (
-           <div className={`flex items-center border-l border-gray-300 ${disabled || isLoading ? 'bg-gray-100' : 'bg-white'}`} style={{ borderTopRightRadius: '0.375rem', borderBottomRightRadius: '0.375rem' }}> {/* Add right radius here */}
+           <div className={`m-1 flex items-center border-gray-300 ${disabled || isLoading ? 'bg-gray-100' : 'bg-white'}`}> {/* Add right radius here */}
              {/* Clone the button to potentially pass disabled state, or render directly */}
              {/* Note: Passing disabled might require the actionButton component to accept/handle it */}
              {actionButton}
