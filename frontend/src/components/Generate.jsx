@@ -1784,7 +1784,12 @@ const Generate = ({ context }) => {
                 </div>
                 
                 {currentWorkflow ? (
-                  <div className="flex items-center p-2 border rounded bg-blue-50 border-blue-200">
+                  <button
+                    onClick={handleOpenWorkflowModal}
+                    className="flex w-full items-center p-2 border rounded bg-blue-50 border-blue-200 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                    title="Open workflow editor"
+                  >
                     <div className="flex-grow">
                       <div className="font-medium text-sm truncate" title={currentWorkflow.name}>
                         {currentWorkflow.name}
@@ -1794,14 +1799,18 @@ const Generate = ({ context }) => {
                       </div>
                     </div>
                     <button
-                      onClick={handleOpenWorkflowModal}
-                      className="ml-2 p-1.5 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-100 flex-shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevent parent button click
+                        handleOpenWorkflowModal();
+                      }}
+                      className="ml-2 p-1.5 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-100 flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-400"
                       disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
                       title="Edit workflow"
+                      aria-label="Edit workflow"
                     >
                       <Icon name="edit" className="w-4 h-4" />
                     </button>
-                  </div>
+                  </button>
                 ) : isLoadingWorkflows ? (
                   <div className="flex items-center justify-center p-2 border rounded bg-gray-50 h-10">
                     <Icon name="spinner" className="w-4 h-4 mr-2 animate-spin text-blue-500" />
