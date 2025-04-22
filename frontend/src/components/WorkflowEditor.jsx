@@ -92,11 +92,32 @@ const WorkflowEditor = forwardRef(({
 
   // --- State Synchronization ---
 
+  // Helper function to extract slots from instructions
+  const extractSlots = (instructionText) => {
+    if (!instructionText) return { slots: [] };
+    
+    // Match patterns like {slotName}
+    const slotRegex = /{([^{}]+)}/g;
+    const matches = [...(instructionText.matchAll(slotRegex) || [])];
+    
+    // Extract slot names and remove duplicates
+    const slots = [...new Set(matches.map(match => match[1]))];
+    
+    return { slots };
+  };
+
   // Handler for changes within a node's configuration (called by child nodes)
   const handleNodeConfigChange = useCallback((nodeId, updatedConfig) => {
     if (disabled) return;
     
     console.log(`WorkflowEditor: Node config change received for node ${nodeId}`, updatedConfig);
+    
+    // Process model_instruction to log extracted slots for debugging
+    if (updatedConfig.model_instruction) {
+      // Extract slots for debugging purposes
+      const { slots } = extractSlots(updatedConfig.model_instruction);
+      console.log(`WorkflowEditor: Node ${nodeId} has slots:`, slots);
+    }
     
     setNodes(prevNodes => 
       prevNodes.map(node => {
@@ -289,16 +310,42 @@ const WorkflowEditor = forwardRef(({
     
     console.log("Creating new edge:", params);
     
+    // Find source and target nodes
+    const sourceNode = nodes.find(node => node.id === params.source);
+    const targetNode = nodes.find(node => node.id === params.target); 
+    
     // Standardize handle IDs
     const standardizeHandleId = (handleId) => {
       if (!handleId) return null;
+      // Match handles like 'input0', 'input1', etc. and convert to 'input_0', 'input_1'
       if (handleId.match(/^input\d+$/)) {
         return handleId.replace(/^input(\d+)$/, 'input_$1');
       }
+      // Match handles like 'output0', 'output1', etc. and convert to 'output_0', 'output_1'
+      if (handleId.match(/^output\d+$/)) {
+        return handleId.replace(/^output(\d+)$/, 'output_$1');
+      }
       return handleId;
     };
+    
     const sourceHandle = standardizeHandleId(params.sourceHandle);
     const targetHandle = standardizeHandleId(params.targetHandle);
+    
+    // Extract slot information for Model nodes
+    let slotInfo = {};
+    if (targetNode && targetNode.type === 'modelNode' && targetHandle.startsWith('input_')) {
+      // Extract the slot name directly from the handle ID
+      const slotName = targetHandle.replace('input_', '');
+      
+      // Skip if it's the default handle with no slot
+      if (slotName !== 'default') {
+        slotInfo = {
+          slotName,
+          targetSlot: slotName
+        };
+        console.log(`Connection to slot name: ${slotName} for node ${targetNode.id}`);
+      }
+    }
     
     // Create and add the new edge
     const newEdge = { 
@@ -310,39 +357,12 @@ const WorkflowEditor = forwardRef(({
       animated: true,
       style: { stroke: '#3b82f6' },
       markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: '#3b82f6' },
+      ...slotInfo // Add slot information to the edge
     };
+    
     setEdges((eds) => addEdge(newEdge, eds));
     setHasUnsavedChanges(true);
-
-    // Logic to update target ModelNode's handle count
-    const match = targetHandle?.match(/^input_(\d+)$/);
-    if (match) {
-      const inputIndex = parseInt(match[1], 10);
-      const targetNodeId = params.target;
-
-      setNodes(prevNodes =>
-        prevNodes.map(node => {
-          if (node.id === targetNodeId && node.type === 'modelNode') {
-            const currentCount = node.data._visibleHandleCount || 1; 
-            const requiredCount = inputIndex + 2;
-            const nextCount = Math.min(Math.max(currentCount, requiredCount), 5);
-
-            if (nextCount > currentCount) {
-              console.log(`WorkflowEditor: Updating node ${targetNodeId} data._visibleHandleCount from ${currentCount} to ${nextCount}`);
-              return {
-                ...node,
-                data: {
-                  ...node.data,
-                  _visibleHandleCount: nextCount
-                }
-              };
-            }
-          }
-          return node;
-        })
-      );
-    }
-  }, [setEdges, setNodes, disabled]);
+  }, [setEdges, disabled, nodes]);
 
   // --- Workflow Actions ---
 

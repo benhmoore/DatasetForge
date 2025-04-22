@@ -192,7 +192,7 @@ const NodeBase = ({
         </div>
         {!disabled && ( // Only show collapse icon if not disabled
           <Icon 
-            name={isCollapsed ? 'chevron-down' : 'chevron-up'} // Use isCollapsed from props
+            name={isCollapsed ? 'chevronDown' : 'chevronUp'} // Use isCollapsed from props
             className="w-4 h-4 text-gray-400 ml-2" 
           />
         )}
