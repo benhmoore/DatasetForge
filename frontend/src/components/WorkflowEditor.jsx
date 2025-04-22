@@ -519,7 +519,7 @@ const WorkflowEditor = forwardRef(({
   }, [hasUnsavedChanges]);
 
   return (
-    <div className="flex flex-col h-[70vh] border rounded-lg overflow-hidden">
+    <div className="flex flex-col h-full border rounded-lg overflow-hidden">
       {/* Toolbar */}
       <div className="p-2 border-b bg-gray-50 flex items-center space-x-4 justify-between">
         {/* Left Group: Workflow Info */}

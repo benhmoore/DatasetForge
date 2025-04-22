@@ -1931,7 +1931,7 @@ const Generate = ({ context }) => {
       {/* Workflow Manager Modal */}
       {isWorkflowModalOpen && currentWorkflow && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-hidden p-2"
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-hidden"
           onClick={handleCloseWorkflowModal} // Close on backdrop click
           role="dialog"
           aria-modal="true"
@@ -1958,7 +1958,7 @@ const Generate = ({ context }) => {
             </div>
             
             {/* Modal Body - WorkflowManager component */}
-            <div className="flex-grow overflow-y-auto p-0"> {/* Remove padding for more space */}
+            <div className="flex-grow overflow-hidden"> {/* Changed to overflow-hidden and removed padding */}
               <WorkflowManager
                 // Pass necessary props to WorkflowManager
                 visible={isWorkflowModalOpen}

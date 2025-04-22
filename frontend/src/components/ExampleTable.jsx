@@ -445,7 +445,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   // If no dataset is selected
   if (!datasetId) {
     return (
-      <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full mx-4 sm:mx-6 lg:mx-8">
+      <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full">
         <p className="text-gray-500">Please select a dataset to view examples.</p>
       </div>
     );
@@ -498,7 +498,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       />
       
       {examples.length === 0 ? (
-        <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full mx-4 sm:mx-6 lg:mx-8">
+        <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full">
           {debouncedSearchTerm ? (
             <div className="py-8">
               <Icon name="search" className="mx-auto h-12 w-12 text-gray-400" />

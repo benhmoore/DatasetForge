@@ -390,8 +390,8 @@ const WorkflowManager = ({
   if (!visible) return null;
   
   return (
-    <div className="p-4 bg-white border rounded-lg shadow-sm space-y-4">
-      <div className="flex justify-between items-center mb-4">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex justify-between items-center p-4 mb-2">
         <h2 className="text-lg font-medium">Workflow Editor</h2>
         <div className="flex space-x-2">
           <button
@@ -423,12 +423,12 @@ const WorkflowManager = ({
       </div>
       
       {showJsonEditor ? (
-        <div className="space-y-3">
+        <div className="flex flex-col h-full space-y-3 overflow-hidden p-4">
           <p className="text-sm text-gray-500">
             Edit the workflow JSON directly. Be careful to maintain valid JSON format.
           </p>
           <textarea
-            className="w-full h-96 p-2 font-mono text-sm border rounded"
+            className="w-full flex-grow p-2 font-mono text-sm border rounded"
             value={workflowJson}
             onChange={handleJsonChange}
             disabled={disabled || isSaving}
@@ -460,16 +460,18 @@ const WorkflowManager = ({
           </div>
         </div>
       ) : (
-        <WorkflowEditor
-          ref={workflowEditorRef}
-          workflow={workflow}
-          setWorkflow={setWorkflow}
-          availableTemplates={templates}
-          onImport={handleImportWorkflow} 
-          onExport={handleExportWorkflow} 
-          onNew={handleNewWorkflow}
-          disabled={disabled || isLoading || isSaving}
-        />
+        <div className="flex-grow overflow-hidden">
+          <WorkflowEditor
+            ref={workflowEditorRef}
+            workflow={workflow}
+            setWorkflow={setWorkflow}
+            availableTemplates={templates}
+            onImport={handleImportWorkflow} 
+            onExport={handleExportWorkflow} 
+            onNew={handleNewWorkflow}
+            disabled={disabled || isLoading || isSaving}
+          />
+        </div>
       )}
       
       {isLoading && (
