@@ -65,39 +65,6 @@ const VariationCard = ({
     }
   }, [editedOutput, isEditing]);
 
-  // Handle escape key to exit modal or editing mode
-  useEffect(() => {
-    const handleEscape = (e) => {
-      if (e.key === 'Escape') {
-        if (isRegenerateModalOpen) {
-          setIsRegenerateModalOpen(false);
-          setRegenerateInstruction('');
-        } else if (isEditing) {
-          // Cancel editing and revert to original output
-          setEditedOutput(output);
-          setIsEditing(false);
-        } else if (isToolEditorOpen) {
-          setIsToolEditorOpen(false);
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isRegenerateModalOpen, isEditing, isToolEditorOpen, output]);
-
-  // Memoized handler for starting edit mode
-  const startEditing = useCallback((e) => {
-    // Prevent editing if generating, already editing, or clicked on tool calls section
-    if (isGenerating || isEditing || (e && e.target.closest('[data-testid="tool-calls-section"]'))) {
-      return;
-    }
-    
-    // Ensure the editor starts with current output value
-    setEditedOutput(output);
-    setIsEditing(true);
-  }, [isGenerating, isEditing, output]);
-
   // Save the edited output with validation
   const saveEdit = useCallback(() => {
     const trimmedOutput = editedOutput.trim();
@@ -117,6 +84,38 @@ const VariationCard = ({
     
     setIsEditing(false);
   }, [editedOutput, output, onEdit]);
+
+  // Handle escape key to exit modal or editing mode
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        if (isRegenerateModalOpen) {
+          setIsRegenerateModalOpen(false);
+          setRegenerateInstruction('');
+        } else if (isEditing) {
+          // Save changes instead of canceling when pressing Escape
+          saveEdit();
+        } else if (isToolEditorOpen) {
+          setIsToolEditorOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isRegenerateModalOpen, isEditing, isToolEditorOpen, saveEdit]);
+
+  // Memoized handler for starting edit mode
+  const startEditing = useCallback((e) => {
+    // Prevent editing if generating, already editing, or clicked on tool calls section
+    if (isGenerating || isEditing || (e && e.target.closest('[data-testid="tool-calls-section"]'))) {
+      return;
+    }
+    
+    // Ensure the editor starts with current output value
+    setEditedOutput(output);
+    setIsEditing(true);
+  }, [isGenerating, isEditing, output]);
 
   // Handle output text change
   const handleOutputChange = useCallback((e) => {
@@ -625,19 +624,7 @@ const VariationCard = ({
         </div>
       )}
     
-      {/* Dimming overlay when editing */}
-      {isEditing && (
-        <div 
-          className="absolute inset-0 bg-black bg-opacity-30 rounded-lg z-10" 
-          onClick={(e) => { 
-            e.stopPropagation(); // Prevent clicks on overlay from cancelling edit
-            // Optionally, could cancel edit here if desired:
-            // setEditedOutput(output); 
-            // setIsEditing(false);
-          }}
-          aria-hidden="true" // Hide from screen readers
-        />
-      )}
+      {/* Removed Dimming overlay when editing */}
 
       {/* Card Content - Needs higher z-index than overlay */}
       <div className="relative z-20"> 
@@ -715,31 +702,13 @@ const VariationCard = ({
               ref={textareaRef}
               value={editedOutput}
               onChange={handleOutputChange}
-              // Removed onBlur={saveEdit} - Save is now explicit via button
+              onBlur={saveEdit} // Save on blur (clicking outside)
               className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200 scrollbar-thin scrollbar-thumb-gray-300"
               placeholder="Output"
               autoFocus
               style={{ height: textareaHeight, minHeight: '8rem' }}
             />
-            <div className="absolute bottom-2 right-2 flex space-x-1">
-              <button
-                onClick={() => {
-                  setEditedOutput(output); // Revert
-                  setIsEditing(false);
-                }}
-                className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded"
-                title="Cancel Edit (Esc)"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveEdit}
-                className="bg-primary-100 hover:bg-primary-200 text-primary-700 text-xs px-2 py-1 rounded"
-                title="Save Edit"
-              >
-                Save
-              </button>
-            </div>
+            {/* Removed save/cancel buttons */}
           </div>
         ) : (
           <div
