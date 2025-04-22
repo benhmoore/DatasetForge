@@ -18,6 +18,10 @@ const Generate = ({ context }) => {
   const { selectedDataset } = context;
   const location = useLocation();
 
+  // Constants for localStorage keys
+  const STORAGE_KEY_WORKFLOW_ENABLED = 'datasetforge_workflowEnabled';
+  const STORAGE_KEY_SELECTED_WORKFLOW = 'datasetforge_selectedWorkflowId';
+
   const [templates, setTemplates] = useState([]);
   // Initialize selectedTemplateId from localStorage
   const [selectedTemplateId, setSelectedTemplateId] = useState(() => {
@@ -39,14 +43,24 @@ const Generate = ({ context }) => {
   const [paraphraseSourceId, setParaphraseSourceId] = useState(null);
   
   // Workflow related state
-  const [workflowEnabled, setWorkflowEnabled] = useState(false);
+  // Initialize workflowEnabled from localStorage
+  const [workflowEnabled, setWorkflowEnabled] = useState(() => {
+    const savedValue = localStorage.getItem(STORAGE_KEY_WORKFLOW_ENABLED);
+    return savedValue === 'true';
+  });
+  
   const [currentWorkflow, setCurrentWorkflow] = useState(null);
   const [isExecutingWorkflow, setIsExecutingWorkflow] = useState(false);
   const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false); 
   const [workflowSaveRequest, setWorkflowSaveRequest] = useState(null);
   const [workflowsList, setWorkflowsList] = useState([]);
   const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState(null);
+  
+  // Initialize selectedWorkflowId from localStorage
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(() => {
+    const savedId = localStorage.getItem(STORAGE_KEY_SELECTED_WORKFLOW);
+    return savedId ? parseInt(savedId, 10) : null;
+  });
   
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
@@ -131,6 +145,20 @@ const Generate = ({ context }) => {
       localStorage.removeItem('datasetforge_selectedTemplateId');
     }
   }, [selectedTemplateId]);
+
+  // Save workflowEnabled to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_WORKFLOW_ENABLED, workflowEnabled.toString());
+  }, [workflowEnabled]);
+
+  // Save selectedWorkflowId to localStorage when it changes
+  useEffect(() => {
+    if (selectedWorkflowId) {
+      localStorage.setItem(STORAGE_KEY_SELECTED_WORKFLOW, selectedWorkflowId.toString());
+    } else {
+      localStorage.removeItem(STORAGE_KEY_SELECTED_WORKFLOW);
+    }
+  }, [selectedWorkflowId]);
 
   // Fetch workflows from API when workflow mode is enabled
   useEffect(() => {
@@ -1727,6 +1755,13 @@ const Generate = ({ context }) => {
               </div>
             </div>
             
+            {/* Workflow Mode Explanation */}
+            {workflowEnabled && (
+              <p className="text-xs text-gray-500 mt-1 pl-1">
+                Process generated outputs through a custom workflow of models and advanced transformations.
+              </p>
+            )}
+            
             {/* Workflow Selection UI */}
             {workflowEnabled && (
               <div className="mt-2 space-y-2">
@@ -1896,18 +1931,18 @@ const Generate = ({ context }) => {
       {/* Workflow Manager Modal */}
       {isWorkflowModalOpen && currentWorkflow && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-y-auto p-4"
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-hidden p-2"
           onClick={handleCloseWorkflowModal} // Close on backdrop click
           role="dialog"
           aria-modal="true"
           aria-labelledby="workflow-manager-title"
         >
           <div 
-            className="bg-white rounded-lg w-full max-w-6xl shadow-xl max-h-[90vh] flex flex-col animate-fadeIn"
+            className="bg-white rounded-lg w-full max-w-[95vw] shadow-xl h-[95vh] flex flex-col animate-fadeIn"
             onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
           >
             {/* Modal Header */}
-            <div className="flex justify-between items-center p-5 border-b border-gray-200 flex-shrink-0">
+            <div className="flex justify-between items-center p-4 border-b border-gray-200 flex-shrink-0">
               <h2 id="workflow-manager-title" className="text-xl font-semibold flex items-center">
                 <Icon name="workflow" className="h-5 w-5 mr-2 text-blue-600" />
                 Workflow Manager: {currentWorkflow.name}
@@ -1923,16 +1958,16 @@ const Generate = ({ context }) => {
             </div>
             
             {/* Modal Body - WorkflowManager component */}
-            <div className="flex-grow overflow-y-auto p-1"> {/* Reduced padding for more space */}
+            <div className="flex-grow overflow-y-auto p-0"> {/* Remove padding for more space */}
               <WorkflowManager
                 // Pass necessary props to WorkflowManager
-                visible={isWorkflowModalOpen} // Keep visible prop for internal logic if needed
+                visible={isWorkflowModalOpen}
                 workflow={currentWorkflow}
                 setWorkflow={setCurrentWorkflow}
                 onImport={handleWorkflowImport}
                 onExport={handleWorkflowExport}
                 disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
-                saveRequest={workflowSaveRequest} // Add this new prop
+                saveRequest={workflowSaveRequest}
               />
             </div>
           </div>
