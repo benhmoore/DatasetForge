@@ -8,6 +8,7 @@ import VariationCard from './VariationCard';
 import ExampleTable from './ExampleTable';
 import SettingsModal from './SettingsModal';
 import ParaphraseModal from './ParaphraseModal';
+import RegenerateModal from './RegenerateModal';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons'; // Import Icon component
 import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch
@@ -41,6 +42,11 @@ const Generate = ({ context }) => {
   const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
   const [paraphraseSourceText, setParaphraseSourceText] = useState('');
   const [paraphraseSourceId, setParaphraseSourceId] = useState(null);
+  
+  // State for RegenerateModal
+  const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false);
+  const [regenerateSourceText, setRegenerateSourceText] = useState('');
+  const [regenerateSourceId, setRegenerateSourceId] = useState(null);
   
   // Workflow related state
   // Initialize workflowEnabled from localStorage
@@ -1562,6 +1568,26 @@ const Generate = ({ context }) => {
     setIsParaphrasing(false); // Reset global paraphrasing flag
   }, []);
   
+  // Handler to open the regenerate modal
+  const handleOpenRegenerateModal = useCallback((variationId, text) => {
+    const variationIndex = variationsRef.current.findIndex(v => v.id === variationId);
+    if (variationIndex === -1) {
+      console.error('Cannot regenerate: variation not found with id', variationId);
+      return;
+    }
+    
+    setRegenerateSourceId(variationId);
+    setRegenerateSourceText(text);
+    setIsRegenerateModalOpen(true);
+  }, []);
+  
+  // Handler to close the regenerate modal
+  const handleCloseRegenerateModal = useCallback(() => {
+    setIsRegenerateModalOpen(false);
+    setRegenerateSourceText('');
+    setRegenerateSourceId(null);
+  }, []);
+  
   // Handler for toggling workflow mode
   const handleToggleWorkflow = () => {
     const newValue = !workflowEnabled;
@@ -1718,6 +1744,19 @@ const Generate = ({ context }) => {
         onAddVariations={handleAddVariations}
       />
       
+      {/* RegenerateModal - top level component */}
+      <RegenerateModal
+        isOpen={isRegenerateModalOpen}
+        onClose={handleCloseRegenerateModal}
+        sourceText={regenerateSourceText}
+        onRegenerate={(instruction) => {
+          if (regenerateSourceId) {
+            handleRegenerate(regenerateSourceId, instruction);
+            handleCloseRegenerateModal();
+          }
+        }}
+      />
+      
       <div className="grid grid-cols-1 md:grid-cols-[500px_1fr] gap-6">
         <div className="space-y-4">
           <div className="pl-4 pt-4">
@@ -1842,17 +1881,17 @@ const Generate = ({ context }) => {
           </div>
 
           <div className="pl-4">
-          <SeedForm
-            template={selectedTemplate}
-            selectedDataset={selectedDataset} // Pass selectedDataset
-            onGenerate={handleGenerate}
-            isGenerating={isGenerating}
-            onCancel={handleCancelGeneration}
-            isParaphrasing={isParaphrasing} // Pass paraphrasing state
-            setIsParaphrasing={setIsParaphrasing} // Pass paraphrasing state setter
-          />
+            <SeedForm
+              template={selectedTemplate}
+              selectedDataset={selectedDataset} // Pass selectedDataset
+              onGenerate={handleGenerate}
+              isGenerating={isGenerating}
+              onCancel={handleCancelGeneration}
+              isParaphrasing={isParaphrasing} // Pass paraphrasing state
+              setIsParaphrasing={setIsParaphrasing} // Pass paraphrasing state setter
+            />
 
-          {/* Unified Save Button */}
+            {/* Unified Save Button */}
           {(selectedCount > 0 || validVariationsCount > 0) && (
              <div className="mt-4">
                <button
@@ -1922,6 +1961,7 @@ const Generate = ({ context }) => {
                   onDismiss={() => handleDismiss(variation.id)}
                   onToolCallsChange={(newToolCalls) => handleToolCallsChange(variation.id, newToolCalls)} // Pass variation id
                   onOpenParaphraseModal={(id, text) => handleOpenParaphraseModal(id, text)} // For opening paraphrase modal
+                  onOpenRegenerateModal={(id, text) => handleOpenRegenerateModal(id, text)} // For opening regenerate modal
                 />
               ))}
             </div>

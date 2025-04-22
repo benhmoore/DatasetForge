@@ -22,13 +22,12 @@ const VariationCard = ({
   processed_prompt = null,
   workflow_results = null, // New prop for workflow results
   workflow_progress = null, // New prop for streaming workflow progress
-  onToolCallsChange
+  onToolCallsChange,
+  onOpenRegenerateModal // New prop to open the regenerate modal in the parent
 }) => {
   // State management
   const [editedOutput, setEditedOutput] = useState(output);
   const [isEditing, setIsEditing] = useState(false);
-  const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false);
-  const [regenerateInstruction, setRegenerateInstruction] = useState('');
   const [showPrompt, setShowPrompt] = useState(false);
   const [isToolEditorOpen, setIsToolEditorOpen] = useState(false);
   const [textareaHeight, setTextareaHeight] = useState('8rem');
@@ -36,7 +35,6 @@ const VariationCard = ({
   const [isDragging, setIsDragging] = useState(false); // Added for drag state
   
   // Refs
-  const regenerateInputRef = useRef(null);
   const outputDisplayRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -47,13 +45,6 @@ const VariationCard = ({
     }
   }, [output, isEditing]);
   
-  // Focus the instruction input when the regenerate modal opens
-  useEffect(() => {
-    if (isRegenerateModalOpen && regenerateInputRef.current) {
-      regenerateInputRef.current.focus();
-    }
-  }, [isRegenerateModalOpen]);
-
   // Auto-resize textarea based on content
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -90,10 +81,7 @@ const VariationCard = ({
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
-        if (isRegenerateModalOpen) {
-          setIsRegenerateModalOpen(false);
-          setRegenerateInstruction('');
-        } else if (isEditing) {
+        if (isEditing) {
           // Save changes instead of canceling when pressing Escape
           saveEdit();
         } else if (isToolEditorOpen) {
@@ -104,7 +92,7 @@ const VariationCard = ({
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [isRegenerateModalOpen, isEditing, isToolEditorOpen, saveEdit]);
+  }, [isEditing, isToolEditorOpen, saveEdit]);
 
   // Memoized handler for starting edit mode
   const startEditing = useCallback((e) => {
@@ -381,24 +369,17 @@ const VariationCard = ({
 
   // Handler for regenerate button
   const handleRegenerate = useCallback(() => {
-    if (isGenerating) return;
-    setIsRegenerateModalOpen(true);
-  }, [isGenerating]);
-  
-  // Regenerate with instruction
-  const handleRegenerateWithInstruction = useCallback(() => {
-    onRegenerate(regenerateInstruction);
-    setIsRegenerateModalOpen(false);
-    setRegenerateInstruction('');
-  }, [regenerateInstruction, onRegenerate]);
-  
-  // Handle key press in regenerate modal
-  const handleRegenerateKeyPress = useCallback((e) => {
-    if (e.key === 'Enter') {
-      handleRegenerateWithInstruction();
+    if (isGenerating || isParaphrasing) return;
+    
+    // Instead of opening modal locally, trigger the parent's modal
+    if (onOpenRegenerateModal) {
+      onOpenRegenerateModal(id, output);
+    } else {
+      // Fallback to direct regeneration if modal function not provided
+      onRegenerate('');
     }
-  }, [handleRegenerateWithInstruction]);
-
+  }, [isGenerating, isParaphrasing, id, output, onRegenerate, onOpenRegenerateModal]);
+  
   // Handler for paraphrase button
   const handleParaphrase = useCallback(() => {
     if (isGenerating || isParaphrasing) return;
@@ -761,59 +742,6 @@ const VariationCard = ({
           </div>
         )}
         
-        {isRegenerateModalOpen && (
-          <div 
-            className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setIsRegenerateModalOpen(false);
-                setRegenerateInstruction('');
-              }
-            }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`regenerate-modal-title-${id}`} // Unique ID
-          >
-            <div className="bg-white rounded-lg p-6 max-w-lg w-full shadow-xl animate-fadeIn" onClick={e => e.stopPropagation()}>
-              <h3 id={`regenerate-modal-title-${id}`} className="text-lg font-medium mb-4">Regenerate with Instructions</h3>
-              <div className="mb-4">
-                <input
-                  ref={regenerateInputRef}
-                  type="text"
-                  value={regenerateInstruction}
-                  onChange={(e) => setRegenerateInstruction(e.target.value)}
-                  onKeyDown={handleRegenerateKeyPress}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  placeholder="Provide additional instructions (e.g., 'Make it more concise')"
-                  aria-label="Regeneration instructions"
-                />
-              </div>
-              <div className="flex justify-end space-x-2">
-                <button
-                  onClick={() => {
-                    setIsRegenerateModalOpen(false);
-                    setRegenerateInstruction('');
-                  }}
-                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleRegenerateWithInstruction}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors focus:ring-2 focus:ring-primary-300 focus:ring-offset-2"
-                >
-                  Regenerate
-                </button>
-              </div>
-              <div className="mt-4 text-sm text-gray-500">
-                <p>Press Enter to regenerate or Escape to cancel.</p>
-                <p className="mt-1">Leave empty for standard regeneration.</p>
-              </div>
-            </div>
-          </div>
-        )}
-        
-
         <ToolCallEditor
           isOpen={isToolEditorOpen}
           toolCalls={tool_calls}
