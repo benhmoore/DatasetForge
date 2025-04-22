@@ -7,6 +7,7 @@ import ConfirmationModal from './ConfirmationModal'; // Import ConfirmationModal
 import BulkParaphraseModal from './BulkParaphraseModal'; // Import BulkParaphraseModal
 import Icon from './Icons';
 import ExampleTableHeader from './ExampleTableHeader';
+import ContextMenu from './ContextMenu'; // Import ContextMenu
 
 const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationSaved }) => {
   const [examples, setExamples] = useState([]);
@@ -39,6 +40,9 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   
+  // For context menu
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, exampleId }
+
   // For drag and drop functionality
   const [isDragOver, setIsDragOver] = useState(false);
   const tableRef = useRef(null);
@@ -79,6 +83,12 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   // For archive confirmation modal
   const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
   const [examplesToDelete, setExamplesToDelete] = useState(new Set());
+
+  // Define context menu items
+  const contextMenuItems = [
+    { label: 'Delete Example', value: 'delete', icon: 'trash' },
+    // { label: 'Duplicate Example', value: 'duplicate', icon: 'copy' }, // Add later
+  ];
 
   // Function to fetch examples that can be called programmatically 
   const fetchExamples = async () => {
@@ -504,6 +514,35 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
     }
   };
 
+  // Handle context menu opening
+  const handleContextMenu = (event, example) => {
+    event.preventDefault();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      exampleId: example.id,
+    });
+  };
+
+  // Handle context menu closing
+  const handleCloseContextMenu = () => {
+    setContextMenu(null);
+  };
+
+  // Handle context menu item selection
+  const handleContextMenuSelect = (action) => {
+    if (!contextMenu) return;
+    const { exampleId } = contextMenu;
+
+    if (action === 'delete') {
+      // Trigger deletion confirmation for the single example
+      setExamplesToDelete(new Set([exampleId]));
+      setIsArchiveConfirmOpen(true);
+    }
+    // Add 'duplicate' handling later
+    handleCloseContextMenu();
+  };
+
   // If no dataset is selected
   if (!datasetId) {
     return (
@@ -697,6 +736,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
                     } cursor-pointer`}
                     style={{ animationDelay: `${index * 50}ms` }}
                     onClick={() => handleRowClick(example)}
+                    onContextMenu={(event) => handleContextMenu(event, example)}
                   >
                     {/* Selection checkbox */}
                     <td className="px-2 py-2 text-center"> {/* Reduced padding */}
@@ -1092,6 +1132,16 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
           fetchExamples(); // Refresh the list
         }}
       />
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          items={contextMenuItems} // Pass items
+          position={{ x: contextMenu.x, y: contextMenu.y }} // Pass position object
+          onSelect={handleContextMenuSelect}
+          onClose={handleCloseContextMenu}
+        />
+      )}
     </div>
   );
 };
