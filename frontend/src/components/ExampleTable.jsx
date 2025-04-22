@@ -8,7 +8,7 @@ import BulkParaphraseModal from './BulkParaphraseModal'; // Import BulkParaphras
 import Icon from './Icons';
 import ExampleTableHeader from './ExampleTableHeader';
 
-const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
+const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationSaved }) => {
   const [examples, setExamples] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -38,6 +38,10 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  
+  // For drag and drop functionality
+  const [isDragOver, setIsDragOver] = useState(false);
+  const tableRef = useRef(null);
   
   // Use useEffect for debouncing search
   useEffect(() => {
@@ -442,10 +446,68 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     return () => window.removeEventListener('keydown', handleSearchShortcut);
   }, [triggerSearchFocus]);
 
+  // Handle drag over event
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  // Handle drag leave event
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  // Handle drop event
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+
+    if (!datasetId) {
+      toast.warning('Please select a dataset first');
+      return;
+    }
+
+    const data = e.dataTransfer.getData('application/json');
+    if (!data) return;
+
+    try {
+      const variation = JSON.parse(data);
+      
+      // Create a properly formatted example from the variation
+      const example = {
+        system_prompt: variation.system_prompt || '',
+        user_prompt: variation.processed_prompt || '',
+        slots: variation.slots || {},
+        output: variation.output || '',
+        tool_calls: variation.tool_calls || null
+      };
+      
+      setIsProcessing(true);
+
+      // Save the example to the dataset using the API
+      await api.saveExamples(datasetId, [example]);
+      
+      toast.success(`Variation "${variation.variation}" saved to ${datasetName}`);
+      
+      // Refresh the examples list
+      fetchExamples();
+
+      // Notify parent component about the saved variation
+      if (onVariationSaved) {
+        onVariationSaved(variation);
+      }
+    } catch (error) {
+      console.error('Failed to save dragged variation:', error);
+      toast.error(`Failed to save variation: ${error.response?.data?.detail || error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // If no dataset is selected
   if (!datasetId) {
     return (
-      <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full mx-4 sm:mx-6 lg:mx-8">
+      <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full">
         <p className="text-gray-500">Please select a dataset to view examples.</p>
       </div>
     );
@@ -482,7 +544,25 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   }
   
   return (
-    <div className="space-y-4 w-full">
+    <div 
+      className={`space-y-4 w-full relative ${isDragOver ? 'bg-blue-50 border border-blue-200' : ''}`}
+      ref={tableRef}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Overlay for drag-over state */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-blue-50 border-2 border-blue-400 rounded-md z-50 pointer-events-none flex items-center justify-center">
+          <div className="bg-white p-4 rounded-md shadow-lg border border-blue-300">
+            <p className="text-blue-600 font-medium flex items-center">
+              <Icon name="plus" className="w-5 h-5 mr-2" />
+              Drop to add to dataset
+            </p>
+          </div>
+        </div>
+      )}
+      
       {/* Header with actions */}
       <ExampleTableHeader 
         selectedExamples={selectedExamples}
@@ -498,7 +578,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       />
       
       {examples.length === 0 ? (
-        <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full mx-4 sm:mx-6 lg:mx-8">
+        <div className="text-center p-8 bg-gray-50 border border-gray-200 w-full">
           {debouncedSearchTerm ? (
             <div className="py-8">
               <Icon name="search" className="mx-auto h-12 w-12 text-gray-400" />

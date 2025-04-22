@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'react-toastify';
 import WorkflowEditor from './WorkflowEditor';
 import api from '../api/apiClient';
@@ -8,13 +8,13 @@ import { importTextFile } from '../lib/FileImportUtil';
  * WorkflowManager component for managing workflow definitions
  * Serves as a wrapper around WorkflowEditor with additional features
  */
-const WorkflowManager = ({ 
+const WorkflowManager = forwardRef(({ 
   visible, 
   workflow, 
   setWorkflow,
   disabled = false,
   saveRequest = null // Parameter for handling save requests
-}) => {
+}, ref) => {
   const [templates, setTemplates] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
@@ -23,6 +23,45 @@ const WorkflowManager = ({
   
   // Add a ref to access WorkflowEditor methods
   const workflowEditorRef = useRef(null);
+  
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    // Expose the current state
+    get showJsonEditor() {
+      return showJsonEditor;
+    },
+    
+    // Expose a method to toggle editor mode
+    toggleEditorMode: () => {
+      console.log("WorkflowManager: Toggling editor mode via ref", {
+        from: showJsonEditor ? "JSON" : "Visual",
+        to: showJsonEditor ? "Visual" : "JSON",
+        currentWorkflow: workflow?.id
+      });
+      
+      // Set the toggle flag directly on the workflow object to prevent auto-save
+      if (workflow && setWorkflow) {
+        const updatedWorkflow = {...workflow};
+        updatedWorkflow._saveRequestId = "toggle_json_editor";
+        console.log("WorkflowManager: Setting toggle flag on workflow", updatedWorkflow.id);
+        setWorkflow(updatedWorkflow);
+      }
+      
+      // Toggle editor mode
+      setShowJsonEditor(!showJsonEditor);
+      return !showJsonEditor; // Return the new state
+    },
+    
+    // Expose a method to save the workflow
+    saveWorkflow: () => {
+      if (showJsonEditor) {
+        handleSaveJsonToApi();
+      } else if (workflowEditorRef.current?.saveWorkflow) {
+        return workflowEditorRef.current.saveWorkflow();
+      }
+      return false;
+    }
+  }));
   
   // Fetch templates on component mount
   useEffect(() => {
@@ -390,45 +429,14 @@ const WorkflowManager = ({
   if (!visible) return null;
   
   return (
-    <div className="p-4 bg-white border rounded-lg shadow-sm space-y-4">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-medium">Workflow Editor</h2>
-        <div className="flex space-x-2">
-          <button
-            className={`px-3 py-1 ${showJsonEditor ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'} hover:bg-blue-700 hover:text-white rounded transition`}
-            onClick={() => {
-              // Log the current state before toggle
-              console.log("WorkflowManager: Toggling editor mode", {
-                from: showJsonEditor ? "JSON" : "Visual",
-                to: showJsonEditor ? "Visual" : "JSON",
-                currentWorkflow: workflow?.id
-              });
-              
-              // Set the toggle flag directly on the workflow object to prevent auto-save
-              if (workflow && setWorkflow) {
-                const updatedWorkflow = {...workflow};
-                updatedWorkflow._saveRequestId = "toggle_json_editor";
-                console.log("WorkflowManager: Setting toggle flag on workflow", updatedWorkflow.id);
-                setWorkflow(updatedWorkflow);
-              }
-              
-              // Toggle editor mode
-              setShowJsonEditor(!showJsonEditor);
-            }}
-            disabled={disabled || isSaving}
-          >
-            {showJsonEditor ? 'Visual Editor' : 'JSON Editor'}
-          </button>
-        </div>
-      </div>
-      
+    <div className="h-full flex flex-col overflow-hidden">
       {showJsonEditor ? (
-        <div className="space-y-3">
+        <div className="flex flex-col h-full space-y-3 overflow-hidden p-4">
           <p className="text-sm text-gray-500">
             Edit the workflow JSON directly. Be careful to maintain valid JSON format.
           </p>
           <textarea
-            className="w-full h-96 p-2 font-mono text-sm border rounded"
+            className="w-full flex-grow p-2 font-mono text-sm border rounded"
             value={workflowJson}
             onChange={handleJsonChange}
             disabled={disabled || isSaving}
@@ -460,16 +468,18 @@ const WorkflowManager = ({
           </div>
         </div>
       ) : (
-        <WorkflowEditor
-          ref={workflowEditorRef}
-          workflow={workflow}
-          setWorkflow={setWorkflow}
-          availableTemplates={templates}
-          onImport={handleImportWorkflow} 
-          onExport={handleExportWorkflow} 
-          onNew={handleNewWorkflow}
-          disabled={disabled || isLoading || isSaving}
-        />
+        <div className="flex-grow overflow-hidden">
+          <WorkflowEditor
+            ref={workflowEditorRef}
+            workflow={workflow}
+            setWorkflow={setWorkflow}
+            availableTemplates={templates}
+            onImport={handleImportWorkflow} 
+            onExport={handleExportWorkflow} 
+            onNew={handleNewWorkflow}
+            disabled={disabled || isLoading || isSaving}
+          />
+        </div>
       )}
       
       {isLoading && (
@@ -479,6 +489,6 @@ const WorkflowManager = ({
       )}
     </div>
   );
-};
+});
 
 export default WorkflowManager;

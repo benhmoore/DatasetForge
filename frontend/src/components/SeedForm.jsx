@@ -92,7 +92,7 @@ const loadStateFromSessionStorage = (templateId) => {
 const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCancel, isParaphrasing, setIsParaphrasing }) => {
   const [seedList, setSeedList] = useState([{}]); 
   const [currentSeedIndex, setCurrentSeedIndex] = useState(0);
-  const [variationsPerSeed, setVariationsPerSeed] = useState(3);
+  const [variationsPerSeed, setVariationsPerSeed] = useState(1);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isSeedBankModalOpen, setIsSeedBankModalOpen] = useState(false);
   const [validationErrors, setValidationErrors] = useState({}); // { seedIndex: { slotName: true } }
@@ -138,7 +138,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
       }
       // Reset other state regardless of template validity if not loaded
       setCurrentSeedIndex(0);
-      setVariationsPerSeed(3); // Reset variations to default
+      setVariationsPerSeed(1); // Reset variations to default
       setValidationErrors({});
     }
     setIsInitialized(true); // Mark initialization complete for this template
@@ -906,14 +906,25 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
               {isGenerating ? (
                 <span className="flex items-center justify-center">
                   <Icon name="spinner" className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" />
-                  Generating ({seedList.length * variationsPerSeed} Examples)... 
+                  Generating
+                  {(seedList.length * variationsPerSeed > 1) && (
+                    <> ({seedList.length * variationsPerSeed} Examples)...</>
+                  )}
+                  {(seedList.length * variationsPerSeed === 1) && <>...</>}
                 </span>
               ) : isParaphrasing ? (
                 <span className="flex items-center justify-center">
                   <Icon name="spinner" className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" />
                   Generating Seeds...
                 </span>
-              ) : `Generate (${seedList.length * variationsPerSeed} Example${seedList.length * variationsPerSeed !== 1 ? 's' : ''})`}
+              ) : (
+                <>
+                  Generate
+                  {(seedList.length * variationsPerSeed > 1) && (
+                    <> ({seedList.length * variationsPerSeed} Example{seedList.length * variationsPerSeed !== 1 ? 's' : ''})</>
+                  )}
+                </>
+              )}
             </button>
             {isGenerating && (
               <button

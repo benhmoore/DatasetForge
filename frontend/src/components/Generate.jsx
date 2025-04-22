@@ -8,6 +8,7 @@ import VariationCard from './VariationCard';
 import ExampleTable from './ExampleTable';
 import SettingsModal from './SettingsModal';
 import ParaphraseModal from './ParaphraseModal';
+import RegenerateModal from './RegenerateModal';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons'; // Import Icon component
 import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch
@@ -42,6 +43,11 @@ const Generate = ({ context }) => {
   const [paraphraseSourceText, setParaphraseSourceText] = useState('');
   const [paraphraseSourceId, setParaphraseSourceId] = useState(null);
   
+  // State for RegenerateModal
+  const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false);
+  const [regenerateSourceText, setRegenerateSourceText] = useState('');
+  const [regenerateSourceId, setRegenerateSourceId] = useState(null);
+  
   // Workflow related state
   // Initialize workflowEnabled from localStorage
   const [workflowEnabled, setWorkflowEnabled] = useState(() => {
@@ -64,6 +70,8 @@ const Generate = ({ context }) => {
   
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
+  // Add this reference at the top of your component
+  const workflowManagerRef = useRef(null);
 
   // Calculate counts for the dynamic save button
   const selectedCount = selectedVariations?.size || 0;
@@ -504,9 +512,10 @@ const Generate = ({ context }) => {
                 
                 // Set all nodes to queued initially, including the node name
                 nodeIds.forEach(nodeId => {
-                  const node = currentWorkflow?.nodes?.[nodeId];
+                  // Access nodes through the data property of currentWorkflow
+                  const node = currentWorkflow?.data?.nodes?.[nodeId];
                   const nodeName = node?.name || nodeId; // Get name or fallback to ID
-                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node?.data, `Derived Name: ${nodeName}`); // Added logging
+                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node, `Derived Name: ${nodeName}`); // Added logging
                   nodeStatusMap[variationKey][nodeId] = { 
                     status: 'queued',
                     progress: 0,
@@ -1018,10 +1027,10 @@ const Generate = ({ context }) => {
                 
                 // Set all nodes to queued initially, including the node name
                 nodeIds.forEach(nodeId => {
-                  const node = currentWorkflow?.nodes?.[nodeId];
-                  console.log("USING NODE DETAILS", node);
+                  // Access nodes through the data property of currentWorkflow
+                  const node = currentWorkflow?.data?.nodes?.[nodeId];
                   const nodeName = node?.name || nodeId; // Get name or fallback to ID
-                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node?.data, `Derived Name: ${nodeName}`); // Added logging
+                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node, `Derived Name: ${nodeName}`); // Added logging
                   nodeStatusMap[nodeId] = { 
                     status: 'queued',
                     progress: 0,
@@ -1559,6 +1568,26 @@ const Generate = ({ context }) => {
     setIsParaphrasing(false); // Reset global paraphrasing flag
   }, []);
   
+  // Handler to open the regenerate modal
+  const handleOpenRegenerateModal = useCallback((variationId, text) => {
+    const variationIndex = variationsRef.current.findIndex(v => v.id === variationId);
+    if (variationIndex === -1) {
+      console.error('Cannot regenerate: variation not found with id', variationId);
+      return;
+    }
+    
+    setRegenerateSourceId(variationId);
+    setRegenerateSourceText(text);
+    setIsRegenerateModalOpen(true);
+  }, []);
+  
+  // Handler to close the regenerate modal
+  const handleCloseRegenerateModal = useCallback(() => {
+    setIsRegenerateModalOpen(false);
+    setRegenerateSourceText('');
+    setRegenerateSourceId(null);
+  }, []);
+  
   // Handler for toggling workflow mode
   const handleToggleWorkflow = () => {
     const newValue = !workflowEnabled;
@@ -1694,8 +1723,8 @@ const Generate = ({ context }) => {
 
   // Determine Clear button text and disabled state
   const clearButtonText = selectedCount > 0
-    ? `Clear Selected (${selectedCount})`
-    : `Clear All (${totalVariationsCount})`;
+    ? `Delete Selected (${selectedCount})`
+    : `Delete All (${totalVariationsCount})`;
   const isClearButtonDisabled = totalVariationsCount === 0 || isGenerating || isParaphrasing;
 
   const templateOptions = templates.map(template => ({
@@ -1713,6 +1742,19 @@ const Generate = ({ context }) => {
         variationId={paraphraseSourceId}
         onEdit={handleEdit}
         onAddVariations={handleAddVariations}
+      />
+      
+      {/* RegenerateModal - top level component */}
+      <RegenerateModal
+        isOpen={isRegenerateModalOpen}
+        onClose={handleCloseRegenerateModal}
+        sourceText={regenerateSourceText}
+        onRegenerate={(instruction) => {
+          if (regenerateSourceId) {
+            handleRegenerate(regenerateSourceId, instruction);
+            handleCloseRegenerateModal();
+          }
+        }}
       />
       
       <div className="grid grid-cols-1 md:grid-cols-[500px_1fr] gap-6">
@@ -1782,7 +1824,12 @@ const Generate = ({ context }) => {
                 </div>
                 
                 {currentWorkflow ? (
-                  <div className="flex items-center p-2 border rounded bg-blue-50 border-blue-200">
+                  <button
+                    onClick={handleOpenWorkflowModal}
+                    className="flex w-full items-center p-2 border rounded bg-blue-50 border-blue-200 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                    title="Open workflow editor"
+                  >
                     <div className="flex-grow">
                       <div className="font-medium text-sm truncate" title={currentWorkflow.name}>
                         {currentWorkflow.name}
@@ -1791,15 +1838,15 @@ const Generate = ({ context }) => {
                         Updated {new Date(currentWorkflow.updated_at).toLocaleString()} (v{currentWorkflow.version})
                       </div>
                     </div>
-                    <button
-                      onClick={handleOpenWorkflowModal}
-                      className="ml-2 p-1.5 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-100 flex-shrink-0"
+                    <div
+                      className="ml-2 p-1.5 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-100 flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-400"
                       disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
                       title="Edit workflow"
+                      aria-label="Edit workflow"
                     >
                       <Icon name="edit" className="w-4 h-4" />
-                    </button>
-                  </div>
+                    </div>
+                  </button>
                 ) : isLoadingWorkflows ? (
                   <div className="flex items-center justify-center p-2 border rounded bg-gray-50 h-10">
                     <Icon name="spinner" className="w-4 h-4 mr-2 animate-spin text-blue-500" />
@@ -1834,17 +1881,17 @@ const Generate = ({ context }) => {
           </div>
 
           <div className="pl-4">
-          <SeedForm
-            template={selectedTemplate}
-            selectedDataset={selectedDataset} // Pass selectedDataset
-            onGenerate={handleGenerate}
-            isGenerating={isGenerating}
-            onCancel={handleCancelGeneration}
-            isParaphrasing={isParaphrasing} // Pass paraphrasing state
-            setIsParaphrasing={setIsParaphrasing} // Pass paraphrasing state setter
-          />
+            <SeedForm
+              template={selectedTemplate}
+              selectedDataset={selectedDataset} // Pass selectedDataset
+              onGenerate={handleGenerate}
+              isGenerating={isGenerating}
+              onCancel={handleCancelGeneration}
+              isParaphrasing={isParaphrasing} // Pass paraphrasing state
+              setIsParaphrasing={setIsParaphrasing} // Pass paraphrasing state setter
+            />
 
-          {/* Unified Save Button */}
+            {/* Unified Save Button */}
           {(selectedCount > 0 || validVariationsCount > 0) && (
              <div className="mt-4">
                <button
@@ -1900,6 +1947,7 @@ const Generate = ({ context }) => {
                   variation={variation.variation}
                   output={variation.output}
                   tool_calls={variation.tool_calls}
+                  system_prompt={variation.system_prompt}
                   processed_prompt={variation.processed_prompt}
                   isSelected={selectedVariations?.has(variation.id)} // Use selected state
                   isGenerating={variation.isGenerating || false}
@@ -1913,6 +1961,7 @@ const Generate = ({ context }) => {
                   onDismiss={() => handleDismiss(variation.id)}
                   onToolCallsChange={(newToolCalls) => handleToolCallsChange(variation.id, newToolCalls)} // Pass variation id
                   onOpenParaphraseModal={(id, text) => handleOpenParaphraseModal(id, text)} // For opening paraphrase modal
+                  onOpenRegenerateModal={(id, text) => handleOpenRegenerateModal(id, text)} // For opening regenerate modal
                 />
               ))}
             </div>
@@ -1931,7 +1980,7 @@ const Generate = ({ context }) => {
       {/* Workflow Manager Modal */}
       {isWorkflowModalOpen && currentWorkflow && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-hidden p-2"
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-hidden"
           onClick={handleCloseWorkflowModal} // Close on backdrop click
           role="dialog"
           aria-modal="true"
@@ -1941,26 +1990,45 @@ const Generate = ({ context }) => {
             className="bg-white rounded-lg w-full max-w-[95vw] shadow-xl h-[95vh] flex flex-col animate-fadeIn"
             onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
           >
-            {/* Modal Header */}
+            {/* Unified Modal Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200 flex-shrink-0">
-              <h2 id="workflow-manager-title" className="text-xl font-semibold flex items-center">
+              <div className="flex items-center">
                 <Icon name="workflow" className="h-5 w-5 mr-2 text-blue-600" />
-                Workflow Manager: {currentWorkflow.name}
-              </h2>
-              <button
-                className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
-                onClick={handleCloseWorkflowModal}
-                aria-label="Close workflow manager"
-                title="Close"
-              >
-                <Icon name="close" className="h-5 w-5" />
-              </button>
+                <h2 id="workflow-manager-title" className="text-xl font-semibold">
+                  Workflow Manager: {currentWorkflow.name}
+                </h2>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                {/* JSON/Visual Editor toggle */}
+                <button
+                  className={`px-3 py-1 ${workflowManagerRef.current?.showJsonEditor ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'} hover:bg-blue-700 hover:text-white rounded transition text-sm`}
+                  onClick={() => {
+                    if (workflowManagerRef.current) {
+                      workflowManagerRef.current.toggleEditorMode();
+                    }
+                  }}
+                  disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                >
+                  {workflowManagerRef.current?.showJsonEditor ? 'Visual Editor' : 'JSON Editor'}
+                </button>
+                
+                {/* Close button */}
+                <button
+                  className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                  onClick={handleCloseWorkflowModal}
+                  aria-label="Close workflow manager"
+                  title="Close"
+                >
+                  <Icon name="close" className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             
             {/* Modal Body - WorkflowManager component */}
-            <div className="flex-grow overflow-y-auto p-0"> {/* Remove padding for more space */}
+            <div className="flex-grow overflow-hidden"> {/* Changed to overflow-hidden and removed padding */}
               <WorkflowManager
-                // Pass necessary props to WorkflowManager
+                ref={workflowManagerRef}
                 visible={isWorkflowModalOpen}
                 workflow={currentWorkflow}
                 setWorkflow={setCurrentWorkflow}
@@ -1980,7 +2048,20 @@ const Generate = ({ context }) => {
             <ExampleTable 
               datasetId={selectedDataset.id}
               datasetName={selectedDataset.name}
-              refreshTrigger={refreshExamplesTrigger} 
+              refreshTrigger={refreshExamplesTrigger}
+              onVariationSaved={(variation) => {
+                // Remove the saved variation from the auditioning interface
+                setVariations(prevVariations => 
+                  prevVariations.filter(v => v.id !== variation.id)
+                );
+                
+                // Also remove from selection if it was selected
+                setSelectedVariations(prevSelected => {
+                  const newSelected = new Set(prevSelected);
+                  newSelected.delete(variation.id);
+                  return newSelected;
+                });
+              }} 
             />
           </div>
         </div>
