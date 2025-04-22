@@ -64,6 +64,8 @@ const Generate = ({ context }) => {
   
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
+  // Add this reference at the top of your component
+  const workflowManagerRef = useRef(null);
 
   // Calculate counts for the dynamic save button
   const selectedCount = selectedVariations?.size || 0;
@@ -1941,26 +1943,45 @@ const Generate = ({ context }) => {
             className="bg-white rounded-lg w-full max-w-[95vw] shadow-xl h-[95vh] flex flex-col animate-fadeIn"
             onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
           >
-            {/* Modal Header */}
+            {/* Unified Modal Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200 flex-shrink-0">
-              <h2 id="workflow-manager-title" className="text-xl font-semibold flex items-center">
+              <div className="flex items-center">
                 <Icon name="workflow" className="h-5 w-5 mr-2 text-blue-600" />
-                Workflow Manager: {currentWorkflow.name}
-              </h2>
-              <button
-                className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
-                onClick={handleCloseWorkflowModal}
-                aria-label="Close workflow manager"
-                title="Close"
-              >
-                <Icon name="close" className="h-5 w-5" />
-              </button>
+                <h2 id="workflow-manager-title" className="text-xl font-semibold">
+                  Workflow Manager: {currentWorkflow.name}
+                </h2>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                {/* JSON/Visual Editor toggle */}
+                <button
+                  className={`px-3 py-1 ${workflowManagerRef.current?.showJsonEditor ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'} hover:bg-blue-700 hover:text-white rounded transition text-sm`}
+                  onClick={() => {
+                    if (workflowManagerRef.current) {
+                      workflowManagerRef.current.toggleEditorMode();
+                    }
+                  }}
+                  disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                >
+                  {workflowManagerRef.current?.showJsonEditor ? 'Visual Editor' : 'JSON Editor'}
+                </button>
+                
+                {/* Close button */}
+                <button
+                  className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                  onClick={handleCloseWorkflowModal}
+                  aria-label="Close workflow manager"
+                  title="Close"
+                >
+                  <Icon name="close" className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             
             {/* Modal Body - WorkflowManager component */}
             <div className="flex-grow overflow-hidden"> {/* Changed to overflow-hidden and removed padding */}
               <WorkflowManager
-                // Pass necessary props to WorkflowManager
+                ref={workflowManagerRef}
                 visible={isWorkflowModalOpen}
                 workflow={currentWorkflow}
                 setWorkflow={setCurrentWorkflow}
