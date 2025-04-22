@@ -24,6 +24,7 @@ import TextNode from './TextNode';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
 import ConfirmationModal from './ConfirmationModal';
+import ContextMenu from './ContextMenu';
 
 // Define node types for selection dropdown and internal logic
 const NODE_TYPES = {
@@ -32,6 +33,15 @@ const NODE_TYPES = {
   input: 'Input',
   output: 'Output',
   text: 'Text'
+};
+
+// Define node type icons for menus
+const NODE_ICONS = {
+  model: 'workflow',      // CommandLineIcon
+  transform: 'edit',      // PencilSquareIcon
+  input: 'database',      // CircleStackIcon
+  output: 'document',     // DocumentTextIcon
+  text: 'clipboard'       // ClipboardDocumentIcon
 };
 
 // Define the mapping from internal type to React Flow component type
@@ -73,10 +83,12 @@ const WorkflowEditor = forwardRef(({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isNewConfirmOpen, setIsNewConfirmOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
 
   const reactFlowWrapper = useRef(null);
   const nodeIdCounterRef = useRef(1);
   const previousWorkflowRef = useRef(null);
+  const reactFlowInstance = useRef(null);
 
   // Expose the saveWorkflow method via ref
   useImperativeHandle(ref, () => ({
@@ -365,24 +377,79 @@ const WorkflowEditor = forwardRef(({
   }, [setEdges, disabled, nodes]);
 
   // --- Workflow Actions ---
+  
+  // Store the React Flow instance reference
+  const onInit = useCallback((instance) => {
+    reactFlowInstance.current = instance;
+    console.log('ReactFlow instance initialized');
+  }, []);
 
-  // Add a new node to the canvas
-  const addNode = useCallback(() => {
+  
+  // Handle right-click on the canvas
+  const onPaneContextMenu = useCallback((event) => {
+    // Prevent default browser context menu
+    event.preventDefault();
+    
     if (disabled) return;
     
-    const newNodeId = `${selectedNodeType}-${nodeIdCounterRef.current++}`;
-    const nodeLabel = `${NODE_TYPES[selectedNodeType]} ${nodeIdCounterRef.current - 1}`;
-    const nodeComponentType = nodeComponentMap[selectedNodeType];
+    // Get the bounding box of the flow canvas
+    const reactFlowBounds = reactFlowWrapper.current.getBoundingClientRect();
     
-    // Determine position
-    const position = { 
+    let flowPosition;
+    if (reactFlowInstance.current) {
+      // Get screen coordinates relative to the canvas
+      const screenPoint = {
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top
+      };
+      
+      // Convert to flow coordinates (accounting for pan and zoom)
+      flowPosition = reactFlowInstance.current.screenToFlowPosition(screenPoint);
+      console.log('Converted to flow coordinates:', flowPosition);
+    } else {
+      // Fallback if instance isn't available
+      flowPosition = {
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top
+      };
+      console.log('Using fallback coordinates (no instance):', flowPosition);
+    }
+    
+    // Show context menu at the mouse position (browser coordinates)
+    setContextMenu({
+      position: { 
+        x: event.clientX, 
+        y: event.clientY 
+      },
+      flowPosition: flowPosition
+    });
+  }, [disabled]);
+  
+  // Handle click on canvas to close context menu
+  const onPaneClick = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+  
+  // Add a new node to the canvas with optional position
+  const addNode = useCallback((nodeType = null, position = null) => {
+    if (disabled) return;
+    
+    // Use provided node type or fallback to the selected one
+    const typeToAdd = nodeType || selectedNodeType;
+    
+    const newNodeId = `${typeToAdd}-${nodeIdCounterRef.current++}`;
+    const nodeLabel = `${NODE_TYPES[typeToAdd]} ${nodeIdCounterRef.current - 1}`;
+    const nodeComponentType = nodeComponentMap[typeToAdd];
+    
+    // Determine position - use provided position or random position
+    const nodePosition = position || { 
       x: Math.random() * 400 + 100,
       y: Math.random() * 200 + 100 
     }; 
     
     // Define default configuration based on node type
     let defaultConfig = {};
-    if (selectedNodeType === 'model') {
+    if (typeToAdd === 'model') {
       defaultConfig = {
         type: 'model',
         name: nodeLabel,
@@ -390,7 +457,7 @@ const WorkflowEditor = forwardRef(({
         system_instruction: '',
         model_parameters: { temperature: 0.7, top_p: 1.0, max_tokens: 1000 }
       };
-    } else if (selectedNodeType === 'transform') {
+    } else if (typeToAdd === 'transform') {
       defaultConfig = {
         type: 'transform',
         name: nodeLabel,
@@ -399,21 +466,21 @@ const WorkflowEditor = forwardRef(({
         is_regex: false,
         apply_to_field: 'output'
       };
-    } else if (selectedNodeType === 'input') {
+    } else if (typeToAdd === 'input') {
       defaultConfig = { type: 'input', name: 'Input' };
-    } else if (selectedNodeType === 'output') {
+    } else if (typeToAdd === 'output') {
       defaultConfig = { type: 'output', name: 'Output' };
-    } else if (selectedNodeType === 'text') {
+    } else if (typeToAdd === 'text') {
       defaultConfig = { type: 'text', name: 'Text', text_content: '' };
     } else {
-      console.error(`Unknown node type: ${selectedNodeType}`);
+      console.error(`Unknown node type: ${typeToAdd}`);
       return;
     }
     
     const newNode = {
       id: newNodeId,
       type: nodeComponentType,
-      position,
+      position: nodePosition,
       data: {
         ...defaultConfig,
         label: nodeLabel,
@@ -421,10 +488,17 @@ const WorkflowEditor = forwardRef(({
       }
     };
     
-    console.log("Adding new node:", newNode);
+    console.log(`Adding new ${typeToAdd} node at position:`, nodePosition);
     setNodes((nds) => nds.concat(newNode));
     setHasUnsavedChanges(true);
   }, [selectedNodeType, setNodes, handleNodeConfigChange, disabled]);
+  
+  // Handle node selection from context menu
+  const handleContextMenuSelect = useCallback((nodeType) => {
+    if (contextMenu) {
+      addNode(nodeType, contextMenu.flowPosition);
+    }
+  }, [addNode, contextMenu]);
 
   // Save the current workflow state
   const saveWorkflow = useCallback(async () => {
@@ -635,6 +709,9 @@ const WorkflowEditor = forwardRef(({
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
+          onPaneClick={onPaneClick}
+          onContextMenu={onPaneContextMenu}
+          onInit={onInit}
           nodeTypes={nodeTypes}
           fitView
           className="bg-gradient-to-br from-blue-50 to-indigo-100"
@@ -647,6 +724,20 @@ const WorkflowEditor = forwardRef(({
           <MiniMap nodeStrokeWidth={3} zoomable pannable />
           <Background variant="dots" gap={16} size={1} color="#ccc" />
         </ReactFlow>
+        
+        {/* Context Menu */}
+        {contextMenu && !disabled && (
+          <ContextMenu
+            items={Object.entries(NODE_TYPES).map(([type, label]) => ({
+              label,
+              value: type,
+              icon: NODE_ICONS[type]
+            }))}
+            position={contextMenu.position}
+            onSelect={handleContextMenuSelect}
+            onClose={() => setContextMenu(null)}
+          />
+        )}
       </div>
 
       {/* Confirmation Modal for New Workflow */}
