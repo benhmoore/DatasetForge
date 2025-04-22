@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import Icon from './Icons';
+import CustomSlider from './CustomSlider';
 import api from '../api/apiClient';
 
 const ParaphraseModal = ({ 
@@ -138,7 +139,7 @@ const ParaphraseModal = ({
   
   // Handle key press
   const handleParaphraseKeyPress = useCallback((e) => {
-    if (e.key === 'Enter' && e.ctrlKey) {
+    if (e.key === 'Enter') {
       handleParaphraseWithInstruction();
     }
   }, [handleParaphraseWithInstruction]);
@@ -193,20 +194,25 @@ const ParaphraseModal = ({
             <label htmlFor="paraphrase-count" className="text-sm font-medium text-gray-700">
               Number of Paraphrases to Generate
             </label>
-            <div className="flex items-center space-x-2">
-              <input
-                id="paraphrase-count"
-                type="range"
-                min="1"
-                max="10"
-                value={paraphraseCount}
-                onChange={(e) => setParaphraseCount(parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
-              />
+            <div className="flex items-center space-x-4">
+              <div className="flex-grow">
+                <CustomSlider
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={paraphraseCount}
+                  onChange={setParaphraseCount}
+                  label="Paraphrases"
+                  showValue={false}
+                />
+              </div>
               <span className="text-sm font-medium text-gray-700 min-w-[2rem] text-center">
                 {paraphraseCount}
               </span>
             </div>
+            <p className="text-xs text-gray-500 mt-1">
+              If duplicate paraphrases are detected, the system will automatically regenerate them to ensure variety.
+            </p>
           </div>
         </div>
         
@@ -270,7 +276,7 @@ const ParaphraseModal = ({
             {paraphrasedOutputs.length > 0 ? (
               <p>Select multiple paraphrases to add as new variations.</p>
             ) : (
-              <p>Press Ctrl+Enter to generate paraphrases.</p>
+              <p>Press Enter to generate paraphrases.</p>
             )}
           </div>
           <div className="flex space-x-2">
@@ -285,16 +291,36 @@ const ParaphraseModal = ({
             </button>
             
             {paraphrasedOutputs.length > 0 ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSaveParaphrases(e);
-                }}
-                disabled={selectedParaphrases.length === 0}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors focus:ring-2 focus:ring-green-300 focus:ring-offset-2 disabled:bg-green-300 disabled:cursor-not-allowed"
-              >
-                Add Selected ({selectedParaphrases.length})
-              </button>
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleParaphraseWithInstruction();
+                  }}
+                  disabled={isParaphrasing}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors focus:ring-2 focus:ring-primary-300 focus:ring-offset-2 disabled:bg-primary-400"
+                >
+                  {isParaphrasing ? (
+                    <span className="flex items-center">
+                      <Icon name="spinner" className="animate-spin h-4 w-4 mr-2" aria-hidden="true" />
+                      Paraphrasing...
+                    </span>
+                  ) : (
+                    "Regenerate"
+                  )}
+                </button>
+                
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSaveParaphrases(e);
+                  }}
+                  disabled={selectedParaphrases.length === 0}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors focus:ring-2 focus:ring-green-300 focus:ring-offset-2 disabled:bg-green-300 disabled:cursor-not-allowed"
+                >
+                  Add Selected ({selectedParaphrases.length})
+                </button>
+              </>
             ) : (
               <button
                 onClick={(e) => {

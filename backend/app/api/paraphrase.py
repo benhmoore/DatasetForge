@@ -195,6 +195,8 @@ async def paraphrase_text(
         
     num_to_generate = request.count
     generated_paraphrases = []
+    unique_paraphrases = set()  # Track unique paraphrases
+    max_retries = 3  # Maximum retries per paraphrase when duplicates occur
     
     # Construct system prompt
     system_prompt = (
@@ -213,47 +215,70 @@ async def paraphrase_text(
         for i in range(num_to_generate):
             print(f"Generating paraphrase {i+1} of {num_to_generate}...")
             
-            user_prompt = f"Paraphrase the following text:\n\n{request.text}\n\nProvide only the paraphrased version."
+            retries = 0
+            is_duplicate = True
+            result_text = ""
             
-            try:
-                response = await client.post(
-                    f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
-                    json={
-                        "model": user.default_para_model,
-                        "temperature": 0.9,
-                        "prompt": user_prompt,
-                        "system": system_prompt,
-                        "stream": False,
-                    },
-                    timeout=settings.OLLAMA_TIMEOUT
-                )
+            # Keep trying until we get a unique paraphrase or exhaust retries
+            while is_duplicate and retries <= max_retries:
+                # Adjust prompt based on whether this is a retry due to duplicate
+                if retries > 0:
+                    enhanced_system_prompt = system_prompt + (
+                        f"\n\nIMPORTANT: Your previous paraphrase was too similar to one already "
+                        f"generated. Create a COMPLETELY DIFFERENT paraphrase with new vocabulary "
+                        f"and sentence structure. Attempt #{retries+1}."
+                    )
+                    print(f"Retry #{retries} for paraphrase {i+1} due to duplicate.")
+                else:
+                    enhanced_system_prompt = system_prompt
                 
-                if response.status_code != 200:
-                    error_detail = f"Ollama API error on paraphrase {i+1} ({response.status_code})"
-                    try:
-                        error_detail += f": {response.json().get('error', response.text)}"
-                    except json.JSONDecodeError:
-                        error_detail += f": {response.text}"
-                    print(f"Error generating paraphrase {i+1}: {error_detail}")
-                    continue # Skip to the next iteration
+                user_prompt = f"Paraphrase the following text:\n\n{request.text}\n\nProvide only the paraphrased version."
                 
-                result_text = response.json().get("response", "")
-                
-                # Clean up the result
-                result_text = result_text.strip()
-                if result_text:
-                    generated_paraphrases.append(result_text)
-                    print(f"Successfully generated paraphrase {i+1}.")
-                    print(f"Paraphrase {i+1}: {result_text}")
+                try:
+                    response = await client.post(
+                        f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
+                        json={
+                            "model": user.default_para_model,
+                            "temperature": 1.3 + (0.1 * retries),  # Increase temperature on retries
+                            "top_p": 0.95,
+                            "prompt": user_prompt,
+                            "system": enhanced_system_prompt,
+                            "stream": False,
+                        },
+                        timeout=settings.OLLAMA_TIMEOUT
+                    )
                     
-            except httpx.TimeoutException:
-                print(f"Ollama API timed out while generating paraphrase {i+1}. Skipping.")
-                continue
-            except Exception as e:
-                print(f"Unexpected error generating paraphrase {i+1}: {e}. Skipping.")
-                continue
+                    if response.status_code != 200:
+                        error_detail = f"Ollama API error on paraphrase {i+1} ({response.status_code})"
+                        try:
+                            error_detail += f": {response.json().get('error', response.text)}"
+                        except json.JSONDecodeError:
+                            error_detail += f": {response.text}"
+                        print(f"Error generating paraphrase {i+1}: {error_detail}")
+                        break  # Skip to the next paraphrase
+                    
+                    result_text = response.json().get("response", "").strip()
+                    
+                    # Check if this is a duplicate
+                    if result_text in unique_paraphrases:
+                        is_duplicate = True
+                        retries += 1
+                        print(f"Duplicate detected for paraphrase {i+1}. Retrying ({retries}/{max_retries}).")
+                    else:
+                        is_duplicate = False
+                        
+                except (httpx.TimeoutException, Exception) as e:
+                    print(f"Error during paraphrase generation {i+1}: {str(e)}")
+                    break  # Skip to the next paraphrase
+            
+            # Only add non-empty, unique paraphrases
+            if result_text and not is_duplicate:
+                generated_paraphrases.append(result_text)
+                unique_paraphrases.add(result_text)
+                print(f"Successfully generated unique paraphrase {i+1}.")
+                print(f"Paraphrase {i+1}: {result_text}")
     
-    print(f"Finished generation. Total paraphrases generated: {len(generated_paraphrases)} out of {num_to_generate} requested.")
+    print(f"Finished generation. Total unique paraphrases generated: {len(generated_paraphrases)} out of {num_to_generate} requested.")
     if not generated_paraphrases and num_to_generate > 0:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
