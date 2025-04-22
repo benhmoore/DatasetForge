@@ -1697,8 +1697,8 @@ const Generate = ({ context }) => {
 
   // Determine Clear button text and disabled state
   const clearButtonText = selectedCount > 0
-    ? `Clear Selected (${selectedCount})`
-    : `Clear All (${totalVariationsCount})`;
+    ? `Delete Selected (${selectedCount})`
+    : `Delete All (${totalVariationsCount})`;
   const isClearButtonDisabled = totalVariationsCount === 0 || isGenerating || isParaphrasing;
 
   const templateOptions = templates.map(template => ({
@@ -1908,6 +1908,7 @@ const Generate = ({ context }) => {
                   variation={variation.variation}
                   output={variation.output}
                   tool_calls={variation.tool_calls}
+                  system_prompt={variation.system_prompt}
                   processed_prompt={variation.processed_prompt}
                   isSelected={selectedVariations?.has(variation.id)} // Use selected state
                   isGenerating={variation.isGenerating || false}
@@ -2007,7 +2008,20 @@ const Generate = ({ context }) => {
             <ExampleTable 
               datasetId={selectedDataset.id}
               datasetName={selectedDataset.name}
-              refreshTrigger={refreshExamplesTrigger} 
+              refreshTrigger={refreshExamplesTrigger}
+              onVariationSaved={(variation) => {
+                // Remove the saved variation from the auditioning interface
+                setVariations(prevVariations => 
+                  prevVariations.filter(v => v.id !== variation.id)
+                );
+                
+                // Also remove from selection if it was selected
+                setSelectedVariations(prevSelected => {
+                  const newSelected = new Set(prevSelected);
+                  newSelected.delete(variation.id);
+                  return newSelected;
+                });
+              }} 
             />
           </div>
         </div>

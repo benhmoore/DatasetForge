@@ -8,7 +8,7 @@ import BulkParaphraseModal from './BulkParaphraseModal'; // Import BulkParaphras
 import Icon from './Icons';
 import ExampleTableHeader from './ExampleTableHeader';
 
-const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
+const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationSaved }) => {
   const [examples, setExamples] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -491,6 +491,11 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
       
       // Refresh the examples list
       fetchExamples();
+
+      // Notify parent component about the saved variation
+      if (onVariationSaved) {
+        onVariationSaved(variation);
+      }
     } catch (error) {
       console.error('Failed to save dragged variation:', error);
       toast.error(`Failed to save variation: ${error.response?.data?.detail || error.message}`);
@@ -540,12 +545,24 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   
   return (
     <div 
-      className={`space-y-4 w-full ${isDragOver ? 'bg-blue-50 border border-blue-200' : ''}`}
+      className={`space-y-4 w-full relative ${isDragOver ? 'bg-blue-50 border border-blue-200' : ''}`}
       ref={tableRef}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Overlay for drag-over state */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-blue-50 border-2 border-blue-400 rounded-md z-50 pointer-events-none flex items-center justify-center">
+          <div className="bg-white p-4 rounded-md shadow-lg border border-blue-300">
+            <p className="text-blue-600 font-medium flex items-center">
+              <Icon name="plus" className="w-5 h-5 mr-2" />
+              Drop to add to dataset
+            </p>
+          </div>
+        </div>
+      )}
+      
       {/* Header with actions */}
       <ExampleTableHeader 
         selectedExamples={selectedExamples}

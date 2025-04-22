@@ -18,6 +18,7 @@ const VariationCard = ({
   isParaphrasing = false, // To disable buttons during paraphrasing
   error = null,
   tool_calls = null,
+  system_prompt = null,
   processed_prompt = null,
   workflow_results = null, // New prop for workflow results
   workflow_progress = null, // New prop for streaming workflow progress
@@ -590,7 +591,7 @@ const VariationCard = ({
           processed_prompt,
           tool_calls,
           slots: {}, // Add any slots if available in your variation data
-          system_prompt: processed_prompt || "" // Use processed_prompt as system_prompt or empty string
+          system_prompt: system_prompt,
         });
         
         // Set the data transfer
