@@ -20,7 +20,7 @@ import ModelNode from './ModelNode';
 import TransformNode from './TransformNode';
 import InputNode from './InputNode';
 import OutputNode from './OutputNode';
-import TextNode from './TextNode';
+import PromptNode from './PromptNode'; // Import the new PromptNode component
 import CustomSelect from './CustomSelect';
 import Icon from './Icons';
 import ConfirmationModal from './ConfirmationModal';
@@ -29,37 +29,37 @@ import ContextMenu from './ContextMenu';
 // Define node types for selection dropdown and internal logic
 const NODE_TYPES = {
   model: 'Model',
+  prompt: 'Prompt',    // Add the new prompt type
   transform: 'Transform',
   input: 'Input',
   output: 'Output',
-  text: 'Text'
 };
 
 // Define node type icons for menus
 const NODE_ICONS = {
   model: 'workflow',      // CommandLineIcon
+  prompt: 'chat', // Add an icon for prompt node
   transform: 'edit',      // PencilSquareIcon
   input: 'database',      // CircleStackIcon
   output: 'document',     // DocumentTextIcon
-  text: 'clipboard'       // ClipboardDocumentIcon
 };
 
 // Define the mapping from internal type to React Flow component type
 const nodeComponentMap = {
   model: 'modelNode',
+  prompt: 'promptNode',   // Add the mapping for prompt node
   transform: 'transformNode',
   input: 'inputNode',
   output: 'outputNode',
-  text: 'textNode'
 };
 
 // Map internal types to actual components for React Flow
 const nodeTypes = { 
   modelNode: ModelNode, 
+  promptNode: PromptNode,  // Add the PromptNode component
   transformNode: TransformNode,
   inputNode: InputNode,
   outputNode: OutputNode,
-  textNode: TextNode
 };
 
 /**
@@ -457,6 +457,13 @@ const WorkflowEditor = forwardRef(({
         system_instruction: '',
         model_parameters: { temperature: 0.7, top_p: 1.0, max_tokens: 1000 }
       };
+    } else if (typeToAdd === 'prompt') { // Add case for prompt node
+      defaultConfig = {
+        type: 'prompt',
+        name: nodeLabel,
+        prompt_template: '',
+        input_variables: []
+      };
     } else if (typeToAdd === 'transform') {
       defaultConfig = {
         type: 'transform',
@@ -470,8 +477,6 @@ const WorkflowEditor = forwardRef(({
       defaultConfig = { type: 'input', name: 'Input' };
     } else if (typeToAdd === 'output') {
       defaultConfig = { type: 'output', name: 'Output' };
-    } else if (typeToAdd === 'text') {
-      defaultConfig = { type: 'text', name: 'Text', text_content: '' };
     } else {
       console.error(`Unknown node type: ${typeToAdd}`);
       return;
@@ -588,7 +593,7 @@ const WorkflowEditor = forwardRef(({
   // Define the Add Node button element to pass to CustomSelect
   const addNodeButton = (
     <button 
-      onClick={addNode} 
+      onClick={() => addNode()} // Wrap addNode call in an anonymous function
       className="p-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
       disabled={disabled}
       title="Add Selected Node Type"
@@ -714,7 +719,7 @@ const WorkflowEditor = forwardRef(({
           onInit={onInit}
           nodeTypes={nodeTypes}
           fitView
-          className="bg-gradient-to-br from-blue-50 to-indigo-100"
+          className="bg-gray-800"
           deleteKeyCode={disabled ? null : 'Backspace'}
           nodesDraggable={!disabled}
           nodesConnectable={!disabled}
@@ -722,7 +727,7 @@ const WorkflowEditor = forwardRef(({
         >
           <Controls showInteractive={!disabled} />
           <MiniMap nodeStrokeWidth={3} zoomable pannable />
-          <Background variant="dots" gap={16} size={1} color="#ccc" />
+          <Background variant="dots" gap={16} size={1} color="rgb(100,100,100)" />
         </ReactFlow>
         
         {/* Context Menu */}

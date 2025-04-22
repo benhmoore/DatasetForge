@@ -36,8 +36,8 @@ import {
   Square2StackIcon,
   PencilSquareIcon,
   ArrowsPointingOutIcon,
-  CommandLineIcon
-
+  CommandLineIcon,
+  ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 
@@ -80,6 +80,7 @@ const icons = {
   edit: { outline: PencilSquareIcon },
   copy: { outline: Square2StackIcon },
   workflow: { outline: CommandLineIcon },
+  chat: { outline: ChatBubbleLeftRightIcon },
 };
 
 export default function Icon({ name, variant = 'outline', className = '', ...props }) {

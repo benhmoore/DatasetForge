@@ -246,6 +246,7 @@ const Generate = ({ context }) => {
       toast.info("Generation cancelled.");
       setVariations(prev => prev.map(v => v.isGenerating ? { ...v, isGenerating: false, error: 'Cancelled by user' } : v));
       setIsGenerating(false);
+      setIsExecutingWorkflow(false); // Add this line to reset workflow execution state
       abortControllerRef.current = null;
     }
   };
