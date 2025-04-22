@@ -16,7 +16,7 @@ os.environ["ENV_FILE"] = os.path.join(os.path.dirname(__file__), ".env.test")
 # Import app after setting environment variables
 from app.main import app
 from app.db import get_session
-from app.api.models import User, Template, Dataset, Example
+from app.api.models import User, Template, Dataset, Example, Workflow
 from app.core.security import get_password_hash
 
 

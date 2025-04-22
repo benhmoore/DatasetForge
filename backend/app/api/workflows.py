@@ -1,19 +1,24 @@
-from typing import Dict, Any, AsyncGenerator
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from typing import Dict, Any, AsyncGenerator, List
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, Response
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session
+from sqlmodel import Session, select, func, update
 import logging
 import json
 import asyncio
+from datetime import datetime, timezone
 
 from ..db import get_session
 from ..core.security import get_current_user
-from ..api.models import User, Template
+from ..api.models import User, Template, Workflow
 from ..api.schemas import (
     WorkflowExecuteRequest, 
     WorkflowExecutionResult,
     SeedData,
-    NodeExecutionResult
+    NodeExecutionResult,
+    WorkflowCreate,
+    WorkflowRead,
+    WorkflowUpdate,
+    WorkflowPagination
 )
 from ..core.workflow_executor import WorkflowExecutor
 
@@ -21,6 +26,268 @@ from ..core.workflow_executor import WorkflowExecutor
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# GET all workflows for the current local user
+@router.get("/workflows", response_model=WorkflowPagination)
+async def get_workflows(
+    page: int = Query(1, ge=1, description="Page number"),
+    size: int = Query(50, ge=1, le=100, description="Items per page"),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Get all workflows owned by the current user (paginated)."""
+    # Base query filtered by the current user
+    query = select(Workflow).where(Workflow.owner_id == user.id).order_by(Workflow.updated_at.desc())
+
+    # Efficient count for pagination total
+    total_query = select(func.count()).select_from(Workflow).where(Workflow.owner_id == user.id)
+    total = session.exec(total_query).first() or 0  # Handle case with no workflows
+
+    # Apply pagination limits
+    query = query.offset((page - 1) * size).limit(size)
+
+    # Execute query
+    workflows = session.exec(query).all()
+
+    return {"items": workflows, "total": total}
+
+# GET a specific workflow
+@router.get("/workflows/{workflow_id}", response_model=WorkflowRead)
+async def get_workflow(
+    workflow_id: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Get a specific workflow by ID."""
+    workflow = session.get(Workflow, workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
+    # Basic check ensuring the workflow belongs to the current user context
+    if workflow.owner_id != user.id:
+        # This shouldn't happen in a correct single-user setup but provides safety
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return workflow
+
+# CREATE a new workflow
+@router.post("/workflows", response_model=WorkflowRead, status_code=status.HTTP_201_CREATED)
+async def create_workflow(
+    workflow_data: WorkflowCreate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Create a new workflow."""
+    # Check for duplicate name for this user before creating
+    existing_query = select(Workflow).where(
+        Workflow.owner_id == user.id, 
+        Workflow.name == workflow_data.name
+    )
+    existing = session.exec(existing_query).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Workflow with name '{workflow_data.name}' already exists."
+        )
+
+    # Create workflow instance (timestamps/version handled by model defaults)
+    db_workflow = Workflow(
+        owner_id=user.id,
+        name=workflow_data.name,
+        description=workflow_data.description,
+        data=workflow_data.data
+        # version defaults to 1
+    )
+    session.add(db_workflow)
+    try:
+        session.commit()
+        session.refresh(db_workflow)  # Load DB-generated values like ID, timestamps
+        return db_workflow
+    except Exception as e:  # Catch potential DB errors during commit
+        session.rollback()
+        # Log the error server-side
+        logger.error(f"Error creating workflow: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not create workflow due to a server error."
+        )
+
+# UPDATE an existing workflow
+@router.put("/workflows/{workflow_id}", response_model=WorkflowRead)
+async def update_workflow(
+    workflow_id: int,
+    workflow_update_data: WorkflowUpdate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Update an existing workflow using Optimistic Concurrency Control."""
+    # Retrieve the existing workflow
+    db_workflow = session.get(Workflow, workflow_id)
+    if not db_workflow:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
+    if db_workflow.owner_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    # Check for name uniqueness if name is being updated to a new value
+    if workflow_update_data.name and workflow_update_data.name != db_workflow.name:
+        existing_query = select(Workflow).where(
+            Workflow.owner_id == user.id,
+            Workflow.name == workflow_update_data.name,
+            Workflow.id != workflow_id  # Exclude the current workflow being updated
+        )
+        existing = session.exec(existing_query).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Workflow with name '{workflow_update_data.name}' already exists."
+            )
+
+    # --- Optimistic Locking ---
+    current_version = db_workflow.version
+    # Get only the fields that were actually provided in the update request
+    update_dict = workflow_update_data.dict(exclude_unset=True)
+
+    # If no fields were provided in the request, return the current object
+    if not update_dict:
+        return db_workflow
+
+    try:
+        # Atomically update the workflow in the database *only if* the version matches
+        # Note: updated_at is handled by SQLModel field default_factory
+        stmt = (
+            update(Workflow)
+            .where(Workflow.id == workflow_id)
+            .where(Workflow.version == current_version)  # Optimistic Concurrency Check
+            .values(
+                **update_dict,  # Apply provided updates
+                version=current_version + 1  # Increment version number
+            )
+        )
+        result = session.exec(stmt)  # Execute the update statement
+
+        # Check if any row was actually updated
+        if result.rowcount == 0:
+            # If rowcount is 0, it means the version didn't match (or workflow was deleted concurrently)
+            session.rollback()  # Rollback the transaction
+            # Check if the workflow still exists to give a more specific error
+            check_exists = session.get(Workflow, workflow_id)
+            if not check_exists or check_exists.owner_id != user.id:
+                # Workflow was deleted or ownership changed (unlikely in single-user)
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, 
+                    detail="Workflow not found or access denied."
+                )
+            else:
+                # The workflow exists, so the version must have mismatched (OCC conflict)
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Workflow was modified elsewhere. Please refresh and try again."
+                )
+
+        # Commit the transaction if the update was successful (rowcount > 0)
+        session.commit()
+        # Refresh the object to get the updated fields (like new version, updated_at) from the DB
+        session.refresh(db_workflow)
+        return db_workflow
+
+    except HTTPException:
+        # Re-raise HTTP exceptions without wrapping them
+        raise
+    except Exception as e:
+        session.rollback()
+        # Log the error server-side
+        logger.error(f"Error updating workflow {workflow_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not update workflow due to a server error."
+        )
+
+# DELETE a workflow
+@router.delete("/workflows/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_workflow(
+    workflow_id: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Delete a workflow."""
+    db_workflow = session.get(Workflow, workflow_id)
+    if not db_workflow:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
+    if db_workflow.owner_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    session.delete(db_workflow)
+    try:
+        session.commit()
+    except Exception as e:  # Catch potential DB errors during commit
+        session.rollback()
+        logger.error(f"Error deleting workflow {workflow_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not delete workflow due to a server error."
+        )
+
+    # Return an explicit Response object for 204 status code
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+# DUPLICATE a workflow
+@router.post("/workflows/{workflow_id}/duplicate", response_model=WorkflowRead, status_code=status.HTTP_201_CREATED)
+async def duplicate_workflow(
+    workflow_id: int,
+    response: Response,  # Inject Response object to set headers
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Create a duplicate of an existing workflow."""
+    # Find the workflow to duplicate
+    source_workflow = session.get(Workflow, workflow_id)
+    if not source_workflow:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
+    if source_workflow.owner_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    # Find a unique name for the copy (e.g., "My Workflow (Copy)", "My Workflow (Copy 2)")
+    base_name = source_workflow.name
+    copy_name = f"{base_name} (Copy)"
+    copy_index = 1
+    while True:
+        name_check_query = select(Workflow).where(
+            Workflow.owner_id == user.id, 
+            Workflow.name == copy_name
+        )
+        existing = session.exec(name_check_query).first()
+        if not existing:
+            break  # Found a unique name
+        copy_index += 1
+        copy_name = f"{base_name} (Copy {copy_index})"
+
+    # Create the new workflow instance with copied data
+    new_workflow = Workflow(
+        owner_id=user.id,
+        name=copy_name,
+        description=source_workflow.description,
+        data=source_workflow.data  # Deep copy should be handled by JSON type
+        # Timestamps and version=1 will be set by database defaults/model defaults
+    )
+
+    session.add(new_workflow)
+    try:
+        session.commit()
+        session.refresh(new_workflow)  # Get the generated ID, timestamps, version
+
+        # Set the Location header in the HTTP response
+        response.headers["Location"] = f"/workflows/{new_workflow.id}"
+
+        return new_workflow
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error duplicating workflow {workflow_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not duplicate workflow due to a server error."
+        )
+
+
+# --- Workflow Execution Endpoints (existing code) ---
 
 @router.post("/workflow/execute", response_model=WorkflowExecutionResult)
 async def execute_workflow(

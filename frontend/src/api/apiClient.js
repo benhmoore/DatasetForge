@@ -282,8 +282,89 @@ const api = {
   
   deleteSeedBank: (seedBankId) => apiClient.delete(`/seed_banks/${seedBankId}`)
     .then(response => response.data),
-    
-  // Workflow API endpoints
+  
+  // Workflow Management API endpoints
+  getWorkflows: (page = 1, size = 50) => 
+    apiClient
+      .get("/workflows", { params: { page, size } })
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          "API Error fetching workflows:",
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+
+  getWorkflowById: (id) =>
+    apiClient
+      .get(`/workflows/${id}`)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          `API Error fetching workflow ${id}:`,
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+
+  createWorkflow: (workflow) =>
+    apiClient
+      .post("/workflows", workflow)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          "API Error creating workflow:",
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+
+  updateWorkflow: (id, workflow) =>
+    apiClient
+      .put(`/workflows/${id}`, workflow)
+      .then((response) => response.data)
+      .catch((error) => {
+        // Log specific conflict errors, but primary handling is in the component
+        if (error.response?.status === 409) {
+          console.warn(
+            `API Conflict updating workflow ${id}:`,
+            error.response.data
+          );
+        } else {
+          console.error(
+            `API Error updating workflow ${id}:`,
+            error.response?.data || error.message
+          );
+        }
+        throw error;
+      }),
+
+  deleteWorkflow: (id) =>
+    apiClient
+      .delete(`/workflows/${id}`)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          `API Error deleting workflow ${id}:`,
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+
+  duplicateWorkflow: (id) =>
+    apiClient
+      .post(`/workflows/${id}/duplicate`)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(
+          `API Error duplicating workflow ${id}:`,
+          error.response?.data || error.message
+        );
+        throw error;
+      }),
+  
+  // Workflow Execution API endpoints
   executeWorkflow: (workflow, templateOutput, inputData = {}, debugMode = false) => {
     // Log what we're sending to help debugging
     console.log('Workflow execution input:', {
@@ -307,12 +388,24 @@ const api = {
   
   // Streaming workflow execution
   executeWorkflowWithStream: async (workflow, templateOutput, inputData = {}, onData, signal, debugMode = false) => {
+    // Normalize workflow structure to handle both direct and nested nodes/connections
+    const nodes = workflow.data?.nodes || workflow.nodes;
+    const connections = workflow.data?.connections || workflow.connections;
+
     console.log('Sending workflow execution request:', {
       workflow: workflow.id || 'unnamed-workflow',
-      nodes: Object.keys(workflow.nodes).length,
-      connections: workflow.connections.length,
+      nodes: nodes ? Object.keys(nodes).length : 0,
+      connections: connections ? (connections.length || 0) : 0,
     });
-    
+
+    // Create a properly structured workflow object for execution
+    const normalizedWorkflow = {
+      id: workflow.id,
+      name: workflow.name,
+      nodes: nodes || {},
+      connections: connections || []
+    };
+
     // Use fetch API for streaming
     const response = await fetch('/api/workflow/execute/stream', {
       method: 'POST',
@@ -321,7 +414,7 @@ const api = {
         'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
       },
       body: JSON.stringify({
-        workflow,
+        workflow: normalizedWorkflow, // Send normalized workflow structure
         template_output: templateOutput,
         input_data: inputData,
         debug_mode: debugMode

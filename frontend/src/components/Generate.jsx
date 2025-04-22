@@ -12,10 +12,15 @@ import CustomSelect from './CustomSelect';
 import Icon from './Icons'; // Import Icon component
 import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch
 import WorkflowManager from './WorkflowManager'; // Import WorkflowManager component
+import WorkflowSelectionModal from './WorkflowSelectionModal'; // Import WorkflowSelectionModal component
 
 const Generate = ({ context }) => {
   const { selectedDataset } = context;
   const location = useLocation();
+
+  // Constants for localStorage keys
+  const STORAGE_KEY_WORKFLOW_ENABLED = 'datasetforge_workflowEnabled';
+  const STORAGE_KEY_SELECTED_WORKFLOW = 'datasetforge_selectedWorkflowId';
 
   const [templates, setTemplates] = useState([]);
   // Initialize selectedTemplateId from localStorage
@@ -38,19 +43,32 @@ const Generate = ({ context }) => {
   const [paraphraseSourceId, setParaphraseSourceId] = useState(null);
   
   // Workflow related state
-  const [workflowEnabled, setWorkflowEnabled] = useState(false);
+  // Initialize workflowEnabled from localStorage
+  const [workflowEnabled, setWorkflowEnabled] = useState(() => {
+    const savedValue = localStorage.getItem(STORAGE_KEY_WORKFLOW_ENABLED);
+    return savedValue === 'true';
+  });
+  
   const [currentWorkflow, setCurrentWorkflow] = useState(null);
   const [isExecutingWorkflow, setIsExecutingWorkflow] = useState(false);
   const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false); 
   const [workflowSaveRequest, setWorkflowSaveRequest] = useState(null);
+  const [workflowsList, setWorkflowsList] = useState([]);
+  const [isLoadingWorkflows, setIsLoadingWorkflows] = useState(false);
+  
+  // Initialize selectedWorkflowId from localStorage
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(() => {
+    const savedId = localStorage.getItem(STORAGE_KEY_SELECTED_WORKFLOW);
+    return savedId ? parseInt(savedId, 10) : null;
+  });
   
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
 
   // Calculate counts for the dynamic save button
-  const selectedCount = selectedVariations.size;
-  const validVariationsCount = variations.filter(v => !v.isGenerating && !v.error).length;
-  const totalVariationsCount = variations.length;
+  const selectedCount = selectedVariations?.size || 0;
+  const validVariationsCount = (variations || []).filter(v => !v.isGenerating && !v.error).length;
+  const totalVariationsCount = variations?.length || 0;
 
   useEffect(() => {
     variationsRef.current = variations;
@@ -128,50 +146,81 @@ const Generate = ({ context }) => {
     }
   }, [selectedTemplateId]);
 
-  // Load workflow from localStorage
+  // Save workflowEnabled to localStorage when it changes
   useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_WORKFLOW_ENABLED, workflowEnabled.toString());
+  }, [workflowEnabled]);
+
+  // Save selectedWorkflowId to localStorage when it changes
+  useEffect(() => {
+    if (selectedWorkflowId) {
+      localStorage.setItem(STORAGE_KEY_SELECTED_WORKFLOW, selectedWorkflowId.toString());
+    } else {
+      localStorage.removeItem(STORAGE_KEY_SELECTED_WORKFLOW);
+    }
+  }, [selectedWorkflowId]);
+
+  // Fetch workflows from API when workflow mode is enabled
+  useEffect(() => {
+    if (workflowEnabled) {
+      fetchWorkflows();
+    }
+  }, [workflowEnabled]);
+  
+  // Function to fetch workflows from API
+  const fetchWorkflows = async () => {
+    if (!workflowEnabled) return;
+    
+    setIsLoadingWorkflows(true);
     try {
-      const savedWorkflow = localStorage.getItem('datasetforge_currentWorkflow');
-      if (savedWorkflow) {
-        setCurrentWorkflow(JSON.parse(savedWorkflow));
-      }
+      const result = await api.getWorkflows(1, 50); // Get first page with up to 50 workflows
+      setWorkflowsList(result.items);
       
-      const workflowEnabledSetting = localStorage.getItem('datasetforge_workflowEnabled');
-      if (workflowEnabledSetting) {
-        setWorkflowEnabled(workflowEnabledSetting === 'true');
+      // If there's a selected workflow ID but no current workflow data,
+      // or if there's no selected ID but we have workflows, select the first one
+      if (selectedWorkflowId && !currentWorkflow) {
+        // Find and load the selected workflow
+        const selectedWorkflow = result.items.find(w => w.id === selectedWorkflowId);
+        if (selectedWorkflow) {
+          loadWorkflow(selectedWorkflow.id);
+        }
+      } else if (!selectedWorkflowId && result.items.length > 0) {
+        // Auto-select the first workflow if none is selected
+        setSelectedWorkflowId(result.items[0].id);
+        loadWorkflow(result.items[0].id);
       }
     } catch (error) {
-      console.error('Failed to load workflow from localStorage:', error);
-      // Clear potentially corrupted data
-      localStorage.removeItem('datasetforge_currentWorkflow');
-      localStorage.removeItem('datasetforge_workflowEnabled');
+      console.error('Failed to fetch workflows:', error);
+      toast.error('Failed to load workflows');
+    } finally {
+      setIsLoadingWorkflows(false);
     }
-  }, []);
+  };
   
-  // Debounced function to save workflow to localStorage
-  const debouncedSaveWorkflow = useDebouncedCallback((workflowToSave) => {
-    if (workflowToSave) {
-      console.log("Generate (Debounced): Saving workflow to localStorage", {
-        id: workflowToSave.id, 
-        nodeCount: Object.keys(workflowToSave.nodes || {}).length,
-        connectionCount: (workflowToSave.connections || []).length
-      });
-      localStorage.setItem('datasetforge_currentWorkflow', JSON.stringify(workflowToSave));
-    } else {
-      console.log("Generate (Debounced): Removing workflow from localStorage");
-      localStorage.removeItem('datasetforge_currentWorkflow');
+  // Function to load a single workflow by ID
+  const loadWorkflow = async (id) => {
+    if (!id) return;
+    
+    setIsLoadingWorkflows(true);
+    try {
+      const workflow = await api.getWorkflowById(id);
+      setCurrentWorkflow(workflow);
+      setSelectedWorkflowId(workflow.id);
+      console.log(`Loaded workflow: ${workflow.name} (ID: ${workflow.id})`);
+    } catch (error) {
+      console.error(`Failed to load workflow ${id}:`, error);
+      toast.error('Failed to load selected workflow');
+    } finally {
+      setIsLoadingWorkflows(false);
     }
-  }, 500); // Debounce for 500ms
-
-  // Save workflow to localStorage when it changes (using debounced function)
-  useEffect(() => {
-    // Call the debounced save function whenever currentWorkflow changes
-    debouncedSaveWorkflow(currentWorkflow);
-  }, [currentWorkflow, debouncedSaveWorkflow]);
+  };
   
-  // Save workflow enabled setting to localStorage
+  // When workflow mode is toggled, trigger workflows fetch if enabled
   useEffect(() => {
-    localStorage.setItem('datasetforge_workflowEnabled', workflowEnabled.toString());
+    // If workflow mode was just enabled, fetch workflows
+    if (workflowEnabled) {
+      fetchWorkflows();
+    }
   }, [workflowEnabled]);
 
   const handleTemplateChange = (templateId) => {
@@ -526,34 +575,138 @@ const Generate = ({ context }) => {
                 }
               }
               else if (progressData.type === 'complete') {
-                // Get all the node results
-                const allResults = progressData.result?.results || [];
+                console.log("Workflow execution complete, processing results");
                 
-                // Filter to find just the output nodes
-                const outputNodeResults = allResults.filter(result => 
-                  result.node_type === 'output'
-                );
+                // First, check if we have output_node_results property (new API format)
+                const outputNodeResults = progressData.result?.output_node_results || {};
+                const outputNodes = Object.keys(outputNodeResults);
                 
-                if (outputNodeResults.length <= 1) {
-                  // If there's only one output node, update the original variation as before
+                if (outputNodes.length > 0) {
+                  console.log(`Found ${outputNodes.length} output nodes in result`);
+                  
+                  if (outputNodes.length <= 1) {
+                    // Single output node - update the original variation
+                    const nodeId = outputNodes[0];
+                    const nodeResult = outputNodeResults[nodeId];
+                    
+                    setVariations(prevVariations => {
+                      const updated = [...prevVariations];
+                      const targetIndex = updated.findIndex(v => v.id === origVariationId);
+                      
+                      if (targetIndex !== -1) {
+                        const baseVariation = updated[targetIndex];
+                        
+                        // Get output content from the node result
+                        const outputContent = nodeResult.output || "";
+                        
+                        // Update the variation with the workflow result
+                        updated[targetIndex] = {
+                          ...baseVariation,
+                          output: outputContent,
+                          variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
+                          isGenerating: false,
+                          error: null,
+                          template_id: data.template_id,
+                          _source: 'workflow_output',
+                          _output_node_id: nodeId,
+                          _output_node_name: nodeResult.name || nodeId,
+                          workflow_results: progressData.result,
+                          workflow_progress: {
+                            ...baseVariation.workflow_progress,
+                            completed_at: new Date().toISOString(),
+                            status: 'complete'
+                          }
+                        };
+                      }
+                      return updated;
+                    });
+                  } else {
+                    // Multiple output nodes - create multiple variation cards
+                    setVariations(prevVariations => {
+                      const updated = [...prevVariations];
+                      const targetIndex = updated.findIndex(v => v.id === origVariationId);
+                      
+                      if (targetIndex !== -1) {
+                        const baseVariation = updated[targetIndex];
+                        const newVariations = [];
+                        
+                        // Process each output node
+                        outputNodes.forEach((nodeId, index) => {
+                          const nodeResult = outputNodeResults[nodeId];
+                          const outputContent = nodeResult.output || '';
+                          
+                          if (index === 0) {
+                            // Update the original variation with the first output
+                            updated[targetIndex] = {
+                              ...baseVariation,
+                              output: outputContent,
+                              variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
+                              isGenerating: false,
+                              error: null,
+                              template_id: data.template_id,
+                              _source: 'workflow_output',
+                              _output_node_id: nodeId,
+                              _output_node_name: nodeResult.name || nodeId,
+                              workflow_results: progressData.result,
+                              workflow_progress: {
+                                ...baseVariation.workflow_progress,
+                                completed_at: new Date().toISOString(),
+                                status: 'complete'
+                              }
+                            };
+                          } else {
+                            // Create new variations for additional outputs
+                            const newVariationId = `${origVariationId}-output-${nodeId}-${Date.now()}`;
+                            
+                            newVariations.push({
+                              ...baseVariation,
+                              id: newVariationId,
+                              output: outputContent,
+                              variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
+                              isGenerating: false,
+                              error: null,
+                              template_id: data.template_id,
+                              _source: 'workflow_output',
+                              _output_node_id: nodeId,
+                              _output_node_name: nodeResult.name || nodeId,
+                              workflow_results: progressData.result,
+                              workflow_progress: {
+                                ...baseVariation.workflow_progress,
+                                completed_at: new Date().toISOString(),
+                                status: 'complete'
+                              }
+                            });
+                          }
+                        });
+                        
+                        // Add all new variations to the array
+                        return [...updated, ...newVariations];
+                      }
+                      return updated;
+                    });
+                  }
+                } else {
+                  // Fallback to processing all results if no output_node_results
+                  console.log("No output_node_results found, using fallback processing");
+                  
+                  // Get the final output from the result if available
+                  const finalOutput = progressData.result?.final_output?.output || "No output from workflow";
+                  
                   setVariations(prevVariations => {
                     const updated = [...prevVariations];
                     const targetIndex = updated.findIndex(v => v.id === origVariationId);
                     
                     if (targetIndex !== -1) {
-                      // Extract the output content
-                      const finalOutput = progressData.result?.final_output?.output || '';
+                      const baseVariation = updated[targetIndex];
                       
+                      // Update the variation with the workflow result
                       updated[targetIndex] = {
                         ...baseVariation,
-                        output: outputContent,
-                        variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
+                        output: finalOutput,
                         isGenerating: false,
                         error: null,
                         template_id: data.template_id,
                         _source: 'workflow_output',
-                        _output_node_id: nodeId,
-                        _output_node_name: nodeName,
                         workflow_results: progressData.result,
                         workflow_progress: {
                           ...baseVariation.workflow_progress,
@@ -561,95 +714,6 @@ const Generate = ({ context }) => {
                           status: 'complete'
                         }
                       };
-                    } else {
-                      // Create new variations for additional outputs
-                      const newVariationId = `${origVariationId}-output-${nodeId}-${Date.now()}`;
-                      
-                      newVariations.push({
-                        ...baseVariation,
-                        id: newVariationId,
-                        output: outputContent,
-                        variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
-                        isGenerating: false,
-                        error: null,
-                        template_id: data.template_id,
-                        _source: 'workflow_output',
-                        _output_node_id: nodeId,
-                        _output_node_name: nodeName,
-                        workflow_results: progressData.result,
-                        workflow_progress: {
-                          ...baseVariation.workflow_progress,
-                          completed_at: new Date().toISOString(),
-                          status: 'complete'
-                        }
-                      });
-                    }
-                  });
-                } else {
-                  // Multiple output nodes - create multiple variation cards
-                  setVariations(prevVariations => {
-                    const updated = [...prevVariations];
-                    const targetIndex = updated.findIndex(v => v.id === origVariationId);
-                    
-                    if (targetIndex !== -1) {
-                      const baseVariation = updated[targetIndex];
-                      const newVariations = [];
-                      
-                      // Process each output node result
-                      outputNodeResults.forEach((nodeResult, index) => {
-
-                        console.log("GIVEN NODE RESULT:", nodeResult);
-                        // Extract node info and output
-                        const nodeId = nodeResult.node_id;
-                        const nodeName = nodeResult?.node_name || nodeId; // Fallback to ID if name is not available
-                        const outputContent = nodeResult.output?.output || '';
-                        
-                        if (index === 0) {
-                          // Update the original variation with the first output
-                          updated[targetIndex] = {
-                            ...baseVariation,
-                            output: outputContent,
-                            variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
-                            isGenerating: false,
-                            error: null,
-                            template_id: data.template_id,
-                            _source: 'workflow_output',
-                            _output_node_id: nodeId,
-                            _output_node_name: nodeName,
-                            workflow_results: progressData.result,
-                            workflow_progress: {
-                              ...baseVariation.workflow_progress,
-                              completed_at: new Date().toISOString(),
-                              status: 'complete'
-                            }
-                          };
-                        } else {
-                          // Create new variations for additional outputs
-                          const newVariationId = `${origVariationId}-output-${nodeId}-${Date.now()}`;
-                          
-                          newVariations.push({
-                            ...baseVariation,
-                            id: newVariationId,
-                            output: outputContent,
-                            variation: `${baseVariation.variation.split(' (')[0]} (${nodeName})`,
-                            isGenerating: false,
-                            error: null,
-                            template_id: data.template_id,
-                            _source: 'workflow_output',
-                            _output_node_id: nodeId,
-                            _output_node_name: nodeName,
-                            workflow_results: progressData.result,
-                            workflow_progress: {
-                              ...baseVariation.workflow_progress,
-                              completed_at: new Date().toISOString(),
-                              status: 'complete'
-                            }
-                          });
-                        }
-                      });
-                      
-                      // Add all new variations to the updated array
-                      return [...updated, ...newVariations];
                     }
                     return updated;
                   });
@@ -1198,20 +1262,31 @@ const Generate = ({ context }) => {
         const outputNodes = Object.keys(outputNodeResults);
         
         if (outputNodes.length > 0) {
-          // Just use the first output node result
-          const firstNodeId = outputNodes[0];
-          const nodeOutput = outputNodeResults[firstNodeId];
-          workflowOutput = nodeOutput.output || "";
-          
-          // Update the node ID and name
-          updated[targetIndex]._output_node_id = firstNodeId;
-          updated[targetIndex]._output_node_name = nodeOutput.name || firstNodeId;
-          
-          // Update variation name with node name
-          if (nodeOutput.name) {
-            // Extract the base variation name (before any parenthesis)
-            const baseName = updated[targetIndex].variation.split(' (')[0];
-            updated[targetIndex].variation = `${baseName} (${nodeOutput.name})`;
+          // If this is regenerating a specific output node, use that node
+          const existingOutputNodeId = updated[targetIndex]._output_node_id;
+          if (existingOutputNodeId && outputNodeResults[existingOutputNodeId]) {
+            // Use the specific output node that matches the original
+            const nodeOutput = outputNodeResults[existingOutputNodeId];
+            workflowOutput = nodeOutput.output || "";
+            
+            // Keep the existing node ID and name for consistency
+            // The node name is already in the variation name
+          } else {
+            // Just use the first output node result
+            const firstNodeId = outputNodes[0];
+            const nodeOutput = outputNodeResults[firstNodeId];
+            workflowOutput = nodeOutput.output || "";
+            
+            // Update the node ID and name
+            updated[targetIndex]._output_node_id = firstNodeId;
+            updated[targetIndex]._output_node_name = nodeOutput.name || firstNodeId;
+            
+            // Update variation name with node name
+            if (nodeOutput.name) {
+              // Extract the base variation name (before any parenthesis)
+              const baseName = updated[targetIndex].variation.split(' (')[0];
+              updated[targetIndex].variation = `${baseName} (${nodeOutput.name})`;
+            }
           }
         } else {
           // Try to get output from different places
@@ -1233,8 +1308,8 @@ const Generate = ({ context }) => {
             // Look for the last result with an output
             const results = progressData.result.results;
             for (let i = results.length - 1; i >= 0; i--) {
-              if (results[i].output) {
-                workflowOutput = results[i].output;
+              if (results[i].output?.output) {
+                workflowOutput = results[i].output.output;
                 break;
               }
             }
@@ -1486,7 +1561,67 @@ const Generate = ({ context }) => {
   
   // Handler for toggling workflow mode
   const handleToggleWorkflow = () => {
-    setWorkflowEnabled(!workflowEnabled);
+    const newValue = !workflowEnabled;
+    setWorkflowEnabled(newValue);
+    
+    // If enabling workflow mode, fetch workflows
+    if (newValue) {
+      fetchWorkflows();
+    } else {
+      // If disabling, clear workflow-related state
+      setCurrentWorkflow(null);
+      setSelectedWorkflowId(null);
+    }
+  };
+
+  // Handler for workflow selection from dropdown
+  const handleWorkflowSelection = (id) => {
+    if (!id) return;
+    loadWorkflow(id);
+  };
+
+  // Handler for workflow selection from modal
+  const handleWorkflowSelectedFromModal = (workflow) => {
+    if (!workflow) return;
+    
+    console.log("Workflow selected from modal:", workflow);
+    
+    // If selecting a new workflow template
+    if (workflow.isNew) {
+      console.log("Creating new workflow from template");
+      // Create a new workflow via API
+      api.createWorkflow(workflow)
+        .then(createdWorkflow => {
+          console.log("Workflow created successfully:", createdWorkflow);
+          setSelectedWorkflowId(createdWorkflow.id);
+          
+          // Set workflow AFTER closing modal (avoids flicker)
+          setIsWorkflowModalOpen(false);
+          setTimeout(() => {
+            setCurrentWorkflow(createdWorkflow);
+            toast.success(`Created new workflow "${createdWorkflow.name}"`);
+            // Refresh the workflow list
+            fetchWorkflows();
+          }, 50);
+        })
+        .catch(error => {
+          console.error('Failed to create workflow:', error);
+          toast.error('Failed to create new workflow');
+          setIsWorkflowModalOpen(false);
+        });
+    } else {
+      // Load existing workflow (already loaded from API)
+      console.log("Selected existing workflow:", workflow.id);
+      setSelectedWorkflowId(workflow.id);
+      
+      // Close modal first
+      setIsWorkflowModalOpen(false);
+      
+      // Small delay to ensure modal is closed before setting workflow
+      setTimeout(() => {
+        setCurrentWorkflow(workflow);
+      }, 50);
+    }
   };
 
   // Handler for workflow import/export
@@ -1501,22 +1636,51 @@ const Generate = ({ context }) => {
 
   // Handler to open the workflow modal
   const handleOpenWorkflowModal = useCallback(() => {
-    setIsWorkflowModalOpen(true);
-  }, []);
+    // Check if the button that initiated this was "Browse All" vs "Manage Workflow" or "Edit"
+    const isBrowseAll = !currentWorkflow || 
+                        (event && event.target && event.target.innerText === "Browse All");
+    
+    console.log("handleOpenWorkflowModal called with:", {
+      isBrowseAll,
+      hasCurrentWorkflow: !!currentWorkflow
+    });
+    
+    if (isBrowseAll) {
+      // Force null workflow to show selection modal
+      console.log("Opening workflow selection modal (Browse All)");
+      // First clear the current workflow to prevent the editor from showing
+      setCurrentWorkflow(null);
+      // Then open the modal
+      setIsWorkflowModalOpen(true);
+    } else {
+      // Editing existing workflow - open the editor directly
+      console.log("Opening workflow editor directly");
+      setIsWorkflowModalOpen(true);
+    }
+  }, [currentWorkflow]);
 
   // Handler to close the workflow modal
   const handleCloseWorkflowModal = useCallback(() => {
-    // Trigger save in WorkflowEditor before closing
-    if (currentWorkflow) {
+    // Only trigger save if we're editing, not if we're just selecting from the list
+    if (currentWorkflow && !isWorkflowModalOpen) {
       console.log("Generate: Requesting workflow save before closing modal");
       setWorkflowSaveRequest(Date.now()); // Use timestamp to trigger save
+    } else if (currentWorkflow) {
+      // If we're just selecting and not editing, don't save
+      console.log("Generate: Closing workflow modal without saving");
+      if (currentWorkflow) {
+        const updatedWorkflow = {...currentWorkflow};
+        updatedWorkflow._saveRequestId = "close_no_save";
+        setCurrentWorkflow(updatedWorkflow);
+      }
+      setWorkflowSaveRequest("close_no_save");
     }
     
     // Set a small delay to ensure save completes before closing
     setTimeout(() => {
       setIsWorkflowModalOpen(false);
     }, 100);
-  }, [currentWorkflow]);
+  }, [currentWorkflow, isWorkflowModalOpen]);
 
   // Determine button text and action based on selected variations
   const saveButtonText = selectedCount > 0
@@ -1577,20 +1741,95 @@ const Generate = ({ context }) => {
                   <button
                     onClick={handleOpenWorkflowModal}
                     className="text-sm text-blue-600 hover:text-blue-800 px-2 py-1 rounded hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={isGenerating || isParaphrasing}
+                    disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
                     title="Open Workflow Editor"
                   >
                     Manage Workflow
                   </button>
                 )}
-                {/* Replace checkbox with ToggleSwitch */}
                 <ToggleSwitch
                   checked={workflowEnabled}
                   onChange={handleToggleWorkflow}
-                  disabled={isGenerating || isParaphrasing}
+                  disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
                 />
               </div>
             </div>
+            
+            {/* Workflow Mode Explanation */}
+            {workflowEnabled && (
+              <p className="text-xs text-gray-500 mt-1 pl-1">
+                Process generated outputs through a custom workflow of models and advanced transformations.
+              </p>
+            )}
+            
+            {/* Workflow Selection UI */}
+            {workflowEnabled && (
+              <div className="mt-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-gray-600">Selected Workflow:</span>
+                  <button
+                    onClick={() => {
+                      // Clear current workflow first to force selection modal
+                      setCurrentWorkflow(null); 
+                      setIsWorkflowModalOpen(true);
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800 py-0.5 px-1.5 rounded hover:bg-blue-50 transition-colors"
+                    title="Browse all workflows"
+                    disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                  >
+                    Browse All
+                  </button>
+                </div>
+                
+                {currentWorkflow ? (
+                  <div className="flex items-center p-2 border rounded bg-blue-50 border-blue-200">
+                    <div className="flex-grow">
+                      <div className="font-medium text-sm truncate" title={currentWorkflow.name}>
+                        {currentWorkflow.name}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Updated {new Date(currentWorkflow.updated_at).toLocaleString()} (v{currentWorkflow.version})
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleOpenWorkflowModal}
+                      className="ml-2 p-1.5 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-100 flex-shrink-0"
+                      disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                      title="Edit workflow"
+                    >
+                      <Icon name="edit" className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : isLoadingWorkflows ? (
+                  <div className="flex items-center justify-center p-2 border rounded bg-gray-50 h-10">
+                    <Icon name="spinner" className="w-4 h-4 mr-2 animate-spin text-blue-500" />
+                    <span className="text-sm text-gray-600">Loading...</span>
+                  </div>
+                ) : workflowsList.length > 0 ? (
+                  <div className="text-center p-2 border rounded bg-gray-50">
+                    <button
+                      onClick={handleOpenWorkflowModal}
+                      className="text-sm text-blue-600 hover:text-blue-800 py-1 px-3 rounded hover:bg-blue-100"
+                      disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                    >
+                      <Icon name="plus" className="w-3.5 h-3.5 mr-1 inline-block" />
+                      Select Workflow
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center p-2 border rounded bg-gray-50">
+                    <button
+                      onClick={handleOpenWorkflowModal}
+                      className="text-sm text-blue-600 hover:text-blue-800 py-1 px-3 rounded hover:bg-blue-100"
+                      disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
+                    >
+                      <Icon name="plus" className="w-3.5 h-3.5 mr-1 inline-block" />
+                      Create New Workflow
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
 
@@ -1644,7 +1883,7 @@ const Generate = ({ context }) => {
         <div className="px-4 pt-4">
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
 
-          {variations.length === 0 && !isGenerating ? (
+          {(variations && variations.length === 0 && !isGenerating) ? (
             <div className="p-6 bg-gray-50 rounded-lg border border-gray-200 text-center">
               <p className="text-gray-500">
                 {selectedDataset?.archived
@@ -1654,7 +1893,7 @@ const Generate = ({ context }) => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {variations.map((variation) => (
+              {(variations || []).map((variation) => (
                 <VariationCard
                   key={variation.id}
                   id={variation.id} // Pass id
@@ -1662,7 +1901,7 @@ const Generate = ({ context }) => {
                   output={variation.output}
                   tool_calls={variation.tool_calls}
                   processed_prompt={variation.processed_prompt}
-                  isSelected={selectedVariations.has(variation.id)} // Use selected state
+                  isSelected={selectedVariations?.has(variation.id)} // Use selected state
                   isGenerating={variation.isGenerating || false}
                   isParaphrasing={isParaphrasing}
                   error={variation.error || null}
@@ -1681,24 +1920,32 @@ const Generate = ({ context }) => {
         </div>
       </div>
       
+      {/* Workflow Selection Modal (only show when workflow manager isn't shown) */}
+      <WorkflowSelectionModal
+        isOpen={isWorkflowModalOpen && !currentWorkflow}
+        onClose={handleCloseWorkflowModal}
+        onSelect={handleWorkflowSelectedFromModal}
+        currentWorkflowId={selectedWorkflowId}
+      />
+      
       {/* Workflow Manager Modal */}
-      {isWorkflowModalOpen && (
+      {isWorkflowModalOpen && currentWorkflow && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-y-auto p-4"
+          className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[600] overflow-hidden p-2"
           onClick={handleCloseWorkflowModal} // Close on backdrop click
           role="dialog"
           aria-modal="true"
           aria-labelledby="workflow-manager-title"
         >
           <div 
-            className="bg-white rounded-lg w-full max-w-6xl shadow-xl max-h-[90vh] flex flex-col animate-fadeIn"
+            className="bg-white rounded-lg w-full max-w-[95vw] shadow-xl h-[95vh] flex flex-col animate-fadeIn"
             onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
           >
             {/* Modal Header */}
-            <div className="flex justify-between items-center p-5 border-b border-gray-200 flex-shrink-0">
+            <div className="flex justify-between items-center p-4 border-b border-gray-200 flex-shrink-0">
               <h2 id="workflow-manager-title" className="text-xl font-semibold flex items-center">
                 <Icon name="workflow" className="h-5 w-5 mr-2 text-blue-600" />
-                Workflow Manager
+                Workflow Manager: {currentWorkflow.name}
               </h2>
               <button
                 className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
@@ -1711,23 +1958,18 @@ const Generate = ({ context }) => {
             </div>
             
             {/* Modal Body - WorkflowManager component */}
-            <div className="flex-grow overflow-y-auto p-1"> {/* Reduced padding for more space */}
+            <div className="flex-grow overflow-y-auto p-0"> {/* Remove padding for more space */}
               <WorkflowManager
                 // Pass necessary props to WorkflowManager
-                visible={isWorkflowModalOpen} // Keep visible prop for internal logic if needed
+                visible={isWorkflowModalOpen}
                 workflow={currentWorkflow}
                 setWorkflow={setCurrentWorkflow}
                 onImport={handleWorkflowImport}
                 onExport={handleWorkflowExport}
                 disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
-                saveRequest={workflowSaveRequest} // Add this new prop
+                saveRequest={workflowSaveRequest}
               />
             </div>
-            
-            {/* Optional Modal Footer (can add buttons here if needed) */}
-            {/* <div className="flex justify-end space-x-2 p-4 border-t border-gray-200 flex-shrink-0 bg-gray-50">
-              <button onClick={handleCloseWorkflowModal} className="...">Close</button>
-            </div> */}
           </div>
         </div>
       )}

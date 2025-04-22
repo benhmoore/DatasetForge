@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, constr
 from typing import List, Dict, Optional, Any, Union
 from datetime import datetime
+import json
 
 
 # User schemas
@@ -191,6 +192,55 @@ class ExportRequest(BaseModel):
     template_id: Optional[int] = None
 
 
+# Define a reasonable size limit for local storage (e.g., 10MB)
+MAX_WORKFLOW_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+
+# Shared validator function for workflow data size
+def validate_data_size(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if data is None:
+        return data
+    try:
+        data_json = json.dumps(data)
+        # Check byte size for a more accurate limit assessment
+        if len(data_json.encode('utf-8')) > MAX_WORKFLOW_SIZE_BYTES:
+            raise ValueError(f"Workflow data exceeds size limit: {len(data_json.encode('utf-8')) / (1024*1024):.1f}MB (max: {MAX_WORKFLOW_SIZE_BYTES / (1024*1024):.0f}MB)")
+    except TypeError as e:
+        # Catch errors if data is not JSON serializable
+        raise ValueError(f"Invalid data format: {e}")
+    return data
+
+# Workflow persistence schemas
+class WorkflowBase(BaseModel):
+    name: constr(min_length=1, max_length=100)
+    description: Optional[constr(max_length=1000)] = None
+    data: Dict[str, Any]
+
+    # Apply the validator to the 'data' field
+    _validate_size = validator('data', allow_reuse=True)(validate_data_size)
+
+class WorkflowCreate(WorkflowBase):
+    pass  # Inherits fields and validation from WorkflowBase
+
+class WorkflowRead(WorkflowBase):
+    id: int
+    owner_id: int
+    created_at: datetime
+    updated_at: datetime
+    version: int
+
+class WorkflowUpdate(BaseModel):
+    # All fields are optional for updates
+    name: Optional[constr(min_length=1, max_length=100)] = None
+    description: Optional[constr(max_length=1000)] = None
+    data: Optional[Dict[str, Any]] = None
+
+    # Apply the same validator to the 'data' field on update
+    _validate_size = validator('data', allow_reuse=True)(validate_data_size)
+
+class WorkflowPagination(BaseModel):
+    items: List[WorkflowRead]
+    total: int
+
 # Workflow schemas - used for API validation but not database storage
 class NodePosition(BaseModel):
     x: float
@@ -279,3 +329,4 @@ class WorkflowExecutionResult(BaseModel):
     execution_time: float
     status: str = "success"  # success, error, partial_success
     meta: Optional[Dict[str, Any]] = None  # Additional metadata about the workflow execution
+    output_node_results: Optional[Dict[str, Any]] = None  # Results from output nodes

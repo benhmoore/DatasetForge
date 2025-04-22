@@ -1,5 +1,6 @@
 from sqlmodel import SQLModel, Field, JSON, Column
-from datetime import datetime
+from sqlalchemy import UniqueConstraint
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 
 
@@ -72,3 +73,21 @@ class ExportTemplate(SQLModel, table=True):
     owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     archived: bool = False
+
+
+class Workflow(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    name: str = Field(max_length=100)
+    description: Optional[str] = None
+    data: Dict[str, Any] = Field(sa_column=Column(JSON), default={})
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    version: int = Field(default=1)
+
+    # Ensure a user cannot have two workflows with the same name
+    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_owner_name"),)
