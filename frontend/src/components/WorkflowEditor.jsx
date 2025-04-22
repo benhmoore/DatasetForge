@@ -495,7 +495,7 @@ const WorkflowEditor = forwardRef(({
   const addNodeButton = (
     <button 
       onClick={addNode} 
-      className="p-2 bg-blue-500 text-white rounded-r-md hover:bg-blue-600 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+      className="p-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
       disabled={disabled}
       title="Add Selected Node Type"
     >
