@@ -7,6 +7,7 @@ import Icon from './Icons';
  * and allows selecting from a list of options.
  */
 const ContextMenu = ({ 
+  title, // Added title prop
   items, 
   position, 
   onSelect, 
@@ -53,9 +54,11 @@ const ContextMenu = ({
       }}
     >
       <div className="py-1">
-        <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-100">
-          Add Node
-        </div>
+        {title && (
+          <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-100">
+            {title}
+          </div>
+        )}
         {items.map((item) => (
           <button
             key={item.value}
@@ -77,6 +80,7 @@ const ContextMenu = ({
 };
 
 ContextMenu.propTypes = {
+  title: PropTypes.string, // Added title prop type
   items: PropTypes.arrayOf(
     PropTypes.shape({
       label: PropTypes.string.isRequired,
