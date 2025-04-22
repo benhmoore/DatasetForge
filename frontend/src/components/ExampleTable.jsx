@@ -39,6 +39,10 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   
+  // For drag and drop functionality
+  const [isDragOver, setIsDragOver] = useState(false);
+  const tableRef = useRef(null);
+  
   // Use useEffect for debouncing search
   useEffect(() => {
     // Skip initial render
@@ -442,6 +446,59 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
     return () => window.removeEventListener('keydown', handleSearchShortcut);
   }, [triggerSearchFocus]);
 
+  // Handle drag over event
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  // Handle drag leave event
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  // Handle drop event
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+
+    if (!datasetId) {
+      toast.warning('Please select a dataset first');
+      return;
+    }
+
+    const data = e.dataTransfer.getData('application/json');
+    if (!data) return;
+
+    try {
+      const variation = JSON.parse(data);
+      
+      // Create a properly formatted example from the variation
+      const example = {
+        system_prompt: variation.system_prompt || '',
+        user_prompt: variation.processed_prompt || '',
+        slots: variation.slots || {},
+        output: variation.output || '',
+        tool_calls: variation.tool_calls || null
+      };
+      
+      setIsProcessing(true);
+
+      // Save the example to the dataset using the API
+      await api.saveExamples(datasetId, [example]);
+      
+      toast.success(`Variation "${variation.variation}" saved to ${datasetName}`);
+      
+      // Refresh the examples list
+      fetchExamples();
+    } catch (error) {
+      console.error('Failed to save dragged variation:', error);
+      toast.error(`Failed to save variation: ${error.response?.data?.detail || error.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   // If no dataset is selected
   if (!datasetId) {
     return (
@@ -482,7 +539,13 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0 }) => {
   }
   
   return (
-    <div className="space-y-4 w-full">
+    <div 
+      className={`space-y-4 w-full ${isDragOver ? 'bg-blue-50 border border-blue-200' : ''}`}
+      ref={tableRef}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {/* Header with actions */}
       <ExampleTableHeader 
         selectedExamples={selectedExamples}

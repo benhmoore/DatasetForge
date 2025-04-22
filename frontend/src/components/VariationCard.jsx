@@ -32,6 +32,7 @@ const VariationCard = ({
   const [isToolEditorOpen, setIsToolEditorOpen] = useState(false);
   const [textareaHeight, setTextareaHeight] = useState('8rem');
   const [showWorkflowResults, setShowWorkflowResults] = useState(false);
+  const [isDragging, setIsDragging] = useState(false); // Added for drag state
   
   // Refs
   const regenerateInputRef = useRef(null);
@@ -561,7 +562,7 @@ const VariationCard = ({
           : 'border-gray-200'
       } shadow-sm transition-all duration-200 hover:shadow-md ${
         isSelected ? 'scale-[1.01]' : 'hover:scale-[1.01]'
-      } relative cursor-pointer`} // Add cursor-pointer, ensure relative positioning
+      } relative cursor-pointer ${isDragging ? 'opacity-50' : ''}`} // Add dragging opacity effect
       onClick={handleSelect} // Make the whole card clickable for selection
       role="checkbox" // Role for accessibility
       aria-checked={isSelected} // State for accessibility
@@ -575,6 +576,45 @@ const VariationCard = ({
           e.preventDefault();
           handleSelect();
         }
+      }}
+      draggable={!isEditing && !isGenerating} // Enable dragging when not editing or generating
+      onDragStart={(e) => {
+        if (isEditing || isGenerating) return;
+        
+        setIsDragging(true);
+        
+        // Create data payload for the variation
+        const payload = JSON.stringify({
+          id,
+          variation,
+          output,
+          processed_prompt,
+          tool_calls,
+          slots: {}, // Add any slots if available in your variation data
+          system_prompt: processed_prompt || "" // Use processed_prompt as system_prompt or empty string
+        });
+        
+        // Set the data transfer
+        e.dataTransfer.setData("application/json", payload);
+        e.dataTransfer.effectAllowed = "copy";
+        
+        // Create a ghost image of the card
+        const dragImg = document.createElement("div");
+        dragImg.className = "bg-primary-100 border border-primary-300 rounded p-2 text-sm font-medium text-primary-700";
+        dragImg.innerHTML = `Drag to save: ${variation}`;
+        dragImg.style.position = "absolute";
+        dragImg.style.top = "-1000px";
+        document.body.appendChild(dragImg);
+        
+        e.dataTransfer.setDragImage(dragImg, 0, 0);
+        
+        // Clean up the ghost element after a short delay
+        setTimeout(() => {
+          document.body.removeChild(dragImg);
+        }, 0);
+      }}
+      onDragEnd={() => {
+        setIsDragging(false);
       }}
     >
       {/* Workflow indicator badge */}

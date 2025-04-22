@@ -1799,18 +1799,14 @@ const Generate = ({ context }) => {
                         Updated {new Date(currentWorkflow.updated_at).toLocaleString()} (v{currentWorkflow.version})
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevent parent button click
-                        handleOpenWorkflowModal();
-                      }}
+                    <div
                       className="ml-2 p-1.5 text-blue-600 hover:text-blue-800 rounded hover:bg-blue-100 flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-400"
                       disabled={isGenerating || isParaphrasing || isExecutingWorkflow}
                       title="Edit workflow"
                       aria-label="Edit workflow"
                     >
                       <Icon name="edit" className="w-4 h-4" />
-                    </button>
+                    </div>
                   </button>
                 ) : isLoadingWorkflows ? (
                   <div className="flex items-center justify-center p-2 border rounded bg-gray-50 h-10">
