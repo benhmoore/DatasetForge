@@ -506,9 +506,10 @@ const Generate = ({ context }) => {
                 
                 // Set all nodes to queued initially, including the node name
                 nodeIds.forEach(nodeId => {
-                  const node = currentWorkflow?.nodes?.[nodeId];
+                  // Access nodes through the data property of currentWorkflow
+                  const node = currentWorkflow?.data?.nodes?.[nodeId];
                   const nodeName = node?.name || nodeId; // Get name or fallback to ID
-                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node?.data, `Derived Name: ${nodeName}`); // Added logging
+                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node, `Derived Name: ${nodeName}`); // Added logging
                   nodeStatusMap[variationKey][nodeId] = { 
                     status: 'queued',
                     progress: 0,
@@ -1020,10 +1021,10 @@ const Generate = ({ context }) => {
                 
                 // Set all nodes to queued initially, including the node name
                 nodeIds.forEach(nodeId => {
-                  const node = currentWorkflow?.nodes?.[nodeId];
-                  console.log("USING NODE DETAILS", node);
+                  // Access nodes through the data property of currentWorkflow
+                  const node = currentWorkflow?.data?.nodes?.[nodeId];
                   const nodeName = node?.name || nodeId; // Get name or fallback to ID
-                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node?.data, `Derived Name: ${nodeName}`); // Added logging
+                  console.log(`[Workflow Init] Node ID: ${nodeId}, Node Data:`, node, `Derived Name: ${nodeName}`); // Added logging
                   nodeStatusMap[nodeId] = { 
                     status: 'queued',
                     progress: 0,
