@@ -696,6 +696,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
             allowToggle={true}
             rows={4}
             actionButtons={fileImportButton}
+            aiContext="The user is working on generating content for slots in an AI template."
             helpText={slotValue.length > 100 ? `${slotValue.length.toLocaleString()} characters` : undefined}
           />
         </div>

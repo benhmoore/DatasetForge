@@ -1,5 +1,5 @@
 import { motion } from "motion/react"
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'; // Add useLayoutEffect
 import Icon from './Icons';
 import api from '../api/apiClient'; // Import API client
 import ContextMenu from './ContextMenu'; // Import ContextMenu component
@@ -29,6 +29,9 @@ const CustomTextInput = React.forwardRef(({
   mode = 'both', // 'single', 'multi', or 'both' (default)
   rows = 3,
   
+  // Auto-expand threshold
+  autoExpandThreshold = 100, // New prop - threshold character count to trigger auto-expansion
+  
   // Action buttons
   actionButtons = null,
   
@@ -37,10 +40,17 @@ const CustomTextInput = React.forwardRef(({
   onAiAction = () => {},
   aiActionDisabled = false,
   systemPrompt = null,
+  aiContext = null, // Add new aiContext prop
 
   // Additional styling
   className = '',
-  containerClassName = ''
+  containerClassName = '',
+  
+  // Collapsible functionality
+  collapsible = false,  // New prop to enable collapsible behavior
+  defaultCollapsed = false, // New prop to set initial collapsed state
+  collapsedHeight = '100px', // New prop to set collapsed height
+  previewLines = 3, // New prop to set number of lines to show in preview
 }, ref) => {
   const allowToggle = mode === 'both';
   
@@ -49,6 +59,9 @@ const CustomTextInput = React.forwardRef(({
   
   // State for multi-line expansion
   const [isExpanded, setIsExpanded] = useState(false);
+  
+  // State for collapsible functionality
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   
   // Add loading state for AI button
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -66,19 +79,36 @@ const CustomTextInput = React.forwardRef(({
   // State to store previous value for undo functionality
   const [previousValue, setPreviousValue] = useState('');
   const [canUndo, setCanUndo] = useState(false);
+  // Add state to track user edits after AI generation
+  const [userEditedAfterAi, setUserEditedAfterAi] = useState(false);
   
   // State for animation triggering
   const [generationKey, setGenerationKey] = useState(0);
+  
+  // State for AI button pulse animation
+  const [isAiPulseActive, setIsAiPulseActive] = useState(false);
   
   // References
   const internalInputRef = useRef(null);
   // Use forwarded ref or internal ref
   const inputRef = ref || internalInputRef;
   const aiButtonRef = useRef(null);
+  const contentRef = useRef(null); // New ref for content element
   
   // References for abort controller to cancel API requests
   const abortControllerRef = useRef(null);
   
+  // Generate unique IDs for accessibility, memoized for stability
+  const inputId = useMemo(() => {
+    return id || `input-${name || Math.random().toString(36).substring(2, 9)}`;
+  }, [id, name]); // Recalculate only if id or name props change
+
+  // State for mode switching cursor position tracking
+  const [pendingCursorPosition, setPendingCursorPosition] = useState(null);
+
+  // Add a ref to track if user has explicitly toggled the input type
+  const userToggledRef = useRef(false);
+
   // Auto-focus handling and selection restoration
   useEffect(() => {
     if (autoFocus && inputRef.current) {
@@ -144,20 +174,109 @@ const CustomTextInput = React.forwardRef(({
     }
   }, [isExpanded, value, isMultiline]); // Rerun when expanded state, value, or mode changes
 
+  // Trigger pulse animation when AI loading finishes
+  useEffect(() => {
+    // Check if isAiLoading was previously true and is now false
+    const prevIsAiLoading = sessionStorage.getItem(`prevIsAiLoading_${inputId}`); // Use unique key per instance
+    if (prevIsAiLoading === 'true' && !isAiLoading) {
+      setIsAiPulseActive(true);
+    }
+    // Store current loading state for next render
+    sessionStorage.setItem(`prevIsAiLoading_${inputId}`, isAiLoading.toString());
+
+    // Cleanup session storage on unmount
+    return () => {
+      sessionStorage.removeItem(`prevIsAiLoading_${inputId}`);
+    };
+  }, [isAiLoading, inputId]); // Depend on isAiLoading and inputId
+
+  // Automatically disable pulse after a short duration
+  useEffect(() => {
+    let timer;
+    if (isAiPulseActive) {
+      timer = setTimeout(() => {
+        setIsAiPulseActive(false);
+      }, 1500); // Pulse duration: 1.5 seconds
+    }
+    return () => clearTimeout(timer); // Cleanup timer on unmount or if pulse restarts
+  }, [isAiPulseActive]);
+
+  // Auto-expand to multi-line when text exceeds threshold
+  useEffect(() => {
+    if (
+      allowToggle && 
+      !isMultiline && 
+      value && 
+      value.length > autoExpandThreshold &&
+      !userToggledRef.current // Only auto-expand if user hasn't manually toggled
+    ) {
+      // Capture current cursor position before switching modes
+      if (inputRef.current) {
+        setPendingCursorPosition({
+          start: inputRef.current.selectionStart,
+          end: inputRef.current.selectionEnd
+        });
+      }
+
+      // Auto switch to multi-line mode when text exceeds threshold
+      setIsMultiline(true);
+      
+      // Reset expansion state when auto-switching
+      setIsExpanded(false);
+      
+      // Set a flag to prevent this effect from re-triggering when the input gets focus
+      sessionStorage.setItem(`autoExpanded_${inputId}`, 'true');
+      
+      // Clean up height styles
+      if (inputRef.current) {
+        inputRef.current.style.height = '';
+      }
+      
+      // Focus will be restored by the useLayoutEffect
+    }
+  }, [value, allowToggle, isMultiline, autoExpandThreshold, inputId]);
+
+  // Cleanup auto-expand flag on unmount
+  useEffect(() => {
+    return () => {
+      sessionStorage.removeItem(`autoExpanded_${inputId}`);
+    };
+  }, [inputId]);
+
+  // Reset the user toggle flag when the value significantly changes or empties
+  useEffect(() => {
+    // If text becomes significantly shorter, reset the user toggle flag
+    if (value && value.length < autoExpandThreshold / 2) {
+      userToggledRef.current = false;
+    }
+  }, [value, autoExpandThreshold]);
+
+  // Handle focus and cursor restoration after mode changes
+  useLayoutEffect(() => {
+    if (inputRef.current && pendingCursorPosition) {
+      // Apply focus and restore cursor position synchronously after DOM updates
+      inputRef.current.focus();
+      inputRef.current.setSelectionRange(
+        pendingCursorPosition.start, 
+        pendingCursorPosition.end
+      );
+      // Clear the pending position
+      setPendingCursorPosition(null);
+    }
+  }, [isMultiline, pendingCursorPosition]); // Runs after mode changes or when cursor position updates
+
   // Toggle between input types
   const handleToggle = () => {
     if (allowToggle) {
+      // Mark that the user has explicitly toggled
+      userToggledRef.current = true;
+      
       // Capture current selection before toggle
       if (inputRef.current) {
-        const currentSelectionStart = inputRef.current.selectionStart;
-        const currentSelectionEnd = inputRef.current.selectionEnd;
-        
-        if (currentSelectionEnd > currentSelectionStart) {
-          setSelectionRange({ 
-            start: currentSelectionStart, 
-            end: currentSelectionEnd 
-          });
-        }
+        setPendingCursorPosition({
+          start: inputRef.current.selectionStart,
+          end: inputRef.current.selectionEnd
+        });
       }
       
       setIsMultiline(prev => !prev);
@@ -166,7 +285,23 @@ const CustomTextInput = React.forwardRef(({
       if (inputRef.current) {
         inputRef.current.style.height = '';
       }
+      
+      // Focus will be restored by the useLayoutEffect
     }
+  };
+
+  // Toggle collapsed state
+  const toggleCollapsed = () => {
+    setIsCollapsed(prev => !prev);
+  };
+
+  // Generate preview text for collapsed view
+  const generatePreview = () => {
+    if (!value) return '';
+    const lines = value.split('\n');
+    if (lines.length <= previewLines) return value;
+    
+    return lines.slice(0, previewLines).join('\n') + '...';
   };
 
   // Handle double-click on action bar to expand/collapse textarea
@@ -192,20 +327,24 @@ const CustomTextInput = React.forwardRef(({
       return;
     }
 
+    // Reset selection state at the start of the action
+    setSelectionRange(null); 
+    // Reset user edit tracking for new AI generation
+    setUserEditedAfterAi(false);
+
     const inputElement = inputRef.current;
     const currentSelectionStart = inputElement.selectionStart;
     const currentSelectionEnd = inputElement.selectionEnd;
     let textToSend = value;
-    let localSelectionRange = null;
+    let currentActionSelectionRange = null; // Use a temporary variable for this specific action
 
     // Check if there is a selection
     if (currentSelectionEnd > currentSelectionStart) {
       textToSend = value.substring(currentSelectionStart, currentSelectionEnd);
-      localSelectionRange = { start: currentSelectionStart, end: currentSelectionEnd };
-      setSelectionRange(localSelectionRange); // Store selection range
-    } else {
-      setSelectionRange(null); // No selection
-    }
+      currentActionSelectionRange = { start: currentSelectionStart, end: currentSelectionEnd };
+      setSelectionRange(currentActionSelectionRange); // Store selection range in state for potential restoration
+    } 
+    // No need for an else block to set state to null, it was reset above
 
     if (!textToSend || !textToSend.trim()) {
       setAiValidationError("Please enter or select some text before using the AI assistant.");
@@ -232,7 +371,8 @@ const CustomTextInput = React.forwardRef(({
         if (responseData.output) {
           let newValue;
           const currentVal = value; // Use state value at the time of call
-          const range = selectionRange || localSelectionRange; // Use stored or local range
+          // Use the selection range captured specifically for this action
+          const range = currentActionSelectionRange; 
           let newSelectionRange = null;
 
           if (range) {
@@ -246,14 +386,14 @@ const CustomTextInput = React.forwardRef(({
             const newEnd = range.start + responseData.output.length;
             newSelectionRange = { start: range.start, end: newEnd };
             
-            // Update the selection range to match the generated text
-            setSelectionRange(newSelectionRange);
+            // Update the selection range state to match the generated text
+            setSelectionRange(newSelectionRange); 
           } else {
             // Replace the entire text
             newValue = responseData.output;
             // Create a selection range for the entire output
             newSelectionRange = { start: 0, end: responseData.output.length };
-            setSelectionRange(newSelectionRange);
+            setSelectionRange(newSelectionRange); // Update state for restoration
           }
           
           // Call onChange to update the value in the parent
@@ -270,7 +410,9 @@ const CustomTextInput = React.forwardRef(({
         }
       };
 
-      const finalSystemPrompt = systemPromptOverride || systemPrompt || "Please concisely and diligently follow the following request. Provide the output only. Do not add any extra information or comments.";
+      // Construct the final system prompt, incorporating aiContext if provided
+      const baseSystemPrompt = systemPromptOverride || systemPrompt || "Please concisely and diligently follow the following request. Provide the output only. Do not add any extra information or comments.";
+      const finalSystemPrompt = aiContext ? `${aiContext}\n\n${baseSystemPrompt}` : baseSystemPrompt;
 
       await api.generateSimple(textToSend, name, onData, signal, finalSystemPrompt);
     } catch (error) {
@@ -282,8 +424,24 @@ const CustomTextInput = React.forwardRef(({
       }
     } finally {
       setIsAiLoading(false);
-      // We don't clear selection range here, as we want to preserve it after loading
+      // Clear the selection range state after the action is fully complete,
+      // but allow the useEffect hook to potentially restore focus/selection first.
+      // Use a small timeout to ensure state updates related to loading=false have propagated.
+      setTimeout(() => {
+        setSelectionRange(null);
+      }, 0);
     }
+  };
+
+  // Wrap onChange to track user edits after AI generation
+  const handleChange = (e) => {
+    // If we can undo (meaning AI generation was done) and user is making changes
+    if (canUndo && !isAiLoading) {
+      setUserEditedAfterAi(true);
+    }
+    
+    // Call the original onChange handler
+    onChange(e);
   };
 
   // Handle AI action with API call
@@ -331,6 +489,9 @@ const CustomTextInput = React.forwardRef(({
       return; // Don't proceed if disabled or already loading
     }
     
+    // Reset selection state before checking for a new one
+    setSelectionRange(null); 
+    
     const inputElement = inputRef.current;
     const currentSelectionStart = inputElement.selectionStart;
     const currentSelectionEnd = inputElement.selectionEnd;
@@ -342,7 +503,7 @@ const CustomTextInput = React.forwardRef(({
       return;
     }
     
-    // Store the selection range immediately when opening the menu
+    // Store the selection range immediately when opening the menu if there is one
     if (hasSelection) {
       setSelectionRange({ start: currentSelectionStart, end: currentSelectionEnd });
     }
@@ -390,8 +551,8 @@ const CustomTextInput = React.forwardRef(({
     await performAiAction(systemPromptToUse);
   };
 
-  // Generate unique IDs for accessibility
-  const inputId = id || `input-${name || Math.random().toString(36).substring(2, 9)}`;
+  // Generate unique IDs for accessibility - MOVED EARLIER
+  // const inputId = id || `input-${name || Math.random().toString(36).substring(2, 9)}`; 
   const helpTextId = helpText ? `${inputId}-help` : undefined;
   const errorId = error ? `${inputId}-error` : undefined;
   const aiErrorId = aiValidationError ? `${inputId}-ai-error` : undefined;
@@ -418,8 +579,8 @@ const CustomTextInput = React.forwardRef(({
     ${error ? 'border-red-300' : ''}
   `;
   
-  // Undo button
-  const undoButton = canUndo ? (
+  // Undo button - only show if user hasn't made edits after AI generation
+  const undoButton = canUndo && !userEditedAfterAi ? (
     <button
       onClick={handleUndo}
       className="p-2 m-1 text-primary-700 bg-primary-100 hover:bg-primary-200 hover:text-primary-800 transition-colors rounded-full" // Updated classes for filled background
@@ -432,9 +593,23 @@ const CustomTextInput = React.forwardRef(({
     </button>
   ) : null;
 
+  // Collapse/Expand button (only for collapsible inputs)
+  const collapseButton = collapsible ? (
+    <button
+      onClick={toggleCollapsed}
+      className="p-2 m-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors rounded-full"
+      title={isCollapsed ? "Expand" : "Collapse"}
+      disabled={disabled || isAiLoading}
+      type="button"
+      aria-label={isCollapsed ? "Expand content" : "Collapse content"}
+    >
+      <Icon name={isCollapsed ? "maximize-2" : "minimize-2"} className="h-4 w-4" />
+    </button>
+  ) : null;
+
   // Prepare AI action button if enabled
   const aiButton = showAiActionButton ? (
-    <button
+    <motion.button
       ref={aiButtonRef}
       onClick={handleAiButtonClick}
       className={`p-2 m-1 text-primary-500 hover:text-primary-700 hover:bg-gray-100 transition-colors rounded-full ${(!value.trim() && (!inputRef.current || inputRef.current.selectionEnd <= inputRef.current.selectionStart)) || isAiLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -442,13 +617,16 @@ const CustomTextInput = React.forwardRef(({
       disabled={disabled || aiActionDisabled || isAiLoading || (!value.trim() && (!inputRef.current || inputRef.current.selectionEnd <= inputRef.current.selectionStart))}
       type="button"
       aria-label={isAiLoading ? "Generating content" : "Use AI assistant"}
+      // Pulse animation
+      animate={isAiPulseActive ? { scale: [1, 1.2, 1], opacity: [1, 0.7, 1] } : { scale: 1, opacity: 1 }}
+      transition={isAiPulseActive ? { duration: 0.5, repeat: 2, ease: "easeInOut" } : { duration: 0.2 }} // Repeat pulse twice
     >
       {isAiLoading ? (
         <Icon name="spinner" className="h-4 w-4 animate-spin" />
       ) : (
         <Icon name="sparkles" className="h-4 w-4" />
       )}
-    </button>
+    </motion.button>
   ) : null;
 
   // Function to ensure any child action buttons have consistent styling
@@ -486,6 +664,7 @@ const CustomTextInput = React.forwardRef(({
   // Combine custom action buttons with AI button and undo button if needed
   const combinedActionButtons = (
     <>
+      {collapseButton}
       {undoButton}
       {aiButton}
       {actionButtons && (
@@ -493,6 +672,29 @@ const CustomTextInput = React.forwardRef(({
       )}
     </>
   );
+
+  // Collapsed view styles and content
+  const collapsedViewClasses = `
+    overflow-hidden transition-all duration-300 ease-in-out
+    ${isCollapsed ? `max-h-[${collapsedHeight}]` : 'max-h-[1000px]'}
+  `;
+
+  // Function to render the collapsed preview
+  const renderCollapsedPreview = () => {
+    return (
+      <div 
+        className="w-full p-3 bg-gray-50 border border-gray-200 text-gray-600 text-sm rounded-md cursor-pointer relative"
+        onClick={toggleCollapsed}
+        aria-label="Click to edit content"
+      >
+        <div className="whitespace-pre-wrap mb-2">{generatePreview()}</div>
+        <div className="text-xs text-primary-600 text-center absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-50 to-transparent pt-6 pb-1">
+          Click to expand
+          <Icon name="chevron-down" className="h-4 w-4 mx-auto mt-1" />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <motion.div
@@ -510,84 +712,107 @@ const CustomTextInput = React.forwardRef(({
             {required && <span className="text-red-500 ml-1">*</span>}
           </label>
           
-          {allowToggle && (
-            <button
-              type="button"
-              onClick={handleToggle}
-              className="text-xs text-primary-600 hover:text-primary-800 flex items-center"
-              disabled={disabled}
-              aria-label={isMultiline ? 'Switch to single line' : 'Switch to multi-line'}
-            >
-              {isMultiline ? (
-                <>
-                  <Icon name="minimize-2" className="h-3 w-3 mr-1" />
-                  Single Line
-                </>
-              ) : (
-                <>
-                  <Icon name="maximize-2" className="h-3 w-3 mr-1" />
-                  Multi-line
-                </>
-              )}
-            </button>
-          )}
+          <div className="flex items-center space-x-2">
+            {/* Show toggle for input types if allowed */}
+            {allowToggle && (
+              <button
+                type="button"
+                onClick={handleToggle}
+                className="text-xs text-primary-600 hover:text-primary-800 flex items-center"
+                disabled={disabled}
+                aria-label={isMultiline ? 'Switch to single line' : 'Switch to multi-line'}
+              >
+                {isMultiline ? (
+                  <>
+                    <Icon name="minimize-2" className="h-3 w-3 mr-1" />
+                    Single Line
+                  </>
+                ) : (
+                  <>
+                    <Icon name="maximize-2" className="h-3 w-3 mr-1" />
+                    Multi-line
+                  </>
+                )}
+              </button>
+            )}
+            
+            {/* Show collapse toggle if collapsible */}
+            {collapsible && !isCollapsed && (
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="text-xs text-primary-600 hover:text-primary-800 flex items-center"
+                disabled={disabled}
+                aria-label="Collapse content"
+              >
+                <Icon name="minimize-2" className="h-3 w-3 mr-1" />
+                Collapse
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Input container with flex for action buttons */}
-      {isMultiline ? (
-        <div className="flex flex-col">
-          {/* Multiline mode: Actions on top */}
-          {(combinedActionButtons) && (
-            <div 
-              className={actionButtonsContainerClasses}
-              onDoubleClick={handleActionBarDoubleClick} // Add double-click handler
-              title={isExpanded ? "Double-click to collapse" : "Double-click to expand"} // Add tooltip
-            >
-              {combinedActionButtons}
-            </div>
-          )}
-          <textarea
-            ref={inputRef}
-            id={inputId}
-            name={name}
-            value={value}
-            onChange={onChange}
-            onBlur={onBlur}
-            placeholder={placeholder}
-            disabled={disabled || isAiLoading} // Disable textarea when loading
-            rows={isExpanded ? undefined : rows} // Conditionally apply rows
-            className={baseInputClasses}
-            aria-invalid={!!error}
-            aria-describedby={describedBy}
-            // Remove inline style for height, managed by useEffect now
-          />
-        </div>
+      {/* Either show collapsed preview OR input field */}
+      {collapsible && isCollapsed ? (
+        renderCollapsedPreview()
       ) : (
-        // Single line mode: Actions on the right
-        <div className="flex items-stretch">
-          <input
-            ref={inputRef}
-            id={inputId}
-            name={name}
-            type="text"
-            value={value}
-            onChange={onChange}
-            onBlur={onBlur}
-            placeholder={placeholder}
-            disabled={disabled || isAiLoading} // Disable input when loading
-            className={baseInputClasses}
-            aria-invalid={!!error}
-            aria-describedby={describedBy}
-          />
-          
-          {/* Action buttons */}
-          {(combinedActionButtons) && (
-            <div className={actionButtonsContainerClasses}>
-              {combinedActionButtons}
+        <>
+          {isMultiline ? (
+            <div className="flex flex-col">
+              {/* Multiline mode: Actions on top */}
+              {(combinedActionButtons) && (
+                <div 
+                  className={actionButtonsContainerClasses}
+                  onDoubleClick={handleActionBarDoubleClick} // Add double-click handler
+                  title={isExpanded ? "Double-click to collapse" : "Double-click to expand"} // Add tooltip
+                >
+                  {combinedActionButtons}
+                </div>
+              )}
+              <textarea
+                ref={inputRef}
+                id={inputId}
+                name={name}
+                value={value}
+                onChange={handleChange} // Use our wrapped onChange
+                onBlur={onBlur}
+                placeholder={placeholder}
+                disabled={disabled || isAiLoading} // Disable textarea when loading
+                rows={isExpanded ? undefined : rows} // Conditionally apply rows
+                className={baseInputClasses}
+                aria-invalid={!!error}
+                aria-describedby={describedBy}
+                // Remove inline style for height, managed by useEffect now
+              />
+            </div>
+          ) : (
+            // Single line mode: Actions on the right
+            <div className="flex items-stretch">
+              <input
+                ref={inputRef}
+                id={inputId}
+                name={name}
+                type="text"
+                value={value}
+                onChange={handleChange} // Use our wrapped onChange
+                onBlur={onBlur}
+                placeholder={placeholder}
+                disabled={disabled || isAiLoading} // Disable input when loading
+                className={baseInputClasses}
+                aria-invalid={!!error}
+                aria-describedby={describedBy}
+              />
+              
+              {/* Action buttons */}
+              {(combinedActionButtons) && (
+                <div className={actionButtonsContainerClasses}>
+                  {combinedActionButtons}
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
       )}
 
       {/* Help text */}
