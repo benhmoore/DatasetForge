@@ -571,10 +571,14 @@ const CustomTextInput = React.forwardRef(({
     w-full p-2 border transition-colors duration-200
     ${error ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' 
             : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500'}
-    ${disabled || isAiLoading ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''} // Disable input when loading
-    ${(actionButtons || showAiActionButton || canUndo) && !isMultiline ? 'rounded-r-none' : ''}
-    ${isMultiline ? 'rounded-t-none rounded-b-md text-sm overflow-y-hidden' : 'rounded-md'} // Add overflow-y-hidden initially
-    ${isMultiline && isExpanded ? 'max-h-[70vh] overflow-y-auto' : ''} // Add max-height and overflow-y-auto when expanded
+    ${disabled || isAiLoading ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''}
+    ${(!isMultiline && (
+        (actionButtons) || 
+        (showAiActionButton && !(disabled || aiActionDisabled)) || 
+        (canUndo && !userEditedAfterAi)
+      )) ? 'rounded-r-none' : ''}
+    ${isMultiline ? 'rounded-t-none rounded-b-md text-sm overflow-y-hidden' : 'rounded-md'}
+    ${isMultiline && isExpanded ? 'max-h-[70vh] overflow-y-auto' : ''}
     ${className}
   `;
   

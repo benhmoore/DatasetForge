@@ -11,21 +11,24 @@ const ExampleTableHeader = ({
   isSearching,
   isProcessing,
   hasExamples,
-  onClearSearch
+  onClearSearch,
+  searchInputRef  // Accept the ref from parent
 }) => {
-  const searchInputRef = useRef(null);
+  // Use provided ref or create a local one if not provided
+  const localSearchInputRef = useRef(null);
+  const effectiveSearchInputRef = searchInputRef || localSearchInputRef;
   const [isFocused, setIsFocused] = useState(false);
 
   // Focus the search input via custom event
   useEffect(() => {
     const handleFocusSearch = () => {
-      searchInputRef.current?.focus();
+      effectiveSearchInputRef.current?.focus();
     };
     
     // Listen for the custom event
     window.addEventListener('focusSearchInput', handleFocusSearch);
     return () => window.removeEventListener('focusSearchInput', handleFocusSearch);
-  }, []);
+  }, [effectiveSearchInputRef]);
 
   return (
     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 px-4 py-3">
@@ -39,25 +42,25 @@ const ExampleTableHeader = ({
         )}
       </div>
       
-      {/* Search with enhanced UI */}
-      <div className={`relative w-full md:w-64 transition-all duration-200 ${isFocused ? 'md:w-80' : ''}`}>
-        <div className={`flex items-center border rounded-md overflow-hidden transition-all ${
+      {/* Improved search UI */}
+      <div className={`relative w-full md:w-64 transition-all duration-200 ${isFocused ? 'md:w-96' : ''}`}>
+        <div className={`flex items-center border rounded-md overflow-hidden shadow-sm transition-all ${
           isFocused 
-            ? 'ring-2 ring-primary-500 border-primary-500' 
+            ? 'ring-1 ring-primary-500 border-primary-500' 
             : 'border-gray-300 hover:border-gray-400'
         }`}>
           <div className="pl-3 py-2 flex items-center pointer-events-none">
             {isSearching ? (
-              <Icon name="spinner" className="animate-spin h-5 w-5 text-primary-500" aria-hidden="true" />
+              <Icon name="spinner" className="animate-spin h-4 w-4 text-primary-500" aria-hidden="true" />
             ) : (
-              <Icon name="search" className={`h-5 w-5 ${isFocused ? 'text-primary-500' : 'text-gray-400'}`} aria-hidden="true" />
+              <Icon name="search" className={`h-4 w-4 ${isFocused ? 'text-primary-500' : 'text-gray-400'}`} aria-hidden="true" />
             )}
           </div>
           
           <input
             type="text"
-            className="w-full pl-2 pr-8 py-2 focus:outline-none bg-transparent"
-            placeholder="Search examples..."
+            className="w-full pl-2 pr-8 py-2 text-sm focus:outline-none bg-transparent"
+            placeholder="Search examples (↵ to search)"
             value={searchValue}
             onChange={(e) => onSearchChange(e.target.value)}
             onFocus={() => setIsFocused(true)}
@@ -65,18 +68,20 @@ const ExampleTableHeader = ({
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                // Dispatch a custom event to trigger search
+                // Immediately trigger search without needing event dispatch
                 window.dispatchEvent(new CustomEvent('triggerSearch', { detail: searchValue }));
                 // Keep focus on input
                 e.target.focus();
-              } else if (e.key === 'Escape' && searchValue) {
+              } else if (e.key === 'Escape') {
                 e.preventDefault();
-                onClearSearch();
-                // Keep focus on input
-                e.target.focus();
+                if (searchValue) {
+                  onClearSearch();
+                } else {
+                  e.target.blur(); // Blur the field if empty
+                }
               }
             }}
-            ref={searchInputRef}
+            ref={effectiveSearchInputRef}
             aria-label="Search examples"
           />
           
@@ -87,24 +92,25 @@ const ExampleTableHeader = ({
                 e.preventDefault();
                 e.stopPropagation();
                 onClearSearch();
-                // Focus immediately without timeout - the event won't bubble up
-                searchInputRef.current?.focus();
+                // Focus immediately without timeout
+                effectiveSearchInputRef.current?.focus();
               }}
-              title="Clear search"
+              title="Clear search (Esc)"
               aria-label="Clear search"
             >
               <Icon 
                 name="close" 
-                className="h-5 w-5 text-gray-400 hover:text-gray-600" 
+                className="h-4 w-4 text-gray-400 hover:text-gray-600" 
                 aria-hidden="true" 
               />
             </button>
           )}
         </div>
         
-        {searchValue && !isSearching && (
-          <div className="absolute right-0 -bottom-6 text-xs text-gray-500">
-            Press Enter to search
+        {isFocused && !isSearching && (
+          <div className="absolute right-0 -bottom-5 text-xs text-gray-500 bg-white px-1 rounded">
+            <kbd className="px-1 py-0.5 text-xs border border-gray-300 rounded">⌘F</kbd> to focus
+            {searchValue && <> • <kbd className="px-1 py-0.5 text-xs border border-gray-300 rounded">Enter</kbd> to search</>}
           </div>
         )}
       </div>

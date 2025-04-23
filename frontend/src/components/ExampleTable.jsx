@@ -35,10 +35,11 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   // For bulk paraphrase modal
   const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
   
-  // Modern search implementation with state
+  // Improved search implementation with state
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const searchTimeoutRef = useRef(null);
   
   // For context menu
   const [contextMenu, setContextMenu] = useState(null); // { x, y, exampleId }
@@ -46,27 +47,49 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   // For drag and drop functionality
   const [isDragOver, setIsDragOver] = useState(false);
   const tableRef = useRef(null);
+  const searchInputRef = useRef(null);
   
-  // Use useEffect for debouncing search
+  // Use useEffect for debouncing auto-search (when user stops typing)
   useEffect(() => {
-    // Skip initial render
+    // Skip initial render or when values are already the same
     if (searchTerm === debouncedSearchTerm) return;
     
-    const timerId = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-      if (searchTerm) {
-        setPage(1); // Reset to first page when search changes
-      }
-    }, 500); // 500ms debounce delay
+    // Clear any existing timer
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
     
-    // Cleanup timer on every searchTerm change
-    return () => clearTimeout(timerId);
+    // Don't auto-search on these conditions:
+    // 1. Backspacing to empty (let user press Enter to clear search explicitly)
+    // 2. Very short search terms (to avoid too many requests)
+    if (searchTerm === '' || searchTerm.length < 2) {
+      return;
+    }
+    
+    // Set a new timer for debounced search
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setPage(1); // Reset to first page when search changes
+    }, 600); // Slightly longer debounce (600ms) for better UX
+    
+    // Cleanup timer on unmount or when searchTerm changes again
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, [searchTerm]);
   
   // Handle clearing search
   const handleClearSearch = useCallback(() => {
+    // Clear any pending search
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
     setSearchTerm('');
     setDebouncedSearchTerm('');
+    
     // Only trigger a search fetch if we actually had a previous search term
     if (debouncedSearchTerm) {
       setPage(1);
@@ -131,8 +154,17 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   // Listen for search trigger events from ExampleTableHeader
   useEffect(() => {
     const handleTriggerSearch = (e) => {
+      // Cancel any pending debounce
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      
+      // Immediately apply search term when user presses Enter
       setDebouncedSearchTerm(searchTerm);
       setPage(1);
+      
+      // Show visual feedback that search is happening
+      setIsSearching(true);
     };
     
     window.addEventListener('triggerSearch', handleTriggerSearch);
@@ -430,31 +462,53 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
     }
   }, [examples, slotKeys, handleSaveEdit, handleCancelEdit, handleStartEdit]);
   
-  // Enhanced search function that's memoized and doesn't trigger re-renders
-  const optimizedSearchDebounce = useCallback((searchValue) => {
-    setSearchTerm(searchValue);
-    // Visual feedback that search is happening
-    setIsSearching(true);
-  }, [setSearchTerm, setIsSearching]);
+  // Enhanced search input handler with better feedback
+  const handleSearchInput = useCallback((searchValue) => {
+    // When user types in search box, show immediate feedback
+    if (searchValue !== searchTerm) {
+      setSearchTerm(searchValue);
+      
+      // Only show searching indicator if typed value is significant
+      if (searchValue.length >= 2) {
+        setIsSearching(true);
+      }
+    }
+  }, [searchTerm]);
   
-  // Keyboard shortcut for search focus managed in ExampleTableHeader component
-  // Using a custom event to communicate with the header component
+  // Keyboard shortcut for search focus and table navigation
   const triggerSearchFocus = useCallback(() => {
     window.dispatchEvent(new CustomEvent('focusSearchInput'));
   }, []);
   
   useEffect(() => {
-    const handleSearchShortcut = (e) => {
+    const handleKeyboardShortcuts = (e) => {
+      // Don't trigger shortcuts if user is in an input field (except for search)
+      const targetIsInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
+      const targetIsSearchInput = targetIsInput && e.target === document.activeElement && e.target === searchInputRef?.current;
+      
       // Ctrl+F or Cmd+F to focus search
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
         triggerSearchFocus();
+        return;
+      }
+      
+      // If we're not in an input or we're specifically in the search input
+      if (!targetIsInput || targetIsSearchInput) {
+        // Add page navigation shortcuts
+        if (e.key === 'ArrowLeft' && !targetIsInput && page > 1) {
+          e.preventDefault();
+          handlePageChange(page - 1);
+        } else if (e.key === 'ArrowRight' && !targetIsInput && page < totalPages) {
+          e.preventDefault();
+          handlePageChange(page + 1);
+        }
       }
     };
     
-    window.addEventListener('keydown', handleSearchShortcut);
-    return () => window.removeEventListener('keydown', handleSearchShortcut);
-  }, [triggerSearchFocus]);
+    window.addEventListener('keydown', handleKeyboardShortcuts);
+    return () => window.removeEventListener('keydown', handleKeyboardShortcuts);
+  }, [triggerSearchFocus, page, totalPages, handlePageChange]);
 
   // Handle drag over event
   const handleDragOver = (e) => {
@@ -609,11 +663,12 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
         handleParaphraseSelected={handleParaphraseSelected}
         handleExport={handleExport}
         searchValue={searchTerm}
-        onSearchChange={setSearchTerm}
+        onSearchChange={handleSearchInput}
         isSearching={isSearching}
         isProcessing={isProcessing}
         hasExamples={examples.length > 0}
         onClearSearch={handleClearSearch}
+        searchInputRef={searchInputRef}
       />
       
       {examples.length === 0 ? (
