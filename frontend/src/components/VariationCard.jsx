@@ -538,25 +538,75 @@ const VariationCard = ({
   // Main render for normal state
   return (
     <div 
+      ref={outputDisplayRef}
       className={`p-4 bg-white rounded-lg border ${
         isSelected 
           ? 'border-primary-300 ring-2 ring-primary-200' // Style for selected
           : 'border-gray-200'
       } shadow-sm transition-all duration-200 hover:shadow-md ${
         isSelected ? 'scale-[1.01]' : 'hover:scale-[1.01]'
-      } relative cursor-pointer ${isDragging ? 'opacity-50' : ''}`} // Add dragging opacity effect
+      } relative cursor-pointer ${isDragging ? 'opacity-50' : ''} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-300`} // Added visible focus styles
       onClick={handleSelect} // Make the whole card clickable for selection
       role="checkbox" // Role for accessibility
       aria-checked={isSelected} // State for accessibility
       tabIndex={0} // Make it focusable
+      data-variation-id={id} // Add data attribute for auto-focusing
       onKeyDown={(e) => {
-        // Only handle space key when not in an input element
+        // Space to toggle selection
         if (e.key === ' ' && 
             e.target.tagName !== 'INPUT' && 
             e.target.tagName !== 'TEXTAREA' && 
             !e.target.isContentEditable) {
           e.preventDefault();
           handleSelect();
+        }
+        // Delete or Backspace key to remove card
+        else if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          onDismiss();
+        }
+        // Arrow key navigation between cards
+        else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+          e.preventDefault();
+          
+          // Get all focusable variation cards
+          const cards = Array.from(document.querySelectorAll('[data-variation-id]'));
+          if (cards.length <= 1) return; // No navigation needed with only one card
+          
+          const currentIndex = cards.findIndex(card => card === e.target);
+          if (currentIndex === -1) return;
+          
+          let nextIndex;
+          const cardsPerRow = window.innerWidth >= 768 ? 2 : 1; // Based on md:grid-cols-2
+          
+          switch(e.key) {
+            case 'ArrowLeft':
+              nextIndex = currentIndex > 0 ? currentIndex - 1 : cards.length - 1;
+              break;
+            case 'ArrowRight':
+              nextIndex = currentIndex < cards.length - 1 ? currentIndex + 1 : 0;
+              break;
+            case 'ArrowUp':
+              nextIndex = currentIndex - cardsPerRow;
+              if (nextIndex < 0) {
+                // Go to last row, same column
+                const lastRowItems = cards.length % cardsPerRow || cardsPerRow;
+                const column = currentIndex % cardsPerRow;
+                nextIndex = cards.length - lastRowItems + Math.min(column, lastRowItems - 1);
+              }
+              break;
+            case 'ArrowDown':
+              nextIndex = currentIndex + cardsPerRow;
+              if (nextIndex >= cards.length) {
+                // Go to first row, same column
+                nextIndex = currentIndex % cardsPerRow;
+              }
+              break;
+          }
+          
+          if (nextIndex >= 0 && nextIndex < cards.length) {
+            cards[nextIndex].focus();
+          }
         }
       }}
       draggable={!isEditing && !isGenerating} // Enable dragging when not editing or generating

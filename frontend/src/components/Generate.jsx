@@ -1372,27 +1372,46 @@ const Generate = ({ context }) => {
       return;
     }
 
+    console.log("Selected Variations: ", selectedVariations);
+    console.log("Current Variations Reference: ", variationsRef.current);
+    
+    // Get variations to save - log the results to see if they're correctly found
     const variationsToSave = Array.from(selectedVariations)
-      .map(id => variationsRef.current.find(v => v.id === id))
-      .filter(v => v); // Filter out any potential undefined if ID mismatch
-
+      .map(id => {
+        const variation = variationsRef.current.find(v => v.id === id);
+        if (!variation) {
+          console.error(`Couldn't find variation with ID: ${id}`);
+        }
+        return variation;
+      })
+      .filter(v => v);
+    
+    console.log("Variations to save found: ", variationsToSave.length);
+    
     const examplesToSave = variationsToSave.map(variation => {
       let slotData = variation.slots || {};
+      console.log("Processing variation: ", variation.id, variation.variation);
       
       // Ensure template_id exists, fall back to current template if missing
       const templateId = variation.template_id || selectedTemplate?.id;
       
       if (!templateId) {
-        console.error(`Missing template_id for variation ${variation.id}. Cannot save.`);
+        console.error(`Missing template_id for variation ${variation.id}. Cannot save.`, variation);
         toast.error(`Error saving variation ${variation.variation}: No template associated.`);
         return null; // Skip this variation
       }
       
       // Find the original template used for this variation
       const originalTemplate = templates.find(t => t.id === templateId);
+      
+      console.log("Template ID: ", templateId, "Template Found: ", !!originalTemplate);
 
       if (!originalTemplate) {
-        console.error(`Could not find template with ID ${templateId} for variation ${variation.id}. Skipping save.`);
+        console.error(`Could not find template with ID ${templateId} for variation ${variation.id}. Skipping save.`, {
+          templateId,
+          variationId: variation.id,
+          availableTemplates: templates.map(t => ({ id: t.id, name: t.name }))
+        });
         toast.error(`Error saving variation ${variation.variation}: Original template not found.`);
         return null; // Skip this variation
       }
@@ -1407,6 +1426,8 @@ const Generate = ({ context }) => {
         tool_calls: variation.tool_calls || null
       };
     }).filter(example => example !== null); // Filter out skipped variations
+    
+    console.log("Examples to save after processing: ", examplesToSave.length);
 
     if (examplesToSave.length === 0) {
       toast.warning('No valid variations could be prepared for saving.');
@@ -1715,12 +1736,18 @@ const Generate = ({ context }) => {
   // Determine button text and action based on selected variations
   const saveButtonText = selectedCount > 0
     ? `Save Selected (${selectedCount})`
-    : `Save All (${validVariationsCount})`;
+    : 'Select Cards to Save';
 
-  const handleSaveClick = selectedCount > 0 ? handleSaveSelectedToDataset : handleSaveAllValidToDataset;
+  const handleSaveClick = () => {
+    if (selectedCount > 0) {
+      handleSaveSelectedToDataset();
+    } else {
+      toast.info('Please select at least one card to save');
+    }
+  };
 
-  // Determine if the save button should be enabled
-  const isSaveButtonDisabled = (selectedCount === 0 && validVariationsCount === 0) || selectedDataset?.archived || isGenerating || isParaphrasing;
+  // Determine if the save button should be enabled - only enable when cards are selected
+  const isSaveButtonDisabled = selectedCount === 0 || selectedDataset?.archived || isGenerating || isParaphrasing;
 
   // Determine Clear button text and disabled state
   const clearButtonText = selectedCount > 0
@@ -1732,6 +1759,66 @@ const Generate = ({ context }) => {
     value: template.id,
     label: template.name
   }));
+
+  // Global keyboard handler for saving cards with Cmd/Ctrl+S
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Save selected cards with Cmd/Ctrl+S, but only when there are selections
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault(); // Prevent browser save dialog
+        
+        // Only proceed if there are selected items
+        if (selectedCount > 0 && !isSaveButtonDisabled) {
+          handleSaveSelectedToDataset();
+        } else if (!selectedCount && !isSaveButtonDisabled) {
+          toast.info('Please select at least one card to save');
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown); // Fixed the cleanup function
+    };
+  }, [selectedCount, isSaveButtonDisabled, handleSaveSelectedToDataset]);
+
+  useEffect(() => {
+    variationsRef.current = variations;
+  }, [variations]);
+
+  // Auto-focus the newest card when variations change
+  useEffect(() => {
+    if (variations.length > 0) {
+      // Give time for rendering to complete, especially for workflow processing
+      const timeoutDelay = 300; // Increased from 100ms to 300ms
+      
+      // Prioritize focusing completed cards that were previously generating
+      // Look for cards that just finished generating (newly completed)
+      const justCompletedCard = variations.find(v => 
+        !v.isGenerating && 
+        !v.error && 
+        v._source === 'workflow_output' || v._source === 'stream'
+      );
+      
+      // If no newly completed card found, focus the first non-generating card
+      const cardToFocus = justCompletedCard || variations.find(v => !v.isGenerating && !v.error);
+      
+      if (cardToFocus) {
+        // Use setTimeout to ensure the DOM has updated
+        setTimeout(() => {
+          const cardElement = document.querySelector(`[data-variation-id="${cardToFocus.id}"]`);
+          if (cardElement) {
+            // Scroll into view if needed before focusing
+            cardElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            cardElement.focus();
+            console.log(`Focused variation card: ${cardToFocus.id}, variation: ${cardToFocus.variation}`);
+          } else {
+            console.log(`Could not find card element with id: ${cardToFocus.id}`);
+          }
+        }, timeoutDelay);
+      }
+    }
+  }, [variations]);
 
   return (
     <div className="space-y-8 w-full">
@@ -1930,6 +2017,32 @@ const Generate = ({ context }) => {
 
         <div className="px-4 pt-4">
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
+          
+          {/* Keyboard Shortcut Cheatsheet */}
+          <div className="bg-gray-50 border border-gray-200 rounded-md p-3 mb-4">
+            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
+              <Icon name="keyboard" className="h-4 w-4 mr-1.5 text-gray-500" />
+              Keyboard Shortcuts
+            </h4>
+            <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+              <div className="flex items-center">
+                <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">←↑→↓</kbd>
+                <span>Navigate between cards</span>
+              </div>
+              <div className="flex items-center">
+                <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">Space</kbd>
+                <span>Select/deselect card</span>
+              </div>
+              <div className="flex items-center">
+                <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">Delete/Backspace</kbd>
+                <span>Remove current card</span>
+              </div>
+              <div className="flex items-center">
+                <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+S</kbd>
+                <span>Save selected cards to dataset</span>
+              </div>
+            </div>
+          </div>
 
           {(variations && variations.length === 0 && !isGenerating) ? (
             <div className="p-6 bg-gray-50 rounded-lg border border-gray-200 text-center">
@@ -1944,25 +2057,25 @@ const Generate = ({ context }) => {
               {(variations || []).map((variation) => (
                 <VariationCard
                   key={variation.id}
-                  id={variation.id} // Pass id
+                  id={variation.id}
                   variation={variation.variation}
                   output={variation.output}
                   tool_calls={variation.tool_calls}
                   system_prompt={variation.system_prompt}
                   processed_prompt={variation.processed_prompt}
-                  isSelected={selectedVariations?.has(variation.id)} // Use selected state
+                  isSelected={selectedVariations?.has(variation.id)}
                   isGenerating={variation.isGenerating || false}
                   isParaphrasing={isParaphrasing}
                   error={variation.error || null}
-                  workflow_results={variation.workflow_results} // Pass workflow results if available
-                  workflow_progress={variation.workflow_progress} // Pass workflow progress if available
-                  onSelect={() => handleSelect(variation.id)} // Use select handler
+                  workflow_results={variation.workflow_results}
+                  workflow_progress={variation.workflow_progress}
+                  onSelect={() => handleSelect(variation.id)}
                   onEdit={(output) => handleEdit(variation.id, output)}
                   onRegenerate={(instruction) => handleRegenerate(variation.id, instruction)}
                   onDismiss={() => handleDismiss(variation.id)}
-                  onToolCallsChange={(newToolCalls) => handleToolCallsChange(variation.id, newToolCalls)} // Pass variation id
-                  onOpenParaphraseModal={(id, text) => handleOpenParaphraseModal(id, text)} // For opening paraphrase modal
-                  onOpenRegenerateModal={(id, text) => handleOpenRegenerateModal(id, text)} // For opening regenerate modal
+                  onToolCallsChange={(newToolCalls) => handleToolCallsChange(variation.id, newToolCalls)}
+                  onOpenParaphraseModal={(id, text) => handleOpenParaphraseModal(id, text)}
+                  onOpenRegenerateModal={(id, text) => handleOpenRegenerateModal(id, text)}
                 />
               ))}
             </div>
