@@ -293,6 +293,19 @@ class TemplateNodeConfig(BaseNodeConfig):
     instruction: Optional[str] = None  # Additional instruction to add to the template's system prompt
 
 
+class FilterRule(BaseModel):
+    id: str
+    type: str
+    parameters: Dict[str, Any]
+    enabled: bool = True
+
+
+class FilterNodeConfig(BaseNodeConfig):
+    type: str = "filter"
+    rules: List[FilterRule] = Field(default_factory=list)
+    combination_mode: str = "AND"  # "AND" or "OR"
+
+
 class NodeConnection(BaseModel):
     source_node_id: str
     target_node_id: str

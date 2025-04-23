@@ -39,7 +39,8 @@ import {
   CommandLineIcon,
   ChatBubbleLeftRightIcon,
   BookOpenIcon,
-  ArrowUturnLeftIcon
+  ArrowUturnLeftIcon,
+  EyeIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 
@@ -85,6 +86,7 @@ const icons = {
   chat: { outline: ChatBubbleLeftRightIcon },
   bookOpen: { outline: BookOpenIcon },
   undo: { outline: ArrowUturnLeftIcon },
+  eye: { outline: EyeIcon },
 };
 
 export default function Icon({ name, variant = 'outline', className = '', ...props }) {

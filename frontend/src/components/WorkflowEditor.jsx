@@ -21,6 +21,7 @@ import TransformNode from './TransformNode';
 import InputNode from './InputNode';
 import OutputNode from './OutputNode';
 import PromptNode from './PromptNode'; // Import the new PromptNode component
+import FilterNode from './FilterNode'; // Add import for FilterNode
 import CustomSelect from './CustomSelect';
 import CustomTextInput from './CustomTextInput';
 import Icon from './Icons';
@@ -32,6 +33,7 @@ const NODE_TYPES = {
   model: 'Model',
   prompt: 'Prompt',    // Add the new prompt type
   transform: 'Transform',
+  filter: 'Filter',    // Add filter node type
   input: 'Input',
   output: 'Output',
 };
@@ -41,6 +43,7 @@ const NODE_ICONS = {
   model: 'workflow',      // CommandLineIcon
   prompt: 'chat', // Add an icon for prompt node
   transform: 'edit',      // PencilSquareIcon
+  filter: 'filter',    // Add filter node icon
   input: 'database',      // CircleStackIcon
   output: 'document',     // DocumentTextIcon
 };
@@ -50,6 +53,7 @@ const nodeComponentMap = {
   model: 'modelNode',
   prompt: 'promptNode',   // Add the mapping for prompt node
   transform: 'transformNode',
+  filter: 'filterNode',    // Add filter node mapping
   input: 'inputNode',
   output: 'outputNode',
 };
@@ -59,6 +63,7 @@ const nodeTypes = {
   modelNode: ModelNode, 
   promptNode: PromptNode,  // Add the PromptNode component
   transformNode: TransformNode,
+  filterNode: FilterNode,    // Add filter node component
   inputNode: InputNode,
   outputNode: OutputNode,
 };
@@ -472,6 +477,13 @@ const WorkflowEditor = forwardRef(({
         pattern: '',
         replacement: '',
         is_regex: false,
+        apply_to_field: 'output'
+      };
+    } else if (typeToAdd === 'filter') { // Add case for filter node
+      defaultConfig = {
+        type: 'filter',
+        name: nodeLabel,
+        filter_condition: '',
         apply_to_field: 'output'
       };
     } else if (typeToAdd === 'input') {
