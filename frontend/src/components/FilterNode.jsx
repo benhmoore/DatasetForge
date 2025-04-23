@@ -54,16 +54,12 @@ const FilterNode = ({
       description: 'Enforces active voice writing by detecting passive constructions' },
     { value: 'sentence_structure', label: 'Sentence Structure', category: 'grammar',
       description: 'Checks for well-formed sentences with proper structure' },
-    { value: 'spelling_check', label: 'Spelling Check', category: 'grammar',
-      description: 'Identifies potential spelling errors' },
     
     // Style rules
     { value: 'readability_score', label: 'Readability Score', category: 'style',
       description: 'Ensures text meets readability standards (e.g., Flesch-Kincaid)' },
     { value: 'sentence_length', label: 'Sentence Length', category: 'style',
-      description: 'Controls average or maximum sentence length' },
-    { value: 'formality_level', label: 'Formality Level', category: 'style',
-      description: 'Assesses formal vs. informal language usage' }
+      description: 'Controls average or maximum sentence length' }
   ];
 
   // Current category for rule selection UI
@@ -87,10 +83,8 @@ const FilterNode = ({
       case 'regex_match': return { pattern: '', description: 'Custom pattern' };
       case 'no_passive_voice': return { max_occurrences: 0, sensitivity: 'high' };
       case 'sentence_structure': return { strictness: 'medium' };
-      case 'spelling_check': return { language: 'en', mode: 'standard' };
       case 'readability_score': return { min_score: 60, method: 'flesch_kincaid' };
       case 'sentence_length': return { max_length: 30, unit: 'words' };
-      case 'formality_level': return { min_level: 'medium', strictness: 'medium' };
       default: return {};
     }
   };
@@ -346,33 +340,6 @@ const FilterNode = ({
           </div>
         );
         
-      case 'spelling_check':
-        return (
-          <div className="space-y-2">
-            <CustomSelect
-              options={[
-                { value: 'en', label: 'English' },
-                { value: 'fr', label: 'French' },
-                { value: 'es', label: 'Spanish' },
-                { value: 'de', label: 'German' }
-              ]}
-              value={parameters.language}
-              onChange={(value) => handleRuleParameterChange(rule.id, 'language', value)}
-              disabled={disabled}
-            />
-            <CustomSelect
-              options={[
-                { value: 'standard', label: 'Standard checking' },
-                { value: 'relaxed', label: 'Relaxed (allow common variants)' },
-                { value: 'strict', label: 'Strict (formal writing)' }
-              ]}
-              value={parameters.mode}
-              onChange={(value) => handleRuleParameterChange(rule.id, 'mode', value)}
-              disabled={disabled}
-            />
-          </div>
-        );
-        
       case 'readability_score':
         return (
           <div className="space-y-2">
@@ -423,32 +390,6 @@ const FilterNode = ({
               ]}
               value={parameters.unit}
               onChange={(value) => handleRuleParameterChange(rule.id, 'unit', value)}
-              disabled={disabled}
-            />
-          </div>
-        );
-        
-      case 'formality_level':
-        return (
-          <div className="space-y-2">
-            <CustomSelect
-              options={[
-                { value: 'high', label: 'Formal writing' },
-                { value: 'medium', label: 'Standard writing' },
-                { value: 'low', label: 'Casual writing' }
-              ]}
-              value={parameters.min_level}
-              onChange={(value) => handleRuleParameterChange(rule.id, 'min_level', value)}
-              disabled={disabled}
-            />
-            <CustomSelect
-              options={[
-                { value: 'high', label: 'Strict checking' },
-                { value: 'medium', label: 'Standard checking' },
-                { value: 'low', label: 'Basic checking' }
-              ]}
-              value={parameters.strictness}
-              onChange={(value) => handleRuleParameterChange(rule.id, 'strictness', value)}
               disabled={disabled}
             />
           </div>

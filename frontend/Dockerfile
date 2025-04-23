@@ -5,15 +5,11 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json ./
 
-# Install dependencies
-RUN npm ci
-RUN npm install
-
-# avoid host mounts clobbering dependencies
+# Define volume before installing dependencies
 VOLUME ["/app/node_modules"]
 
-# enable polling for file-watch inside Docker
-ENV CHOKIDAR_USEPOLLING=true
+# Install dependencies (use only one installation method)
+RUN npm ci
 
 # Copy the rest of the application
 COPY . .

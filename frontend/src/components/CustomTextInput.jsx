@@ -1,8 +1,8 @@
-import { motion } from "motion/react"
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'; // Add useLayoutEffect
 import Icon from './Icons';
 import api from '../api/apiClient'; // Import API client
 import ContextMenu from './ContextMenu'; // Import ContextMenu component
+import { motion } from "motion/react"
 
 /**
  * A custom text input component that can toggle between single-line input and textarea,
