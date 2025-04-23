@@ -49,7 +49,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   const tableRef = useRef(null);
   const searchInputRef = useRef(null);
   
-  // Use useEffect for debouncing auto-search (when user stops typing)
+  // Disable auto-search - only perform search when explicitly triggered
   useEffect(() => {
     // Skip initial render or when values are already the same
     if (searchTerm === debouncedSearchTerm) return;
@@ -59,20 +59,15 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
       clearTimeout(searchTimeoutRef.current);
     }
     
-    // Don't auto-search on these conditions:
-    // 1. Backspacing to empty (let user press Enter to clear search explicitly)
-    // 2. Very short search terms (to avoid too many requests)
-    if (searchTerm === '' || searchTerm.length < 2) {
-      return;
+    // Only update debouncedSearchTerm when searchTerm is empty
+    // to allow clearing the search results when the search box is cleared
+    if (searchTerm === '') {
+      setDebouncedSearchTerm('');
+      setPage(1);
     }
     
-    // Set a new timer for debounced search
-    searchTimeoutRef.current = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-      setPage(1); // Reset to first page when search changes
-    }, 600); // Slightly longer debounce (600ms) for better UX
+    // No auto-search timer - we'll only search on Enter key
     
-    // Cleanup timer on unmount or when searchTerm changes again
     return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
@@ -113,8 +108,9 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
     // { label: 'Duplicate Example', value: 'duplicate', icon: 'copy' }, // Add later
   ];
 
-  // Function to fetch examples that can be called programmatically 
-  const fetchExamples = async () => {
+  // Function to fetch examples - memoized to prevent dependency cycles
+  // With our memoized search component, we no longer need focus management
+  const fetchExamples = useCallback(async () => {
     if (!datasetId) return;
     
     // Show appropriate loading states
@@ -149,7 +145,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
       setIsLoading(false);
       setIsPaginationLoading(false);
     }
-  };
+  }, [datasetId, page, pageSize, debouncedSearchTerm, sortField, sortDirection]);
   
   // Listen for search trigger events from ExampleTableHeader
   useEffect(() => {
@@ -159,12 +155,20 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
         clearTimeout(searchTimeoutRef.current);
       }
       
+      // Don't search if the term is empty
+      if (!searchTerm || searchTerm.trim() === '') {
+        return;
+      }
+      
       // Immediately apply search term when user presses Enter
       setDebouncedSearchTerm(searchTerm);
       setPage(1);
       
       // Show visual feedback that search is happening
       setIsSearching(true);
+      
+      // The search will automatically happen when debouncedSearchTerm changes
+      // through the dependency tracking in the effect below
     };
     
     window.addEventListener('triggerSearch', handleTriggerSearch);
@@ -174,9 +178,10 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   // Fetch examples when these dependencies change
   useEffect(() => {
     fetchExamples();
+    
     // Clear selections when changing pages or refreshing
     setSelectedExamples(new Set());
-  }, [datasetId, page, refreshTrigger, sortField, sortDirection, debouncedSearchTerm]);
+  }, [datasetId, page, refreshTrigger, sortField, sortDirection, debouncedSearchTerm, fetchExamples]);
   
   // Handle pagination
   const handlePageChange = (newPage) => {
@@ -462,18 +467,16 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
     }
   }, [examples, slotKeys, handleSaveEdit, handleCancelEdit, handleStartEdit]);
   
-  // Enhanced search input handler with better feedback
+  // Simple search input handler - just updates the search term but doesn't trigger search
   const handleSearchInput = useCallback((searchValue) => {
-    // When user types in search box, show immediate feedback
-    if (searchValue !== searchTerm) {
-      setSearchTerm(searchValue);
-      
-      // Only show searching indicator if typed value is significant
-      if (searchValue.length >= 2) {
-        setIsSearching(true);
-      }
-    }
-  }, [searchTerm]);
+    console.log('Search input changed:', searchValue); // Add logging
+    
+    // Just update the search term - search only happens on Enter key
+    setSearchTerm(searchValue);
+    
+    // Clear searching indicator when typing
+    setIsSearching(false);
+  }, []); // Add correct dependencies
   
   // Keyboard shortcut for search focus and table navigation
   const triggerSearchFocus = useCallback(() => {
@@ -656,8 +659,9 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
         </div>
       )}
       
-      {/* Header with actions */}
+      {/* Header with actions - use key to force re-create component when needed */}
       <ExampleTableHeader 
+        key="example-table-header"
         selectedExamples={selectedExamples}
         handleDeleteSelected={handleDeleteSelected}
         handleParaphraseSelected={handleParaphraseSelected}
