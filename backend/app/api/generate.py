@@ -13,7 +13,7 @@ from ..db import get_session
 from ..core.security import get_current_user
 from ..core.config import settings
 from ..api.models import User, Template
-from ..api.schemas import GenerationRequest, GenerationResult, SeedData, ModelParameters
+from ..api.schemas import GenerationRequest, GenerationResult, SeedData, ModelParameters, SimpleGenerationRequest
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -601,5 +601,71 @@ async def generate_outputs(
                 yield result.json() + "\n"
                 await asyncio.sleep(0.01)  # Small sleep to allow context switching
 
+    # Return the streaming response
+    return StreamingResponse(stream_results(), media_type="application/x-ndjson")
+
+
+@router.post("/generate/simple", response_model=Dict[str, str])
+async def generate_simple_text(
+    request: SimpleGenerationRequest,
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """
+    Simple text generation endpoint specifically for the CustomTextInput component.
+    Takes a prompt and returns generated text without requiring a template.
+    """
+    logger.info(f"🔄 Simple generation request received: {request.dict()}")
+    
+    # Get the user's default model
+    generation_model = user.default_gen_model
+    
+    if not generation_model:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No generation model specified. Set a default model in user settings."
+        )
+    
+    # Define the async generator function for streaming
+    async def stream_results() -> AsyncGenerator[str, None]:
+        try:
+            # Use provided system prompt or default to a generic one
+            system_prompt = request.system_prompt if request.system_prompt else "You are a helpful assistant. Provide useful, concise information."
+            
+            # Call the Ollama API
+            ollama_response = await call_ollama_generate(
+                model=generation_model,
+                system_prompt=system_prompt,
+                user_prompt=request.prompt,
+                template=None,  # No template for simple generation
+                template_params=None,
+                user_prefs={},
+                is_tool_calling=False,
+                tools=None,
+            )
+            
+            output = ollama_response.get("response", "").strip()
+            
+            # Create and yield the result
+            result = {
+                "name": request.name,
+                "output": output,
+                "prompt": request.prompt
+            }
+            
+            yield json.dumps(result) + "\n"
+            
+        except Exception as e:
+            error_detail = f"Error during simple generation: {str(e)}"
+            logger.exception(error_detail)
+            
+            # Yield an error result
+            error_result = {
+                "name": request.name,
+                "error": error_detail,
+                "prompt": request.prompt
+            }
+            
+            yield json.dumps(error_result) + "\n"
+    
     # Return the streaming response
     return StreamingResponse(stream_results(), media_type="application/x-ndjson")

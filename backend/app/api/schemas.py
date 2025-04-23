@@ -155,6 +155,12 @@ class GenerationRequest(BaseModel):
     # Global instruction applied to all seeds in the request
     instruction: Optional[str] = None 
 
+# Simple generation request for CustomTextInput
+class SimpleGenerationRequest(BaseModel):
+    prompt: str
+    name: Optional[str] = "input"
+    system_prompt: Optional[str] = None
+    
 
 class GenerationResult(BaseModel):
     template_id: int # Add template_id
