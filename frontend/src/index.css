@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .text-xs {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+}
+
 @layer components {
   .tooltip {
     @apply relative cursor-pointer w-full;
@@ -23,9 +30,11 @@
   }
 }
 
-/* Custom styles for selected React Flow edges */
+/* Updated styles for React Flow edges */
+.react-flow__edge .react-flow__edge-path {
+  stroke-width: 2; /* Default thickness */
+}
+
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke: #fb923c; /* Tailwind orange-500 */
-  stroke-dasharray: none;
-  stroke-width: 3;
+  stroke-width: 4; /* Thicker for selected edges */
 }
