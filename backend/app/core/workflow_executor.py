@@ -32,6 +32,7 @@ class WorkflowExecutor:
             "model": self._execute_model_node,
             "prompt": self._execute_prompt_node,  # Add the prompt node executor
             "transform": self._execute_transform_node,
+            "filter": self._execute_filter_node,  # Add filter node executor
             "input": self._execute_input_node,
             "output": self._execute_output_node,
             "template": self._execute_template_node,
@@ -1260,6 +1261,96 @@ class WorkflowExecutor:
             )
 
         return result
+
+    async def _execute_filter_node(
+        self, node_config: Dict[str, Any], node_inputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Execute a filter node that evaluates text against configured rules.
+        Routes content to 'pass' or 'fail' outputs based on evaluation results.
+
+        Args:
+            node_config: The node configuration including rules and combination_mode
+            node_inputs: The inputs for the node
+
+        Returns:
+            Dict[str, Any]: The outputs with pass/fail routing information
+        """
+        try:
+            # Get configuration
+            rules = node_config.get("rules", [])
+            combination_mode = node_config.get("combination_mode", "AND")
+            node_id = node_config.get("id", "unknown_filter_node")
+            
+            # Get the input text to filter
+            input_text = node_inputs.get("input", "")
+            if not isinstance(input_text, str):
+                logger.warning(f"Filter node {node_id} received non-string input - converting to string")
+                input_text = str(input_text) if input_text is not None else ""
+            
+            # If no rules, just pass through
+            if not rules:
+                logger.info(f"Filter node {node_id} has no rules, passing input through")
+                return {
+                    "output": input_text,
+                    "passed": True,
+                    "pass": input_text,  # For the 'pass' handle
+                    "fail": "",          # For the 'fail' handle
+                    "rule_results": [],
+                    "_node_info": {
+                        "type": "filter",
+                        "id": node_id,
+                        "timestamp": self._get_timestamp(),
+                    }
+                }
+            
+            # Import filter evaluation functions
+            from ..api.filter import evaluate_rule
+            
+            # Evaluate each enabled rule
+            rule_results = []
+            for rule in rules:
+                if rule.get("enabled", True):
+                    result = evaluate_rule(input_text, rule)
+                    rule_results.append(result)
+            
+            # Determine overall pass/fail based on combination mode
+            if combination_mode == "AND":
+                passed = all(result["passed"] for result in rule_results)
+            else:  # "OR"
+                passed = any(result["passed"] for result in rule_results)
+            
+            logger.info(f"Filter node {node_id} evaluation result: {passed}")
+            
+            # Create result with routing information
+            result = {
+                "output": input_text,  # Always provide the original input as output
+                "passed": passed,      # Overall pass/fail result
+                # Route text to the appropriate handle
+                "pass": input_text if passed else "",
+                "fail": "" if passed else input_text,
+                # Include rule evaluation details
+                "rule_results": rule_results,
+                "_node_info": {
+                    "type": "filter",
+                    "id": node_id,
+                    "timestamp": self._get_timestamp(),
+                }
+            }
+            
+            return result
+            
+        except Exception as e:
+            logger.exception(f"Error executing filter node {node_config.get('id', 'unknown')}: {str(e)}")
+            # Return error result - route to 'fail' output
+            return {
+                "output": f"Error in filter node: {str(e)}",
+                "passed": False,
+                "pass": "",
+                "fail": node_inputs.get("input", ""),
+                "error": str(e),
+                "timestamp": self._get_timestamp()
+            }
 
     async def execute_workflow_with_progress(
         self,

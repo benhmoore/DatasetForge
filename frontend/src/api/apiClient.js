@@ -628,7 +628,14 @@ const api = {
       console.error('Workflow execution stream failed:', error);
       throw new Error(`Workflow execution stream failed: ${error.message}`);
     }
-  }
+  },
+  
+  // Filter API methods
+  previewFilterRules: (text, rules, combinationMode = 'AND') => apiClient.post('/filter/preview', {
+    text,
+    rules,
+    combination_mode: combinationMode
+  }).then(response => response.data),
 };
 
 export default api;
