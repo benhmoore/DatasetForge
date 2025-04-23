@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Icon from './Icons';
 
 /**
@@ -29,6 +29,11 @@ const CustomTextInput = ({
   
   // Action buttons
   actionButtons = null,
+  
+  // AI action button
+  showAiActionButton = true,
+  onAiAction = () => {},
+  aiActionDisabled = false,
 
   // Additional styling
   className = '',
@@ -66,9 +71,47 @@ const CustomTextInput = ({
     ${error ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' 
             : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500'}
     ${disabled ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''}
-    ${actionButtons ? 'rounded-r-none' : ''}
+    ${(actionButtons || showAiActionButton) ? 'rounded-r-none' : ''}
     ${className}
   `;
+
+  // Prepare AI action button if enabled
+  const aiButton = showAiActionButton ? (
+    <button
+      onClick={() => onAiAction(value, name)}
+      className="p-2 m-1 text-primary-500 hover:text-primary-700 hover:bg-gray-100 transition-colors rounded-full"
+      title="Use AI assistant"
+      disabled={disabled || aiActionDisabled}
+      type="button"
+      aria-label="Use AI assistant"
+    >
+      <Icon name="sparkles" className="h-4 w-4" />
+    </button>
+  ) : null;
+
+  // Function to ensure any child action buttons have consistent styling
+  const wrapActionButton = (actionButton) => {
+    // If the action button is already a React element, wrap it with our styling
+    if (React.isValidElement(actionButton)) {
+      // Apply our custom rounded styling by cloning the element
+      return React.cloneElement(actionButton, {
+        className: `p-2 m-1 transition-colors rounded-full ${actionButton.props.className || ''}`,
+      });
+    }
+    return actionButton;
+  };
+
+  // Combine custom action buttons with AI button if needed
+  const combinedActionButtons = showAiActionButton ? (
+    <>
+      {aiButton}
+      {actionButtons && (
+        typeof actionButtons === 'object' && React.Children.map(actionButtons, wrapActionButton) || actionButtons
+      )}
+    </>
+  ) : actionButtons && (
+    typeof actionButtons === 'object' && React.Children.map(actionButtons, wrapActionButton) || actionButtons
+  );
 
   return (
     <div className={`space-y-1 ${containerClassName}`}>
@@ -140,11 +183,11 @@ const CustomTextInput = ({
         )}
 
         {/* Action buttons */}
-        {actionButtons && (
+        {combinedActionButtons && (
           <div className={`flex items-center border-t border-r border-b ${
             error ? 'border-red-300' : 'border-gray-300'
           } rounded-r-md bg-gray-50`}>
-            {actionButtons}
+            {combinedActionButtons}
           </div>
         )}
       </div>

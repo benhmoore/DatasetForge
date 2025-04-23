@@ -6,6 +6,7 @@ import SeedBankModal from './SeedBankModal'; // Import the seed bank modal
 import Icon from './Icons'; // Import the Icon component
 import CustomSlider from './CustomSlider'; // Import the new CustomSlider component
 import FileImportButton from './FileImportButton'; // Import the new FileImportButton component
+import CustomTextInput from './CustomTextInput'; // Import the new CustomTextInput component
 
 // Define the helper function to generate the prompt preview
 const generatePromptPreview = (promptTemplate, slotValues) => {
@@ -663,52 +664,43 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
       const hasError = !!currentErrors[slot];
       const inputId = `seed-${currentSeedIndex}-${slot}`;
       const errorId = `${inputId}-error`;
+      const slotValue = currentSeed[slot] || '';
+      const isLongText = slotValue.includes('\n') || slotValue.length > 100;
+
+      // Create file import action button
+      const fileImportButton = (
+        <button
+          onClick={() => handleImportFileToSlot(slot)}
+          className="px-3 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+          title="Import from file"
+          disabled={isDisabled}
+        >
+          <Icon name="upload" className="h-4 w-4" />
+        </button>
+      );
 
       return (
         <div key={slot} className="mb-3">
-          <label htmlFor={inputId} className="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
-            <span>{slot.charAt(0).toUpperCase() + slot.slice(1)}</span>
-            {hasError && <span className="text-red-500 ml-1">*</span>}
-          </label>
-          <div className="relative">
-            <input
-              id={inputId}
-              type="text"
-              value={currentSeed[slot] || ''}
-              onChange={(e) => handleSlotChange(slot, e.target.value)}
-              className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200
-                          ${hasError ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}
-                          ${isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-              placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
-              disabled={isDisabled}
-              aria-invalid={hasError}
-              aria-describedby={hasError ? errorId : undefined}
-            />
-            <FileImportButton 
-              onImport={(content, file) => {
-                handleSlotChange(slot, content);
-                toast.success(`Successfully imported content from ${file.name} into ${slot}.`);
-              }} 
-              slotName={slot}
-              disabled={isDisabled}
-              buttonType="icon"
-              position="absolute"
-            />
-          </div>
-          {hasError && (
-            <p id={errorId} className="mt-1 text-xs text-red-600 font-medium">
-              This field is required for Seed {currentSeedIndex + 1}.
-            </p>
-          )}
-          {currentSeed[slot] && currentSeed[slot].length > 100 && (
-            <p className="mt-1 text-xs text-gray-500">
-              {currentSeed[slot].length.toLocaleString()} characters
-            </p>
-          )}
+          <CustomTextInput
+            id={inputId}
+            name={slot}
+            label={slot.charAt(0).toUpperCase() + slot.slice(1)}
+            value={slotValue}
+            onChange={(e) => handleSlotChange(slot, e.target.value)}
+            placeholder={`Enter ${slot} for Seed ${currentSeedIndex + 1}`}
+            disabled={isDisabled}
+            error={hasError ? `This field is required for Seed ${currentSeedIndex + 1}.` : ''}
+            required={true}
+            multiline={isLongText}
+            allowToggle={true}
+            rows={4}
+            actionButtons={fileImportButton}
+            helpText={slotValue.length > 100 ? `${slotValue.length.toLocaleString()} characters` : undefined}
+          />
         </div>
       );
     });
-  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isDisabled, validationErrors]);
+  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isDisabled, validationErrors, handleImportFileToSlot]);
 
   // Calculate total error count across all seeds
   const totalErrorCount = useMemo(() => {
