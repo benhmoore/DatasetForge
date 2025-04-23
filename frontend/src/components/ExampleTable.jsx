@@ -48,6 +48,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   const [isDragOver, setIsDragOver] = useState(false);
   const tableRef = useRef(null);
   const searchInputRef = useRef(null);
+  const tableBodyRef = useRef(null); // Add this ref for the table body
   
   // Disable auto-search - only perform search when explicitly triggered
   useEffect(() => {
@@ -786,7 +787,7 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
                   )}
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-gray-200" ref={tableBodyRef}>
                 {examples.map((example, index) => {
                   // Disable text selection for rows unless editing
                   const isEditing = editingCell !== null;

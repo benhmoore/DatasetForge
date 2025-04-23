@@ -83,8 +83,15 @@ const VariationCard = ({
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
         if (isEditing) {
-          // Save changes instead of canceling when pressing Escape
+          // Save changes when pressing Escape
           saveEdit();
+          
+          // After exiting edit mode, refocus the card itself
+          setTimeout(() => {
+            if (outputDisplayRef.current) {
+              outputDisplayRef.current.closest('[data-variation-id]')?.focus();
+            }
+          }, 0);
         } else if (isToolEditorOpen) {
           setIsToolEditorOpen(false);
         }
@@ -475,6 +482,40 @@ const VariationCard = ({
     );
   }, [workflow_progress]);
 
+  // Logic to preserve focus during state updates like new generations
+  useEffect(() => {
+    // Only run this when not generating and component is mounted
+    if (!isGenerating) {
+      const card = outputDisplayRef.current?.closest('[data-variation-id]');
+      
+      // If this card had focus before a state update (like new generation),
+      // restore focus to it using the data-variation-id attribute
+      if (card && document.activeElement?.getAttribute('data-was-focused') === id) {
+        card.focus();
+        // Remove the marker attribute after focusing
+        document.activeElement?.removeAttribute('data-was-focused');
+      }
+    }
+  }, [isGenerating, id]);
+
+  // Store focus state before updates
+  useEffect(() => {
+    const handleBeforeStateUpdate = () => {
+      // If this card has focus when a state update is about to happen
+      // mark it with an attribute to refocus after update
+      const card = outputDisplayRef.current?.closest('[data-variation-id]');
+      if (card && document.activeElement === card) {
+        card.setAttribute('data-was-focused', id);
+      }
+    };
+
+    // Listen for custom event that parent can trigger before updating variations
+    window.addEventListener('beforeVariationsUpdate', handleBeforeStateUpdate);
+    return () => {
+      window.removeEventListener('beforeVariationsUpdate', handleBeforeStateUpdate);
+    };
+  }, [id]);
+
   // Conditional rendering for loading state
   if (isGenerating) {
     return (
@@ -509,7 +550,7 @@ const VariationCard = ({
       </div>
     );
   }
-  
+
   // Conditional rendering for error state
   if (error) {
     return (
@@ -565,13 +606,21 @@ const VariationCard = ({
           e.preventDefault();
           startEditing();
         }
-        // Delete or Backspace key to remove card
-        else if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Delete or Backspace key to remove card - only if not editing and not in an input field
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && 
+                 !isEditing && 
+                 e.target.tagName !== 'INPUT' && 
+                 e.target.tagName !== 'TEXTAREA' && 
+                 !e.target.isContentEditable) {
           e.preventDefault();
           onDismiss();
         }
         // Arrow key navigation between cards
-        else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && 
+                 !isEditing && 
+                 e.target.tagName !== 'INPUT' && 
+                 e.target.tagName !== 'TEXTAREA' && 
+                 !e.target.isContentEditable) {
           e.preventDefault();
           
           // Get all focusable variation cards
