@@ -1,31 +1,33 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { toast } from 'react-toastify';
+import { motion, AnimatePresence } from "motion/react"; // Add motion import
 import ToolCallEditor from './ToolCallEditor';
 import Icon from './Icons';
 import api from '../api/apiClient';
 import CustomTextInput from './CustomTextInput';
 
-const VariationCard = ({ 
-  id, // Added id prop
+// Convert to forwardRef to expose methods to parent components
+const VariationCard = forwardRef(({ 
+  id, 
   variation, 
-  output, 
-  onSelect, // Changed from onStar
+  output,
+  onSelect,
   onEdit, 
   onRegenerate, 
   onDismiss, 
-  onOpenParaphraseModal, // New prop to open the paraphrase modal in the parent
-  isSelected = false, // Changed from isStarred
+  onOpenParaphraseModal,
+  isSelected = false,
   isGenerating = false,
-  isParaphrasing = false, // To disable buttons during paraphrasing
+  isParaphrasing = false,
   error = null,
   tool_calls = null,
   system_prompt = null,
   processed_prompt = null,
-  workflow_results = null, // New prop for workflow results
-  workflow_progress = null, // New prop for streaming workflow progress
+  workflow_results = null,
+  workflow_progress = null,
   onToolCallsChange,
-  onOpenRegenerateModal // New prop to open the regenerate modal in the parent
-}) => {
+  onOpenRegenerateModal
+}, ref) => {
   // State management
   const [editedOutput, setEditedOutput] = useState(output);
   const [isEditing, setIsEditing] = useState(false);
@@ -34,7 +36,10 @@ const VariationCard = ({
   const [textareaHeight, setTextareaHeight] = useState('8rem');
   const [showWorkflowResults, setShowWorkflowResults] = useState(false);
   const [isDragging, setIsDragging] = useState(false); // Added for drag state
-  
+  // Add the missing state variables for animation
+  const [isRemoving, setIsRemoving] = useState(false);
+  const [removalReason, setRemovalReason] = useState("");
+
   // Refs
   const outputDisplayRef = useRef(null);
   const textareaRef = useRef(null);
@@ -516,6 +521,33 @@ const VariationCard = ({
     };
   }, [id]);
 
+  // Expose triggerRemoveAnimation method to parent
+  useImperativeHandle(ref, () => ({
+    triggerRemoveAnimation: (reason = "Empty generation removed") => {
+      console.log(`Animation triggered for ${id} with reason: ${reason}`);
+      
+      // Prevent triggering animation if already removing
+      if (isRemoving) {
+        console.log(`Animation already in progress for ${id}, skipping duplicate`);
+        return Promise.resolve();
+      }
+      
+      // Set the state to trigger the animation
+      setRemovalReason(reason);
+      setIsRemoving(true);
+      
+      // Return a promise that resolves when animation should be complete
+      return new Promise(resolve => {
+        // Use a longer timeout to ensure animation fully completes
+        // Animation is 0.5s, so we wait a full second to be safe
+        setTimeout(() => {
+          console.log(`Animation timeout completed for ${id}`);
+          resolve();
+        }, 1000);
+      });
+    }
+  }), [id, isRemoving]);
+
   // Conditional rendering for loading state
   if (isGenerating) {
     return (
@@ -578,295 +610,337 @@ const VariationCard = ({
 
   // Main render for normal state
   return (
-    <div 
-      ref={outputDisplayRef}
-      className={`p-4 bg-white rounded-lg border ${
-        isSelected 
-          ? 'border-primary-300 ring-2 ring-primary-200' // Style for selected
-          : 'border-gray-200'
-      } shadow-sm transition-all duration-200 hover:shadow-md ${
-        isSelected ? 'scale-[1.01]' : 'hover:scale-[1.01]'
-      } relative cursor-pointer ${isDragging ? 'opacity-50' : ''} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-300`} // Added visible focus styles
-      onClick={handleSelect} // Make the whole card clickable for selection
-      role="checkbox" // Role for accessibility
-      aria-checked={isSelected} // State for accessibility
-      tabIndex={0} // Make it focusable
-      data-variation-id={id} // Add data attribute for auto-focusing
-      onKeyDown={(e) => {
-        // Space to toggle selection
-        if (e.key === ' ' && 
-            e.target.tagName !== 'INPUT' && 
-            e.target.tagName !== 'TEXTAREA' && 
-            !e.target.isContentEditable) {
-          e.preventDefault();
-          handleSelect();
-        }
-        // Enter key to start editing
-        else if (e.key === 'Enter' && !isEditing && !isGenerating) {
-          e.preventDefault();
-          startEditing();
-        }
-        // Delete or Backspace key to remove card - only if not editing and not in an input field
-        else if ((e.key === 'Delete' || e.key === 'Backspace') && 
-                 !isEditing && 
-                 e.target.tagName !== 'INPUT' && 
-                 e.target.tagName !== 'TEXTAREA' && 
-                 !e.target.isContentEditable) {
-          e.preventDefault();
-          onDismiss();
-        }
-        // Arrow key navigation between cards
-        else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && 
-                 !isEditing && 
-                 e.target.tagName !== 'INPUT' && 
-                 e.target.tagName !== 'TEXTAREA' && 
-                 !e.target.isContentEditable) {
-          e.preventDefault();
-          
-          // Get all focusable variation cards
-          const cards = Array.from(document.querySelectorAll('[data-variation-id]'));
-          if (cards.length <= 1) return; // No navigation needed with only one card
-          
-          const currentIndex = cards.findIndex(card => card === e.target);
-          if (currentIndex === -1) return;
-          
-          let nextIndex;
-          const cardsPerRow = window.innerWidth >= 768 ? 2 : 1; // Based on md:grid-cols-2
-          
-          switch(e.key) {
-            case 'ArrowLeft':
-              nextIndex = currentIndex > 0 ? currentIndex - 1 : cards.length - 1;
-              break;
-            case 'ArrowRight':
-              nextIndex = currentIndex < cards.length - 1 ? currentIndex + 1 : 0;
-              break;
-            case 'ArrowUp':
-              nextIndex = currentIndex - cardsPerRow;
-              if (nextIndex < 0) {
-                // Go to last row, same column
-                const lastRowItems = cards.length % cardsPerRow || cardsPerRow;
-                const column = currentIndex % cardsPerRow;
-                nextIndex = cards.length - lastRowItems + Math.min(column, lastRowItems - 1);
-              }
-              break;
-            case 'ArrowDown':
-              nextIndex = currentIndex + cardsPerRow;
-              if (nextIndex >= cards.length) {
-                // Go to first row, same column
-                nextIndex = currentIndex % cardsPerRow;
-              }
-              break;
+    <AnimatePresence>
+      <motion.div
+        ref={outputDisplayRef}
+        initial={{ opacity: 1, x: 0, backgroundColor: "#ffffff" }}
+        // Simplify the removal animation - remove backgroundColor change
+        animate={isRemoving ? 
+          { opacity: 0, x: -100 } : 
+          { opacity: 1, x: 0, backgroundColor: "#ffffff" }}
+        exit={{ opacity: 0, x: -100 }}
+        transition={{ duration: 0.5, ease: "easeInOut" }}
+        // Remove transition-all duration-200 to avoid conflicts
+        className={`p-4 bg-white rounded-lg border ${
+          isSelected 
+            ? 'border-primary-300 ring-2 ring-primary-200'
+            : 'border-gray-200'
+        } shadow-sm hover:shadow-md ${ // Removed transition-all duration-200
+          isSelected ? 'scale-[1.01]' : 'hover:scale-[1.01]'
+        } relative cursor-pointer ${isDragging ? 'opacity-50' : ''} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-300`}
+        onClick={handleSelect}
+        role="checkbox"
+        aria-checked={isSelected}
+        tabIndex={0}
+        data-variation-id={id}
+        data-removing={isRemoving ? "true" : "false"} // Add this to help track animation state
+        onAnimationStart={() => {
+          // Log animation start for debugging
+          if (isRemoving) {
+            console.log(`Animation starting for removal of card ${id}`);
           }
-          
-          if (nextIndex >= 0 && nextIndex < cards.length) {
-            cards[nextIndex].focus();
+        }}
+        onAnimationComplete={() => {
+          // Log and call onDismiss after animation completes
+          if (isRemoving) {
+            console.log(`Animation complete for removal of card ${id}`);
+            // We don't call onDismiss here - parent component will handle removal
           }
-        }
-      }}
-      draggable={!isEditing && !isGenerating} // Enable dragging when not editing or generating
-      onDragStart={(e) => {
-        if (isEditing || isGenerating) return;
-        
-        setIsDragging(true);
-        
-        // Create data payload for the variation
-        const payload = JSON.stringify({
-          id,
-          variation,
-          output,
-          processed_prompt,
-          tool_calls,
-          slots: {}, // Add any slots if available in your variation data
-          system_prompt: system_prompt,
-        });
-        
-        // Set the data transfer
-        e.dataTransfer.setData("application/json", payload);
-        e.dataTransfer.effectAllowed = "copy";
-        
-        // Create a ghost image of the card
-        const dragImg = document.createElement("div");
-        dragImg.className = "bg-primary-100 border border-primary-300 rounded p-2 text-sm font-medium text-primary-700";
-        dragImg.innerHTML = `Drag to save: ${variation}`;
-        dragImg.style.position = "absolute";
-        dragImg.style.top = "-1000px";
-        document.body.appendChild(dragImg);
-        
-        e.dataTransfer.setDragImage(dragImg, 0, 0);
-        
-        // Clean up the ghost element after a short delay
-        setTimeout(() => {
-          document.body.removeChild(dragImg);
-        }, 0);
-      }}
-      onDragEnd={() => {
-        setIsDragging(false);
-      }}
-    >
-      {/* Workflow indicator badge */}
-      {workflow_results && (
-        <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full shadow-sm">
-          <Icon name="flow" className="h-3 w-3 inline-block mr-1" aria-hidden="true" />
-          Workflow
-        </div>
-      )}
+        }}
+        onKeyDown={(e) => {
+          // Space to toggle selection
+          if (e.key === ' ' && 
+              e.target.tagName !== 'INPUT' && 
+              e.target.tagName !== 'TEXTAREA' && 
+              !e.target.isContentEditable) {
+            e.preventDefault();
+            handleSelect();
+          }
+          // Enter key to start editing
+          else if (e.key === 'Enter' && !isEditing && !isGenerating) {
+            e.preventDefault();
+            startEditing();
+          }
+          // Delete or Backspace key to remove card - only if not editing and not in an input field
+          else if ((e.key === 'Delete' || e.key === 'Backspace') && 
+                   !isEditing && 
+                   e.target.tagName !== 'INPUT' && 
+                   e.target.tagName !== 'TEXTAREA' && 
+                   !e.target.isContentEditable) {
+            e.preventDefault();
+            onDismiss();
+          }
+          // Arrow key navigation between cards
+          else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && 
+                   !isEditing && 
+                   e.target.tagName !== 'INPUT' && 
+                   e.target.tagName !== 'TEXTAREA' && 
+                   !e.target.isContentEditable) {
+            e.preventDefault();
+            
+            // Get all focusable variation cards
+            const cards = Array.from(document.querySelectorAll('[data-variation-id]'));
+            if (cards.length <= 1) return; // No navigation needed with only one card
+            
+            const currentIndex = cards.findIndex(card => card === e.target);
+            if (currentIndex === -1) return;
+            
+            let nextIndex;
+            const cardsPerRow = window.innerWidth >= 768 ? 2 : 1; // Based on md:grid-cols-2
+            
+            switch(e.key) {
+              case 'ArrowLeft':
+                nextIndex = currentIndex > 0 ? currentIndex - 1 : cards.length - 1;
+                break;
+              case 'ArrowRight':
+                nextIndex = currentIndex < cards.length - 1 ? currentIndex + 1 : 0;
+                break;
+              case 'ArrowUp':
+                nextIndex = currentIndex - cardsPerRow;
+                if (nextIndex < 0) {
+                  // Go to last row, same column
+                  const lastRowItems = cards.length % cardsPerRow || cardsPerRow;
+                  const column = currentIndex % cardsPerRow;
+                  nextIndex = cards.length - lastRowItems + Math.min(column, lastRowItems - 1);
+                }
+                break;
+              case 'ArrowDown':
+                nextIndex = currentIndex + cardsPerRow;
+                if (nextIndex >= cards.length) {
+                  // Go to first row, same column
+                  nextIndex = currentIndex % cardsPerRow;
+                }
+                break;
+            }
+            
+            if (nextIndex >= 0 && nextIndex < cards.length) {
+              cards[nextIndex].focus();
+            }
+          }
+        }}
+        draggable={!isEditing && !isGenerating} // Enable dragging when not editing or generating
+        onDragStart={(e) => {
+          if (isEditing || isGenerating) return;
+          
+          setIsDragging(true);
+          
+          // Create data payload for the variation
+          const payload = JSON.stringify({
+            id,
+            variation,
+            output,
+            processed_prompt,
+            tool_calls,
+            slots: {}, // Add any slots if available in your variation data
+            system_prompt: system_prompt,
+          });
+          
+          // Set the data transfer
+          e.dataTransfer.setData("application/json", payload);
+          e.dataTransfer.effectAllowed = "copy";
+          
+          // Create a ghost image of the card
+          const dragImg = document.createElement("div");
+          dragImg.className = "bg-primary-100 border border-primary-300 rounded p-2 text-sm font-medium text-primary-700";
+          dragImg.innerHTML = `Drag to save: ${variation}`;
+          dragImg.style.position = "absolute";
+          dragImg.style.top = "-1000px";
+          document.body.appendChild(dragImg);
+          
+          e.dataTransfer.setDragImage(dragImg, 0, 0);
+          
+          // Clean up the ghost element after a short delay
+          setTimeout(() => {
+            document.body.removeChild(dragImg);
+          }, 0);
+        }}
+        onDragEnd={() => {
+          setIsDragging(false);
+        }}
+      >
+        {/* If removing, show the removal reason */}
+        {isRemoving && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            // Add a background color matching the simplified animation target
+            className="absolute inset-0 flex items-center justify-center bg-red-100 bg-opacity-90 z-50 rounded-lg" 
+          >
+            <div className="text-center text-red-600">
+              <Icon name="trash" className="h-6 w-6 mx-auto mb-2" aria-hidden="true" />
+              <p className="font-medium">{removalReason}</p>
+            </div>
+          </motion.div>
+        )}
+      
+        {/* Workflow indicator badge */}
+        {workflow_results && (
+          <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full shadow-sm">
+            <Icon name="flow" className="h-3 w-3 inline-block mr-1" aria-hidden="true" />
+            Workflow
+          </div>
+        )}
     
-      {/* Removed Dimming overlay when editing */}
+        {/* Removed Dimming overlay when editing */}
 
-      {/* Card Content - Needs higher z-index than overlay */}
-      <div className="relative z-20"> 
-        <div className="flex justify-between items-center mb-2">
-          <h4 
-            className="font-medium text-gray-900 truncate max-w-[75%]" 
-            title={variation}
-            onClick={(e) => e.stopPropagation()} // Prevent title click from toggling selection
-          >
-            {variation}
-          </h4>
-          <div className="flex space-x-1 items-center" onClick={(e) => e.stopPropagation()} /* Prevent button clicks from toggling selection */>
-            {/* Selection Indicator - Made clickable */}
-            <button 
-              onClick={(e) => { 
-                e.stopPropagation(); // Prevent card click
-                handleSelect(); // Call the selection handler directly
-              }}
-              className={`flex items-center justify-center h-4 w-4 rounded border ${
-                isSelected ? 'bg-primary-500 border-primary-600' : 'border-gray-300 bg-white'
-              } transition-colors duration-200 mr-1 p-0 focus:outline-none focus:ring-1 focus:ring-primary-400`} // Added focus style
-              aria-label={isSelected ? 'Deselect variation' : 'Select variation'} // ARIA label
-              title={isSelected ? 'Deselect' : 'Select'} // Tooltip
+        {/* Card Content - Needs higher z-index than overlay */}
+        <div className="relative z-20"> 
+          <div className="flex justify-between items-center mb-2">
+            <h4 
+              className="font-medium text-gray-900 truncate max-w-[75%]" 
+              title={variation}
+              onClick={(e) => e.stopPropagation()} // Prevent title click from toggling selection
             >
-              {isSelected && <Icon name="check" className="h-3 w-3 text-white" />}
-            </button>
-            {/* Regenerate Button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); handleRegenerate(); }} // Stop propagation
-              className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
-              title="Regenerate"
-              aria-label="Regenerate output"
-              disabled={isGenerating || isParaphrasing}
-            >
-              <Icon 
-                name="refresh" 
-                className="h-4 w-4 inline-block hover:rotate-180 transition-transform duration-500" 
-                aria-hidden="true" 
-              />
-            </button>
-            {/* Paraphrase Button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); handleParaphrase(); }} // Stop propagation
-              className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
-              title="Paraphrase"
-              aria-label="Paraphrase output"
-              disabled={isGenerating || isParaphrasing || !onOpenParaphraseModal}
-            >
-              <Icon 
-                name="language" 
-                className="h-4 w-4 inline-block hover:scale-110 transition-transform duration-200" 
-                aria-hidden="true" 
-              />
-            </button>
-            {/* Dismiss Button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); onDismiss(); }} // Stop propagation
-              className="text-red-500 hover:text-red-700 p-1 transition-colors"
-              title="Dismiss"
-              aria-label="Dismiss variation"
-            >
-              <Icon 
-                name="trash" 
-                className="h-4 w-4 inline-block hover:scale-110 transition-transform duration-200" 
-                aria-hidden="true" 
-              />
-            </button>
-          </div>
-        </div>
-        
-        {isEditing ? (
-          // Ensure the editing area is above the overlay
-          <div className="relative z-30" onClick={(e) => e.stopPropagation()} /* Prevent clicks inside editor from toggling selection */>
-            <CustomTextInput
-              ref={textareaRef}
-              value={editedOutput}
-              onChange={handleOutputChange}
-              onBlur={saveEdit} // Save on blur (clicking outside)
-              placeholder="Output"
-              autoFocus
-              mode="multi"
-              rows={6}
-              className="transition-colors duration-200 scrollbar-thin scrollbar-thumb-gray-300"
-              containerClassName="mb-0"
-              style={{ minHeight: '8rem' }}
-              aiContext="You are helping to edit a variation output in a dataset generation tool. The content should be high-quality and match the intended purpose."
-              systemPrompt="Improve this output to be more coherent, well-structured, and accurate while maintaining the original intent and information."
-              collapsible={false}
-              autoExpandThreshold={200}
-            />
-            {/* Removed save/cancel buttons */}
-          </div>
-        ) : (
-          <div
-            ref={outputDisplayRef}
-            onClick={(e) => { e.stopPropagation(); startEditing(e); }} // Stop propagation, allow editing on click
-            className="p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap transition-all duration-200 hover:border-gray-200 hover:bg-gray-75 cursor-text min-h-[5rem] max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300" // Changed cursor to text
-            role="button" // Keep role for semantics, though interaction changes
-            aria-label="Edit output"
-            tabIndex={0} // Keep focusable
-            onKeyDown={(e) => { // Allow editing with Enter
-              if (!isEditing && e.key === 'Enter') {
-                e.preventDefault();
-                startEditing(e);
-              }
-            }}
-          >
-            {output || <span className="text-gray-400 italic">No output</span>}
-            {renderToolCalls(tool_calls)}
-          </div>
-        )}
-
-        {/* Workflow results section */}
-        {renderWorkflowResults()}
-        
-        {/* Processed prompt section */}
-        {processed_prompt && (
-          <div className="mt-3 pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()} /* Prevent clicks from toggling selection */>
-            <button
-              onClick={() => setShowPrompt(!showPrompt)}
-              className="text-xs text-gray-500 hover:text-gray-700 font-medium flex items-center group"
-              aria-expanded={showPrompt}
-              aria-controls={`processed-prompt-${id}`} // Unique ID for ARIA
-            >
-              <Icon
-                name={showPrompt ? 'chevronUp' : 'chevronDown'}
-                className="w-3 h-3 mr-1 inline-block group-hover:text-primary-500 transition-colors"
-                aria-hidden="true"
-              />
-              {showPrompt ? 'Hide Processed Prompt' : 'Show Processed Prompt'}
-            </button>
-            {showPrompt && (
-              <div 
-                id={`processed-prompt-${id}`} // Unique ID for ARIA
-                className="mt-2 p-2 bg-gray-100 rounded border border-gray-200 text-xs whitespace-pre-wrap font-mono max-h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300"
+              {variation}
+            </h4>
+            <div className="flex space-x-1 items-center" onClick={(e) => e.stopPropagation()} /* Prevent button clicks from toggling selection */>
+              {/* Selection Indicator - Made clickable */}
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); // Prevent card click
+                  handleSelect(); // Call the selection handler directly
+                }}
+                className={`flex items-center justify-center h-4 w-4 rounded border ${
+                  isSelected ? 'bg-primary-500 border-primary-600' : 'border-gray-300 bg-white'
+                } transition-colors duration-200 mr-1 p-0 focus:outline-none focus:ring-1 focus:ring-primary-400`} // Added focus style
+                aria-label={isSelected ? 'Deselect variation' : 'Select variation'} // ARIA label
+                title={isSelected ? 'Deselect' : 'Select'} // Tooltip
               >
-                {processed_prompt}
-              </div>
-            )}
+                {isSelected && <Icon name="check" className="h-3 w-3 text-white" />}
+              </button>
+              {/* Regenerate Button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); handleRegenerate(); }} // Stop propagation
+                className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
+                title="Regenerate"
+                aria-label="Regenerate output"
+                disabled={isGenerating || isParaphrasing}
+              >
+                <Icon 
+                  name="refresh" 
+                  className="h-4 w-4 inline-block hover:rotate-180 transition-transform duration-500" 
+                  aria-hidden="true" 
+                />
+              </button>
+              {/* Paraphrase Button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); handleParaphrase(); }} // Stop propagation
+                className="text-primary-600 hover:text-primary-800 p-1 transition-colors"
+                title="Paraphrase"
+                aria-label="Paraphrase output"
+                disabled={isGenerating || isParaphrasing || !onOpenParaphraseModal}
+              >
+                <Icon 
+                  name="language" 
+                  className="h-4 w-4 inline-block hover:scale-110 transition-transform duration-200" 
+                  aria-hidden="true" 
+                />
+              </button>
+              {/* Dismiss Button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); onDismiss(); }} // Stop propagation
+                className="text-red-500 hover:text-red-700 p-1 transition-colors"
+                title="Dismiss"
+                aria-label="Dismiss variation"
+              >
+                <Icon 
+                  name="trash" 
+                  className="h-4 w-4 inline-block hover:scale-110 transition-transform duration-200" 
+                  aria-hidden="true" 
+                />
+              </button>
+            </div>
           </div>
-        )}
-        
-        <ToolCallEditor
-          isOpen={isToolEditorOpen}
-          toolCalls={tool_calls}
-          onChange={(newToolCalls) => {
-            onToolCallsChange(id, newToolCalls); // Pass id
-            setIsToolEditorOpen(false); // Close editor on change
-          }}
-          onClose={() => setIsToolEditorOpen(false)}
-        />
-      </div> 
-      {/* End Card Content Wrapper */}
-    </div>
+          
+          {isEditing ? (
+            // Ensure the editing area is above the overlay
+            <div className="relative z-30" onClick={(e) => e.stopPropagation()} /* Prevent clicks inside editor from toggling selection */>
+              <CustomTextInput
+                ref={textareaRef}
+                value={editedOutput}
+                onChange={handleOutputChange}
+                onBlur={saveEdit} // Save on blur (clicking outside)
+                placeholder="Output"
+                autoFocus
+                mode="multi"
+                rows={6}
+                className="transition-colors duration-200 scrollbar-thin scrollbar-thumb-gray-300"
+                containerClassName="mb-0"
+                style={{ minHeight: '8rem' }}
+                aiContext="You are helping to edit a variation output in a dataset generation tool. The content should be high-quality and match the intended purpose."
+                systemPrompt="Improve this output to be more coherent, well-structured, and accurate while maintaining the original intent and information."
+                collapsible={false}
+                autoExpandThreshold={200}
+              />
+              {/* Removed save/cancel buttons */}
+            </div>
+          ) : (
+            <div
+              ref={outputDisplayRef}
+              onClick={(e) => { e.stopPropagation(); startEditing(e); }} // Stop propagation, allow editing on click
+              className="p-3 bg-gray-50 rounded border border-gray-100 text-sm whitespace-pre-wrap transition-all duration-200 hover:border-gray-200 hover:bg-gray-75 cursor-text min-h-[5rem] max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300" // Changed cursor to text
+              role="button" // Keep role for semantics, though interaction changes
+              aria-label="Edit output"
+              tabIndex={0} // Keep focusable
+              onKeyDown={(e) => { // Allow editing with Enter
+                if (!isEditing && e.key === 'Enter') {
+                  e.preventDefault();
+                  startEditing(e);
+                }
+              }}
+            >
+              {output || <span className="text-gray-400 italic">No output</span>}
+              {renderToolCalls(tool_calls)}
+            </div>
+          )}
+
+          {/* Workflow results section */}
+          {renderWorkflowResults()}
+          
+          {/* Processed prompt section */}
+          {processed_prompt && (
+            <div className="mt-3 pt-3 border-t border-gray-100" onClick={(e) => e.stopPropagation()} /* Prevent clicks from toggling selection */>
+              <button
+                onClick={() => setShowPrompt(!showPrompt)}
+                className="text-xs text-gray-500 hover:text-gray-700 font-medium flex items-center group"
+                aria-expanded={showPrompt}
+                aria-controls={`processed-prompt-${id}`} // Unique ID for ARIA
+              >
+                <Icon
+                  name={showPrompt ? 'chevronUp' : 'chevronDown'}
+                  className="w-3 h-3 mr-1 inline-block group-hover:text-primary-500 transition-colors"
+                  aria-hidden="true"
+                />
+                {showPrompt ? 'Hide Processed Prompt' : 'Show Processed Prompt'}
+              </button>
+              {showPrompt && (
+                <div 
+                  id={`processed-prompt-${id}`} // Unique ID for ARIA
+                  className="mt-2 p-2 bg-gray-100 rounded border border-gray-200 text-xs whitespace-pre-wrap font-mono max-h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300"
+                >
+                  {processed_prompt}
+                </div>
+              )}
+            </div>
+          )}
+          
+          <ToolCallEditor
+            isOpen={isToolEditorOpen}
+            toolCalls={tool_calls}
+            onChange={(newToolCalls) => {
+              onToolCallsChange(id, newToolCalls); // Pass id
+              setIsToolEditorOpen(false); // Close editor on change
+            }}
+            onClose={() => setIsToolEditorOpen(false)}
+          />
+        </div> 
+        {/* End Card Content Wrapper */}
+      </motion.div>
+    </AnimatePresence>
   );
-};
+});
+
+// Add display name for React DevTools
+VariationCard.displayName = 'VariationCard';
 
 export default VariationCard;

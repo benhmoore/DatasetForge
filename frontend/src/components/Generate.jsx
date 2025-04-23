@@ -68,10 +68,25 @@ const Generate = ({ context }) => {
     return savedId ? parseInt(savedId, 10) : null;
   });
   
+  // Add this state to track animations in progress
+  const [animationsInProgress, setAnimationsInProgress] = useState(new Set());
+  
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
   // Add this reference at the top of your component
   const workflowManagerRef = useRef(null);
+
+  // Add reference collections for variation refs and animation queue
+  const variationRefsMap = useRef(new Map());
+  const emptyVariationsToAnimate = useRef([]);
+
+  // Register variation refs
+  const registerVariationRef = useCallback((id, ref) => {
+    if (ref && id) {
+      console.log(`Registered variation ref for ${id}`);
+      variationRefsMap.current.set(id, ref);
+    }
+  }, []);
 
   // Calculate counts for the dynamic save button
   const selectedCount = selectedVariations?.size || 0;
@@ -320,18 +335,56 @@ const Generate = ({ context }) => {
             );
 
             if (targetIndex !== -1) {
-              // Ensure template_id is explicitly preserved and logged
-              const backendTemplateId = result.template_id || currentTemplateId;
-              console.log(`Updating variation at index ${targetIndex} with template_id:`, backendTemplateId);
+              // Check if the result is empty
+              const isEmpty = (!result.output || result.output.trim() === '') && (!result.tool_calls || result.tool_calls.length === 0);
               
-              updated[targetIndex] = {
-                ...updated[targetIndex],
-                ...result,
-                isGenerating: false,
-                error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
-                template_id: backendTemplateId, // Always ensure template_id is set
-                _source: 'stream' // Debug flag to track source
-              };
+              if (isEmpty) {
+                // Create a ref map if it doesn't exist
+                if (!variationRefsMap.current) {
+                  variationRefsMap.current = new Map();
+                }
+                
+                const variationId = updated[targetIndex].id;
+                
+                // Check if this variation is already queued for animation
+                const isAlreadyQueued = emptyVariationsToAnimate.current.some(item => item.id === variationId);
+                
+                if (!isAlreadyQueued) {
+                  // Store the to-be-removed variation for animation
+                  console.log(`Queueing removal animation for empty variation: ${variationId}`); 
+                  emptyVariationsToAnimate.current.push({
+                    index: targetIndex,
+                    id: variationId,
+                    reason: "Empty generation removed"
+                  });
+                } else {
+                  console.log(`Variation ${variationId} already queued for animation, skipping duplicate`);
+                }
+                
+                // Keep it in the array but mark for removal
+                // It will be animated out in the useEffect below
+                updated[targetIndex] = {
+                  ...updated[targetIndex],
+                  ...result,
+                  _pendingRemoval: true,
+                  _animateOut: true, // Add a flag to show we want to animate this out
+                  isGenerating: false,
+                  template_id: result.template_id || currentTemplateId
+                };
+              } else {
+                // Update the variation as usual
+                const backendTemplateId = result.template_id || currentTemplateId;
+                console.log(`Updating variation at index ${targetIndex} with template_id:`, backendTemplateId);
+                
+                updated[targetIndex] = {
+                  ...updated[targetIndex],
+                  ...result,
+                  isGenerating: false,
+                  error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
+                  template_id: backendTemplateId, // Always ensure template_id is set
+                  _source: 'stream' // Debug flag to track source
+                };
+              }
             } else {
               console.error(`Could not find placeholder for seed ${result.seed_index}, variation ${result.variation_index}. It might have been dismissed.`);
             }
@@ -358,6 +411,9 @@ const Generate = ({ context }) => {
         setIsExecutingWorkflow(false);
       }
       abortControllerRef.current = null;
+      // Add a final cleanup step to remove any remaining placeholders that didn't receive results
+      // This might happen if the stream ends prematurely or an error occurs before all results arrive
+      setVariations(prev => prev.filter(v => !(v.isGenerating && v.id.startsWith('temp-'))));
     }
   }, [selectedDataset, selectedTemplate, workflowEnabled, currentWorkflow]);
   
@@ -606,20 +662,223 @@ const Generate = ({ context }) => {
                       if (targetIndex !== -1) {
                         const baseVariation = updated[targetIndex];
                         
-                        // Get output content from the node result
+                        // Get output content and tool calls from the node result
                         const outputContent = nodeResult.output || "";
+                        // Assuming tool calls might be part of the node result, adjust if needed
+                        const toolCalls = nodeResult.tool_calls || baseVariation.tool_calls || null; 
+                        const isEmpty = (!outputContent || outputContent.trim() === '') && (!toolCalls || toolCalls.length === 0);
+
+                        if (isEmpty) {
+                          // Check if this variation is already queued for animation
+                          const isAlreadyQueued = emptyVariationsToAnimate.current.some(item => item.id === origVariationId);
+                          
+                          if (!isAlreadyQueued) {
+                            // Instead of immediate removal, queue for animation
+                            console.log(`Queueing removal animation for empty workflow variation: ${origVariationId}`);
+                            emptyVariationsToAnimate.current.push({
+                              index: targetIndex,
+                              id: origVariationId,
+                              reason: "Empty workflow result removed"
+                            });
+                          } else {
+                            console.log(`Variation ${origVariationId} already queued for animation, skipping duplicate`);
+                          }
+                          
+                          // Mark for removal but keep in array for animation
+                          updated[targetIndex] = {
+                            ...baseVariation,
+                            ...nodeResult,
+                            _pendingRemoval: true,
+                            _animateOut: true,
+                            isGenerating: false,
+                            error: null,
+                            template_id: data.template_id,
+                            _source: 'workflow_output'
+                          };
+                        } else {
+                          // Update the variation with the workflow result as before
+                          updated[targetIndex] = {
+                            ...baseVariation,
+                            output: outputContent,
+                            tool_calls: toolCalls, // Update tool calls
+                            variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
+                            isGenerating: false,
+                            error: null,
+                            template_id: data.template_id,
+                            _source: 'workflow_output',
+                            _output_node_id: nodeId,
+                            _output_node_name: nodeResult.name || nodeId,
+                            workflow_results: progressData.result,
+                            workflow_progress: {
+                              ...baseVariation.workflow_progress,
+                              completed_at: new Date().toISOString(),
+                              status: 'complete'
+                            }
+                          };
+                        }
+                      }
+                      return updated;
+                    });
+                  } else {
+                    // Multiple output nodes - create multiple variation cards
+                    setVariations(prevVariations => {
+                      let updated = [...prevVariations];
+                      const targetIndex = updated.findIndex(v => v.id === origVariationId);
+                      
+                      if (targetIndex !== -1) {
+                        const baseVariation = updated[targetIndex];
+                        const newVariations = [];
+                        let originalUpdated = false; // Track if original variation was updated or removed
                         
+                        // Process each output node
+                        outputNodes.forEach((nodeId, index) => {
+                          const nodeResult = outputNodeResults[nodeId];
+                          const outputContent = nodeResult.output || '';
+                          // Assuming tool calls might be part of the node result
+                          const toolCalls = nodeResult.tool_calls || baseVariation.tool_calls || null; 
+                          const isEmpty = (!outputContent || outputContent.trim() === '') && (!toolCalls || toolCalls.length === 0);
+
+                          if (index === 0) {
+                            if (isEmpty) {
+                              // Check if this variation is already queued for animation
+                              const isAlreadyQueued = emptyVariationsToAnimate.current.some(item => item.id === origVariationId);
+                              
+                              if (!isAlreadyQueued) {
+                                // Queue for animation instead of immediate removal
+                                console.log(`Queueing removal animation for empty workflow variation (multi-output): ${origVariationId}`);
+                                emptyVariationsToAnimate.current.push({
+                                  index: targetIndex,
+                                  id: origVariationId,
+                                  reason: "Empty workflow result removed"
+                                });
+                              } else {
+                                console.log(`Variation ${origVariationId} already queued for animation, skipping duplicate`);
+                              }
+                              
+                              // Mark for animation but keep in array
+                              updated[targetIndex] = {
+                                ...baseVariation,
+                                ...nodeResult,
+                                _pendingRemoval: true,
+                                _animateOut: true,
+                                isGenerating: false,
+                                error: null,
+                                template_id: data.template_id,
+                                _source: 'workflow_output'
+                              };
+                              originalUpdated = true; // Mark as updated
+                            } else {
+                              // Update the original variation with the first output
+                              updated[targetIndex] = {
+                                ...baseVariation,
+                                output: outputContent,
+                                tool_calls: toolCalls,
+                                variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
+                                isGenerating: false,
+                                error: null,
+                                template_id: data.template_id,
+                                _source: 'workflow_output',
+                                _output_node_id: nodeId,
+                                _output_node_name: nodeResult.name || nodeId,
+                                workflow_results: progressData.result,
+                                workflow_progress: { // Copy progress but mark complete
+                                  ...(baseVariation.workflow_progress || {}),
+                                  completed_at: new Date().toISOString(),
+                                  status: 'complete'
+                                }
+                              };
+                              originalUpdated = true; // Mark as updated
+                            }
+                          } else {
+                            // Create new variations for additional outputs only if not empty
+                            if (!isEmpty) {
+                              const newVariationId = `${origVariationId}-output-${nodeId}-${Date.now()}`;
+                              newVariations.push({
+                                ...baseVariation, // Copy base properties
+                                id: newVariationId,
+                                output: outputContent,
+                                tool_calls: toolCalls,
+                                variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
+                                isGenerating: false,
+                                error: null,
+                                template_id: data.template_id,
+                                _source: 'workflow_output',
+                                _output_node_id: nodeId,
+                                _output_node_name: nodeResult.name || nodeId,
+                                workflow_results: progressData.result,
+                                workflow_progress: { // Copy progress but mark complete
+                                  ...(baseVariation.workflow_progress || {}),
+                                  completed_at: new Date().toISOString(),
+                                  status: 'complete'
+                                }
+                              });
+                            } else {
+                               console.log(`Skipping empty workflow variation (multi-output, additional): Node ${nodeId}`);
+                            }
+                          }
+                        });
+                        
+                        // Add all new non-empty variations to the array
+                        // If the original was removed, updated already reflects that
+                        // If the original was updated, updated contains the modified original
+                        return [...updated, ...newVariations];
+                      }
+                      return updated; // Return unchanged if targetIndex was -1
+                    });
+                  }
+                } else {
+                  // Fallback to processing all results if no output_node_results
+                  console.log("No output_node_results found, using fallback processing");
+                  
+                  // Get the final output and potential tool calls from the result if available
+                  const finalOutput = progressData.result?.final_output?.output || "";
+                  const finalToolCalls = progressData.result?.final_output?.tool_calls || null;
+                  const isEmpty = (!finalOutput || finalOutput.trim() === '') && (!finalToolCalls || finalToolCalls.length === 0);
+
+                  setVariations(prevVariations => {
+                    const updated = [...prevVariations];
+                    const targetIndex = updated.findIndex(v => v.id === origVariationId);
+                    
+                    if (targetIndex !== -1) {
+                      const baseVariation = updated[targetIndex];
+                      
+                      if (isEmpty) {
+                        // Check if this variation is already queued for animation
+                        const isAlreadyQueued = emptyVariationsToAnimate.current.some(item => item.id === origVariationId);
+                        
+                        if (!isAlreadyQueued) {
+                          // Queue for animation instead of immediate removal
+                          console.log(`Queueing removal animation for empty workflow variation (fallback): ${origVariationId}`);
+                          emptyVariationsToAnimate.current.push({
+                            index: targetIndex,
+                            id: origVariationId,
+                            reason: "Empty workflow result removed"
+                          });
+                        } else {
+                          console.log(`Variation ${origVariationId} already queued for animation, skipping duplicate`);
+                        }
+                        
+                        // Mark for animation but keep in array
+                        updated[targetIndex] = {
+                          ...baseVariation,
+                          _pendingRemoval: true, 
+                          _animateOut: true,
+                          isGenerating: false,
+                          output: finalOutput,
+                          tool_calls: finalToolCalls,
+                          template_id: data.template_id,
+                          _source: 'workflow_output'
+                        };
+                      } else {
                         // Update the variation with the workflow result
                         updated[targetIndex] = {
                           ...baseVariation,
-                          output: outputContent,
-                          variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
+                          output: finalOutput,
+                          tool_calls: finalToolCalls, // Update tool calls
                           isGenerating: false,
                           error: null,
                           template_id: data.template_id,
                           _source: 'workflow_output',
-                          _output_node_id: nodeId,
-                          _output_node_name: nodeResult.name || nodeId,
                           workflow_results: progressData.result,
                           workflow_progress: {
                             ...baseVariation.workflow_progress,
@@ -628,102 +887,6 @@ const Generate = ({ context }) => {
                           }
                         };
                       }
-                      return updated;
-                    });
-                  } else {
-                    // Multiple output nodes - create multiple variation cards
-                    setVariations(prevVariations => {
-                      const updated = [...prevVariations];
-                      const targetIndex = updated.findIndex(v => v.id === origVariationId);
-                      
-                      if (targetIndex !== -1) {
-                        const baseVariation = updated[targetIndex];
-                        const newVariations = [];
-                        
-                        // Process each output node
-                        outputNodes.forEach((nodeId, index) => {
-                          const nodeResult = outputNodeResults[nodeId];
-                          const outputContent = nodeResult.output || '';
-                          
-                          if (index === 0) {
-                            // Update the original variation with the first output
-                            updated[targetIndex] = {
-                              ...baseVariation,
-                              output: outputContent,
-                              variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
-                              isGenerating: false,
-                              error: null,
-                              template_id: data.template_id,
-                              _source: 'workflow_output',
-                              _output_node_id: nodeId,
-                              _output_node_name: nodeResult.name || nodeId,
-                              workflow_results: progressData.result,
-                              workflow_progress: {
-                                ...baseVariation.workflow_progress,
-                                completed_at: new Date().toISOString(),
-                                status: 'complete'
-                              }
-                            };
-                          } else {
-                            // Create new variations for additional outputs
-                            const newVariationId = `${origVariationId}-output-${nodeId}-${Date.now()}`;
-                            
-                            newVariations.push({
-                              ...baseVariation,
-                              id: newVariationId,
-                              output: outputContent,
-                              variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
-                              isGenerating: false,
-                              error: null,
-                              template_id: data.template_id,
-                              _source: 'workflow_output',
-                              _output_node_id: nodeId,
-                              _output_node_name: nodeResult.name || nodeId,
-                              workflow_results: progressData.result,
-                              workflow_progress: {
-                                ...baseVariation.workflow_progress,
-                                completed_at: new Date().toISOString(),
-                                status: 'complete'
-                              }
-                            });
-                          }
-                        });
-                        
-                        // Add all new variations to the array
-                        return [...updated, ...newVariations];
-                      }
-                      return updated;
-                    });
-                  }
-                } else {
-                  // Fallback to processing all results if no output_node_results
-                  console.log("No output_node_results found, using fallback processing");
-                  
-                  // Get the final output from the result if available
-                  const finalOutput = progressData.result?.final_output?.output || "No output from workflow";
-                  
-                  setVariations(prevVariations => {
-                    const updated = [...prevVariations];
-                    const targetIndex = updated.findIndex(v => v.id === origVariationId);
-                    
-                    if (targetIndex !== -1) {
-                      const baseVariation = updated[targetIndex];
-                      
-                      // Update the variation with the workflow result
-                      updated[targetIndex] = {
-                        ...baseVariation,
-                        output: finalOutput,
-                        isGenerating: false,
-                        error: null,
-                        template_id: data.template_id,
-                        _source: 'workflow_output',
-                        workflow_results: progressData.result,
-                        workflow_progress: {
-                          ...baseVariation.workflow_progress,
-                          completed_at: new Date().toISOString(),
-                          status: 'complete'
-                        }
-                      };
                     }
                     return updated;
                   });
@@ -1206,29 +1369,70 @@ const Generate = ({ context }) => {
             const targetIndex = updated.findIndex(v => v.id === id);
 
             if (targetIndex !== -1) {
-              updated[targetIndex] = {
-                ...updated[targetIndex],
-                variation: result.variation,
-                output: result.output,
-                tool_calls: result.tool_calls,
-                processed_prompt: result.processed_prompt,
-                seed_index: result.seed_index ?? originalSeedIndex,
-                variation_index: result.variation_index ?? originalVariationIndex,
-                slots: result.slots ?? slotData,
-                system_prompt: result.system_prompt, // Store system_prompt from backend
-                template_id: result.template_id, // Properly update template_id from backend response
-                isGenerating: false,
-                error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
-              };
+              // Check if the regeneration result is empty
+              const isEmpty = (!result.output || result.output.trim() === '') && (!result.tool_calls || result.tool_calls.length === 0);
 
-              // Deselect item if it was selected, as it has been regenerated
-              if (selectedVariations.has(id)) {
+              if (isEmpty) {
+                // Check if this variation is already queued for animation
+                const isAlreadyQueued = emptyVariationsToAnimate.current.some(item => item.id === id);
+                
+                if (!isAlreadyQueued) {
+                  // Queue for animation instead of immediate removal
+                  console.log(`Queueing removal animation for empty regenerated variation (standard): ${id}`);
+                  emptyVariationsToAnimate.current.push({
+                    index: targetIndex,
+                    id: id,
+                    reason: "Empty regeneration removed"
+                  });
+                } else {
+                  console.log(`Variation ${id} already queued for animation, skipping duplicate`);
+                }
+                
+                // Mark for animation but keep in array
+                updated[targetIndex] = {
+                  ...updated[targetIndex],
+                  _pendingRemoval: true, 
+                  _animateOut: true,
+                  isGenerating: false,
+                  output: result.output,
+                  tool_calls: result.tool_calls,
+                  template_id: result.template_id,
+                  _source: 'standard_regen_empty'
+                };
+                
+                // Also remove from selection if it was selected
                 setSelectedVariations(prevSelected => {
                   const newSelected = new Set(prevSelected);
                   newSelected.delete(id);
                   return newSelected;
                 });
-                toast.info("Deselected item due to regeneration.");
+                toast.info("Removed empty variation after regeneration.");
+              } else {
+                // Update the variation as usual
+                updated[targetIndex] = {
+                  ...updated[targetIndex],
+                  variation: result.variation,
+                  output: result.output,
+                  tool_calls: result.tool_calls,
+                  processed_prompt: result.processed_prompt,
+                  seed_index: result.seed_index ?? originalSeedIndex,
+                  variation_index: result.variation_index ?? originalVariationIndex,
+                  slots: result.slots ?? slotData,
+                  system_prompt: result.system_prompt, // Store system_prompt from backend
+                  template_id: result.template_id, // Properly update template_id from backend response
+                  isGenerating: false,
+                  error: result.output?.startsWith('[Error:') || result.output?.startsWith('[Ollama API timed out') ? result.output : null,
+                };
+
+                // Deselect item if it was selected, as it has been regenerated
+                if (selectedVariations.has(id)) {
+                  setSelectedVariations(prevSelected => {
+                    const newSelected = new Set(prevSelected);
+                    newSelected.delete(id);
+                    return newSelected;
+                  });
+                  toast.info("Deselected item due to regeneration.");
+                }
               }
 
             } else {
@@ -1264,97 +1468,143 @@ const Generate = ({ context }) => {
       const targetIndex = updated.findIndex(v => v.id === id);
       
       if (targetIndex !== -1) {
-        // Extract the final output from workflow result
+        // Extract the final output and tool calls from workflow result
         let workflowOutput = "";
+        let workflowToolCalls = updated[targetIndex].tool_calls || null; // Keep original tool calls unless overwritten
         
         // Handle multiple output nodes if present
         const outputNodeResults = progressData.result?.output_node_results || {};
         const outputNodes = Object.keys(outputNodeResults);
         
         if (outputNodes.length > 0) {
-          // If this is regenerating a specific output node, use that node
+          // ... (logic to find the correct node output) ...
           const existingOutputNodeId = updated[targetIndex]._output_node_id;
+          let nodeOutputData = null;
+
           if (existingOutputNodeId && outputNodeResults[existingOutputNodeId]) {
-            // Use the specific output node that matches the original
-            const nodeOutput = outputNodeResults[existingOutputNodeId];
-            workflowOutput = nodeOutput.output || "";
-            
-            // Keep the existing node ID and name for consistency
-            // The node name is already in the variation name
-          } else {
-            // Just use the first output node result
+            nodeOutputData = outputNodeResults[existingOutputNodeId];
+          } else if (outputNodes.length > 0) {
+            // Fallback to first node if specific node not found or not applicable
             const firstNodeId = outputNodes[0];
-            const nodeOutput = outputNodeResults[firstNodeId];
-            workflowOutput = nodeOutput.output || "";
-            
-            // Update the node ID and name
+            nodeOutputData = outputNodeResults[firstNodeId];
+            // Update node ID and name if falling back
             updated[targetIndex]._output_node_id = firstNodeId;
-            updated[targetIndex]._output_node_name = nodeOutput.name || firstNodeId;
-            
-            // Update variation name with node name
-            if (nodeOutput.name) {
-              // Extract the base variation name (before any parenthesis)
+            updated[targetIndex]._output_node_name = nodeOutputData.name || firstNodeId;
+            if (nodeOutputData.name) {
               const baseName = updated[targetIndex].variation.split(' (')[0];
-              updated[targetIndex].variation = `${baseName} (${nodeOutput.name})`;
-            }
-          }
-        } else {
-          // Try to get output from different places
-          if (progressData.result?.final_output?.output) {
-            workflowOutput = progressData.result.final_output.output;
-          } else if (progressData.result?.final_output) {
-            // If final_output exists but no output field, try other fields
-            const finalOutput = progressData.result.final_output;
-            for (const key of ['result', 'text', 'content', 'value']) {
-              if (finalOutput[key]) {
-                workflowOutput = finalOutput[key];
-                break;
-              }
+              updated[targetIndex].variation = `${baseName} (${nodeOutputData.name})`;
             }
           }
           
-          // If still empty, check results array for any output
-          if (!workflowOutput && progressData.result?.results) {
-            // Look for the last result with an output
+          if (nodeOutputData) {
+            workflowOutput = nodeOutputData.output || "";
+            // Check if the node result contains tool calls
+            if (nodeOutputData.tool_calls !== undefined) {
+              workflowToolCalls = nodeOutputData.tool_calls;
+            }
+          }
+          
+        } else {
+          // Try to get output and tool calls from different places in the fallback
+          if (progressData.result?.final_output) {
+             workflowOutput = progressData.result.final_output.output || "";
+             if (progressData.result.final_output.tool_calls !== undefined) {
+               workflowToolCalls = progressData.result.final_output.tool_calls;
+             }
+          } else if (progressData.result?.results) {
+            // Look for the last result with an output or tool_calls
             const results = progressData.result.results;
             for (let i = results.length - 1; i >= 0; i--) {
               if (results[i].output?.output) {
                 workflowOutput = results[i].output.output;
-                break;
               }
+              if (results[i].output?.tool_calls !== undefined) {
+                 workflowToolCalls = results[i].output.tool_calls;
+              }
+              // Stop if we found both or reached the beginning
+              if (workflowOutput || workflowToolCalls !== null) break; 
             }
           }
         }
         
-        // Final fallback
-        if (!workflowOutput) {
+        // Final fallback for output
+        if (!workflowOutput && !workflowToolCalls) {
           workflowOutput = "No output from workflow";
         }
-        
-        updated[targetIndex] = {
-          ...updated[targetIndex],
-          output: workflowOutput,
-          processed_prompt: instruction || "",
-          isGenerating: false,
-          error: null,
-          template_id: selectedTemplate.id,
-          _source: 'workflow_regen',
-          workflow_results: progressData.result,
-          workflow_progress: {
-            ...updated[targetIndex].workflow_progress,
-            completed_at: new Date().toISOString(),
-            status: 'complete'
+
+        // Check if the final result is empty
+        const isEmpty = (!workflowOutput || workflowOutput.trim() === '') && (!workflowToolCalls || workflowToolCalls.length === 0);
+
+        if (isEmpty) {
+          // Check if this variation is already queued for animation
+          const isAlreadyQueued = emptyVariationsToAnimate.current.some(item => item.id === id);
+          
+          if (!isAlreadyQueued) {
+            // Queue for animation instead of immediate removal
+            console.log(`Queueing removal animation for empty regenerated variation (workflow): ${id}`);
+            emptyVariationsToAnimate.current.push({
+              index: targetIndex,
+              id: id,
+              reason: "Empty workflow regeneration removed"
+            });
+          } else {
+            console.log(`Variation ${id} already queued for animation, skipping duplicate`);
           }
-        };
-        
-        // Deselect item if it was selected, as it has been regenerated
-        if (selectedVariations.has(id)) {
+          
+          // Mark for animation but keep in array
+          updated[targetIndex] = {
+            ...updated[targetIndex],
+            _pendingRemoval: true, 
+            _animateOut: true,
+            isGenerating: false,
+            output: workflowOutput,
+            tool_calls: workflowToolCalls, // Update tool calls
+            processed_prompt: instruction || "",
+            template_id: selectedTemplate.id, // Ensure template_id is present
+            _source: 'workflow_regen',
+            workflow_results: progressData.result,
+            workflow_progress: {
+              ...updated[targetIndex].workflow_progress,
+              completed_at: new Date().toISOString(),
+              status: 'complete'
+            }
+          };
+          
+          // Also remove from selection if it was selected
           setSelectedVariations(prevSelected => {
             const newSelected = new Set(prevSelected);
             newSelected.delete(id);
             return newSelected;
           });
-          toast.info("Deselected item due to regeneration.");
+          toast.info("Removed empty variation after workflow regeneration.");
+        } else {
+          // Update the variation
+          updated[targetIndex] = {
+            ...updated[targetIndex],
+            output: workflowOutput,
+            tool_calls: workflowToolCalls, // Update tool calls
+            processed_prompt: instruction || "",
+            isGenerating: false,
+            error: null,
+            template_id: selectedTemplate.id, // Ensure template_id is present
+            _source: 'workflow_regen',
+            workflow_results: progressData.result,
+            workflow_progress: {
+              ...updated[targetIndex].workflow_progress,
+              completed_at: new Date().toISOString(),
+              status: 'complete'
+            }
+          };
+          
+          // Deselect item if it was selected, as it has been regenerated
+          if (selectedVariations.has(id)) {
+            setSelectedVariations(prevSelected => {
+              const newSelected = new Set(prevSelected);
+              newSelected.delete(id);
+              return newSelected;
+            });
+            toast.info("Deselected item due to regeneration.");
+          }
         }
       }
       return updated;
@@ -1792,33 +2042,125 @@ const Generate = ({ context }) => {
       // Give time for rendering to complete, especially for workflow processing
       const timeoutDelay = 300; // Increased from 100ms to 300ms
       
-      // Prioritize focusing completed cards that were previously generating
-      // Look for cards that just finished generating (newly completed)
+      // Find the most recently added non-generating card (might not have _source if added differently)
+      // Prioritize cards that just finished generating
       const justCompletedCard = variations.find(v => 
         !v.isGenerating && 
         !v.error && 
-        v._source === 'workflow_output' || v._source === 'stream'
+        !v._pendingRemoval && // Ensure it's not pending removal
+        (v._source === 'workflow_output' || v._source === 'stream' || v._source === 'workflow_regen' || v._source === 'paraphrase')
+      );
+
+      // If no newly completed card, find the first non-generating, non-removing card
+      const cardToFocus = justCompletedCard || variations.find(v => 
+        !v.isGenerating && 
+        !v.error && 
+        !v._pendingRemoval && // Ensure it's not pending removal
+        !animationsInProgress.has(v.id) // Ensure it's not currently animating out
       );
       
-      // If no newly completed card found, focus the first non-generating card
-      const cardToFocus = justCompletedCard || variations.find(v => !v.isGenerating && !v.error);
-      
+      // Only focus if we found a suitable card that is not being removed
       if (cardToFocus) {
         // Use setTimeout to ensure the DOM has updated
         setTimeout(() => {
-          const cardElement = document.querySelector(`[data-variation-id="${cardToFocus.id}"]`);
+          // Double-check the card still exists and isn't marked for removal in the DOM
+          const cardElement = document.querySelector(`[data-variation-id="${cardToFocus.id}"]:not([data-removing="true"])`);
           if (cardElement) {
             // Scroll into view if needed before focusing
             cardElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            cardElement.focus();
-            console.log(`Focused variation card: ${cardToFocus.id}, variation: ${cardToFocus.variation}`);
+            
+            // Check if the element is already focused before focusing again
+            if (document.activeElement !== cardElement) {
+              cardElement.focus();
+              console.log(`Focused variation card: ${cardToFocus.id}, variation: ${cardToFocus.variation}`);
+            } else {
+              console.log(`Card already focused: ${cardToFocus.id}`);
+            }
           } else {
-            console.log(`Could not find card element with id: ${cardToFocus.id}`);
+            console.log(`Could not find card element with id: ${cardToFocus.id} for focus (or it's being removed)`);
           }
         }, timeoutDelay);
       }
     }
-  }, [variations]);
+  }, [variations, animationsInProgress]); // Rerun when variations or animations change
+
+  // Remove variations that have completed their animations
+  useEffect(() => {
+    const processAnimations = async () => {
+      const toAnimate = [...emptyVariationsToAnimate.current];
+      if (toAnimate.length === 0) return;
+      
+      console.log(`Processing ${toAnimate.length} animations for empty variations`);
+      
+      // Clear the queue first to prevent duplicate processing
+      emptyVariationsToAnimate.current = [];
+      
+      // Add to tracking set
+      setAnimationsInProgress(prev => {
+        const newSet = new Set(prev);
+        toAnimate.forEach(item => newSet.add(item.id));
+        return newSet;
+      });
+      
+      // Process each empty variation that needs animation
+      for (const item of toAnimate) {
+        const { id, reason } = item;
+        
+        // Skip if we've already processed this ID (prevents duplicates)
+        if (!variationRefsMap.current.has(id)) {
+          console.log(`No ref found for variation ${id}, may have been removed already`);
+          // Ensure it's removed from tracking if ref is gone
+          setAnimationsInProgress(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(id);
+            return newSet;
+          });
+          continue;
+        }
+        
+        const ref = variationRefsMap.current.get(id);
+        
+        if (ref && ref.triggerRemoveAnimation) {
+          try {
+            console.log(`Starting animation for empty variation: ${id}`);
+            
+            // Wait for animation to complete before removing from DOM
+            await ref.triggerRemoveAnimation(reason);
+            
+            console.log(`Animation finished for empty variation: ${id}, removing from state`);
+            
+            // Now remove from state after animation completes
+            setVariations(prev => prev.filter(v => v.id !== id));
+            
+            // Clean up reference
+            variationRefsMap.current.delete(id);
+          } catch (err) {
+            console.error(`Error during removal animation for ${id}:`, err);
+            // Remove directly if animation fails
+            setVariations(prev => prev.filter(v => v.id !== id));
+            variationRefsMap.current.delete(id);
+          }
+        } else {
+          console.log(`No animation ref for variation ${id}, removing directly`);
+          // Remove without animation if ref not available
+          setVariations(prev => prev.filter(v => v.id !== id));
+          variationRefsMap.current.delete(id); // Clean up ref map even if no animation
+        }
+        
+        // Remove from tracking set
+        setAnimationsInProgress(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(id);
+          return newSet;
+        });
+      }
+    };
+    
+    // Only run if there are animations to process and no animations are currently in progress
+    if (emptyVariationsToAnimate.current.length > 0 && animationsInProgress.size === 0) {
+      processAnimations();
+    }
+  }, [variations, animationsInProgress]); // Depend on variations and animationsInProgress
 
   return (
     <div className="space-y-8 w-full">
@@ -2057,6 +2399,7 @@ const Generate = ({ context }) => {
               {(variations || []).map((variation) => (
                 <VariationCard
                   key={variation.id}
+                  ref={(ref) => registerVariationRef(variation.id, ref)}
                   id={variation.id}
                   variation={variation.variation}
                   output={variation.output}

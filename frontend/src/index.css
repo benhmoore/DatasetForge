@@ -66,4 +66,5 @@
 
 .react-flow__edge.selected .react-flow__edge-path {
   stroke-width: 4; /* Thicker for selected edges */
+  stroke-dasharray: 0; /* Solid line */
 }
