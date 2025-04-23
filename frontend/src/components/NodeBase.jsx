@@ -36,6 +36,14 @@ const NodeBase = ({
                             nodeType === 'text' ? '!bg-yellow-500' :
                            '!bg-gray-500'; // Default
 
+  // Determine background color based on type
+  const backgroundColorClass = nodeType === 'model' ? 'bg-blue-50' : 
+                               nodeType === 'transform' ? 'bg-orange-50' :
+                               nodeType === 'input' ? 'bg-green-50' :
+                               nodeType === 'output' ? 'bg-purple-50' :
+                               nodeType === 'text' ? 'bg-yellow-50' :
+                               'bg-white'; // Default background
+
   const toggleCollapse = () => {
     if (!isEditingName && onConfigChange) { // Don't collapse/expand when editing name, ensure callback exists
       console.log(`NodeBase (${id}): toggleCollapse -> ${!isCollapsed}`);
@@ -84,7 +92,7 @@ const NodeBase = ({
   const invisibleOutputHandles = outputHandles.filter(h => h.style && h.style.opacity === 0);
 
   return (
-    <div className={`bg-white rounded border border-gray-200 shadow-sm min-w-[250px] ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}>
+    <div className={`${backgroundColorClass} rounded border border-gray-200 shadow-sm min-w-[250px] ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}>
       {/* Visible Input Handles */}
       {visibleInputHandles.map((handle, index) => (
         <Handle
@@ -163,7 +171,7 @@ const NodeBase = ({
       
       {/* Header */}
       <div 
-        className={`p-2 flex items-center justify-between border-b border-gray-200 ${!disabled ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+        className={`p-2 flex items-center justify-between border-b border-gray-200 ${!disabled ? 'cursor-pointer hover:bg-gray-100' : ''}`} // Adjusted hover for better contrast on colored backgrounds
         onClick={toggleCollapse}
       >
         <div className="flex items-center space-x-2 flex-grow min-w-0">

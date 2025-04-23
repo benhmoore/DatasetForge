@@ -191,6 +191,107 @@ const api = {
     }
   },
   
+  // Generate with simple endpoint for CustomTextInput
+  generateSimple: async (prompt, name = "input", onData, signal, systemPrompt = null) => {
+    console.log('Sending simple generation request:', { prompt, name, hasSystemPrompt: !!systemPrompt });
+    
+    const requestBody = {
+      prompt,
+      name
+    };
+    
+    // Add system_prompt to request only if provided
+    if (systemPrompt) {
+      requestBody.system_prompt = systemPrompt;
+    }
+    
+    // Use fetch API for streaming
+    const response = await fetch('/api/generate/simple', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
+      },
+      body: JSON.stringify(requestBody),
+      signal: signal // Pass the signal to fetch for cancellation
+    });
+
+    if (!response.ok) {
+      // Handle non-2xx responses including AbortError
+      if (signal?.aborted) {
+        console.log('Simple generation request aborted.');
+        throw new DOMException('Aborted', 'AbortError'); 
+      }
+      const errorText = await response.text();
+      console.error('Simple generation request failed:', response.status, errorText);
+      throw new Error(`Simple generation failed: ${response.status} ${errorText || response.statusText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is null');
+    }
+
+    // Process the stream
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      // Check if aborted before reading
+      if (signal?.aborted) {
+        console.log('Simple generation stream aborted during processing.');
+        reader.cancel('Aborted by user'); // Cancel the reader
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      
+      // Check if aborted after reading
+      if (signal?.aborted) {
+        console.log('Simple generation stream aborted after read.');
+        reader.cancel('Aborted by user');
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep the last partial line in the buffer
+
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const jsonData = JSON.parse(line);
+            if (onData) {
+              onData(jsonData); // Call the callback with the parsed JSON object
+            }
+          } catch (e) {
+            console.error('Failed to parse JSON line:', line, e);
+            if (onData) {
+              onData({ error: `Failed to parse stream data: ${line}` });
+            }
+          }
+        }
+      }
+    }
+    // Process any remaining data in the buffer (though NDJSON usually ends with \n)
+    if (buffer.trim()) {
+      try {
+        const jsonData = JSON.parse(buffer);
+        if (onData) {
+          onData(jsonData);
+        }
+      } catch (e) {
+        console.error('Failed to parse final JSON buffer:', buffer, e);
+        if (onData) {
+          onData({ error: `Failed to parse final stream data: ${buffer}` });
+        }
+      }
+    }
+  },
+  
   paraphraseSeeds: (data) => apiClient.post('/paraphrase', data)
     .then(response => response.data),
     

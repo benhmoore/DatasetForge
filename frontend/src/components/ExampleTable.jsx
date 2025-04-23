@@ -7,6 +7,7 @@ import ConfirmationModal from './ConfirmationModal'; // Import ConfirmationModal
 import BulkParaphraseModal from './BulkParaphraseModal'; // Import BulkParaphraseModal
 import Icon from './Icons';
 import ExampleTableHeader from './ExampleTableHeader';
+import ContextMenu from './ContextMenu'; // Import ContextMenu
 
 const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationSaved }) => {
   const [examples, setExamples] = useState([]);
@@ -34,35 +35,57 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   // For bulk paraphrase modal
   const [isParaphraseModalOpen, setIsParaphraseModalOpen] = useState(false);
   
-  // Modern search implementation with state
+  // Improved search implementation with state
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const searchTimeoutRef = useRef(null);
   
+  // For context menu
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, exampleId }
+
   // For drag and drop functionality
   const [isDragOver, setIsDragOver] = useState(false);
   const tableRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const tableBodyRef = useRef(null); // Add this ref for the table body
   
-  // Use useEffect for debouncing search
+  // Disable auto-search - only perform search when explicitly triggered
   useEffect(() => {
-    // Skip initial render
+    // Skip initial render or when values are already the same
     if (searchTerm === debouncedSearchTerm) return;
     
-    const timerId = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-      if (searchTerm) {
-        setPage(1); // Reset to first page when search changes
-      }
-    }, 500); // 500ms debounce delay
+    // Clear any existing timer
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
     
-    // Cleanup timer on every searchTerm change
-    return () => clearTimeout(timerId);
+    // Only update debouncedSearchTerm when searchTerm is empty
+    // to allow clearing the search results when the search box is cleared
+    if (searchTerm === '') {
+      setDebouncedSearchTerm('');
+      setPage(1);
+    }
+    
+    // No auto-search timer - we'll only search on Enter key
+    
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, [searchTerm]);
   
   // Handle clearing search
   const handleClearSearch = useCallback(() => {
+    // Clear any pending search
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
     setSearchTerm('');
     setDebouncedSearchTerm('');
+    
     // Only trigger a search fetch if we actually had a previous search term
     if (debouncedSearchTerm) {
       setPage(1);
@@ -80,8 +103,15 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
   const [examplesToDelete, setExamplesToDelete] = useState(new Set());
 
-  // Function to fetch examples that can be called programmatically 
-  const fetchExamples = async () => {
+  // Define context menu items
+  const contextMenuItems = [
+    { label: 'Delete Example', value: 'delete', icon: 'trash' },
+    // { label: 'Duplicate Example', value: 'duplicate', icon: 'copy' }, // Add later
+  ];
+
+  // Function to fetch examples - memoized to prevent dependency cycles
+  // With our memoized search component, we no longer need focus management
+  const fetchExamples = useCallback(async () => {
     if (!datasetId) return;
     
     // Show appropriate loading states
@@ -116,13 +146,30 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
       setIsLoading(false);
       setIsPaginationLoading(false);
     }
-  };
+  }, [datasetId, page, pageSize, debouncedSearchTerm, sortField, sortDirection]);
   
   // Listen for search trigger events from ExampleTableHeader
   useEffect(() => {
     const handleTriggerSearch = (e) => {
+      // Cancel any pending debounce
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      
+      // Don't search if the term is empty
+      if (!searchTerm || searchTerm.trim() === '') {
+        return;
+      }
+      
+      // Immediately apply search term when user presses Enter
       setDebouncedSearchTerm(searchTerm);
       setPage(1);
+      
+      // Show visual feedback that search is happening
+      setIsSearching(true);
+      
+      // The search will automatically happen when debouncedSearchTerm changes
+      // through the dependency tracking in the effect below
     };
     
     window.addEventListener('triggerSearch', handleTriggerSearch);
@@ -132,9 +179,10 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
   // Fetch examples when these dependencies change
   useEffect(() => {
     fetchExamples();
+    
     // Clear selections when changing pages or refreshing
     setSelectedExamples(new Set());
-  }, [datasetId, page, refreshTrigger, sortField, sortDirection, debouncedSearchTerm]);
+  }, [datasetId, page, refreshTrigger, sortField, sortDirection, debouncedSearchTerm, fetchExamples]);
   
   // Handle pagination
   const handlePageChange = (newPage) => {
@@ -420,31 +468,51 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
     }
   }, [examples, slotKeys, handleSaveEdit, handleCancelEdit, handleStartEdit]);
   
-  // Enhanced search function that's memoized and doesn't trigger re-renders
-  const optimizedSearchDebounce = useCallback((searchValue) => {
+  // Simple search input handler - just updates the search term but doesn't trigger search
+  const handleSearchInput = useCallback((searchValue) => {
+    console.log('Search input changed:', searchValue); // Add logging
+    
+    // Just update the search term - search only happens on Enter key
     setSearchTerm(searchValue);
-    // Visual feedback that search is happening
-    setIsSearching(true);
-  }, [setSearchTerm, setIsSearching]);
+    
+    // Clear searching indicator when typing
+    setIsSearching(false);
+  }, []); // Add correct dependencies
   
-  // Keyboard shortcut for search focus managed in ExampleTableHeader component
-  // Using a custom event to communicate with the header component
+  // Keyboard shortcut for search focus and table navigation
   const triggerSearchFocus = useCallback(() => {
     window.dispatchEvent(new CustomEvent('focusSearchInput'));
   }, []);
   
   useEffect(() => {
-    const handleSearchShortcut = (e) => {
+    const handleKeyboardShortcuts = (e) => {
+      // Don't trigger shortcuts if user is in an input field (except for search)
+      const targetIsInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
+      const targetIsSearchInput = targetIsInput && e.target === document.activeElement && e.target === searchInputRef?.current;
+      
       // Ctrl+F or Cmd+F to focus search
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
         triggerSearchFocus();
+        return;
+      }
+      
+      // If we're not in an input or we're specifically in the search input
+      if (!targetIsInput || targetIsSearchInput) {
+        // Add page navigation shortcuts
+        if (e.key === 'ArrowLeft' && !targetIsInput && page > 1) {
+          e.preventDefault();
+          handlePageChange(page - 1);
+        } else if (e.key === 'ArrowRight' && !targetIsInput && page < totalPages) {
+          e.preventDefault();
+          handlePageChange(page + 1);
+        }
       }
     };
     
-    window.addEventListener('keydown', handleSearchShortcut);
-    return () => window.removeEventListener('keydown', handleSearchShortcut);
-  }, [triggerSearchFocus]);
+    window.addEventListener('keydown', handleKeyboardShortcuts);
+    return () => window.removeEventListener('keydown', handleKeyboardShortcuts);
+  }, [triggerSearchFocus, page, totalPages, handlePageChange]);
 
   // Handle drag over event
   const handleDragOver = (e) => {
@@ -502,6 +570,35 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // Handle context menu opening
+  const handleContextMenu = (event, example) => {
+    event.preventDefault();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      exampleId: example.id,
+    });
+  };
+
+  // Handle context menu closing
+  const handleCloseContextMenu = () => {
+    setContextMenu(null);
+  };
+
+  // Handle context menu item selection
+  const handleContextMenuSelect = (action) => {
+    if (!contextMenu) return;
+    const { exampleId } = contextMenu;
+
+    if (action === 'delete') {
+      // Trigger deletion confirmation for the single example
+      setExamplesToDelete(new Set([exampleId]));
+      setIsArchiveConfirmOpen(true);
+    }
+    // Add 'duplicate' handling later
+    handleCloseContextMenu();
   };
 
   // If no dataset is selected
@@ -563,18 +660,20 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
         </div>
       )}
       
-      {/* Header with actions */}
+      {/* Header with actions - use key to force re-create component when needed */}
       <ExampleTableHeader 
+        key="example-table-header"
         selectedExamples={selectedExamples}
         handleDeleteSelected={handleDeleteSelected}
         handleParaphraseSelected={handleParaphraseSelected}
         handleExport={handleExport}
         searchValue={searchTerm}
-        onSearchChange={setSearchTerm}
+        onSearchChange={handleSearchInput}
         isSearching={isSearching}
         isProcessing={isProcessing}
         hasExamples={examples.length > 0}
         onClearSearch={handleClearSearch}
+        searchInputRef={searchInputRef}
       />
       
       {examples.length === 0 ? (
@@ -688,125 +787,51 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
                   )}
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {examples.map((example, index) => (
-                  <tr 
-                    key={example.id} 
-                    className={`transition-colors duration-150 animate-fadeIn ${
-                      selectedExamples.has(example.id) ? 'bg-primary-50 hover:bg-primary-100' : 'hover:bg-gray-50'
-                    } cursor-pointer`}
-                    style={{ animationDelay: `${index * 50}ms` }}
-                    onClick={() => handleRowClick(example)}
-                  >
-                    {/* Selection checkbox */}
-                    <td className="px-2 py-2 text-center"> {/* Reduced padding */}
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                        checked={selectedExamples.has(example.id)}
-                        onChange={() => handleToggleSelect(example.id)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </td>
-                    {/* Add Example ID Cell */}
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 font-mono"> {/* Reduced padding */}
-                      {example.id}
-                    </td>
-                    
-                    {/* System Prompt (showing masked version if available) */}
-                    <td className="px-3 py-2 text-sm text-gray-900 truncate"> {/* Allow text to wrap */}
-                      {editingCell && editingCell.exampleId === example.id && editingCell.field === 'system_prompt' ? (
-                        <div className="flex items-center">
-                          <textarea
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                            rows={3}
-                            autoFocus
-                            onKeyDown={(e) => handleKeyDown(e, example, 'system_prompt')}
-                          />
-                          <div className="flex flex-col ml-2">
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
-                              disabled={isSaving}
-                              className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
-                              title="Save"
-                            >
-                              ✓
-                            </button>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
-                              disabled={isSaving}
-                              className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
-                              title="Cancel"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div 
-                          className="tooltip group relative cursor-pointer"
-                          onMouseEnter={(e) => {
-                            const tooltip = e.currentTarget.querySelector('.tooltip-text');
-                            if (tooltip) {
-                              tooltip.style.top = `${e.clientY - 20}px`;
-                              tooltip.style.left = `${e.clientX + 20}px`;
-                            }
-                          }}
-                          onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
-                        >
+              <tbody className="bg-white divide-y divide-gray-200" ref={tableBodyRef}>
+                {examples.map((example, index) => {
+                  // Disable text selection for rows unless editing
+                  const isEditing = editingCell !== null;
+
+                  // Add a class to disable text selection
+                  const rowClass = isEditing ? '' : 'select-none';
+
+                  // Apply the class to the row
+                  return (
+                    <tr 
+                      key={example.id} 
+                      className={`transition-colors duration-150 animate-fadeIn ${rowClass} ${
+                        selectedExamples.has(example.id) ? 'bg-primary-50 hover:bg-primary-100' : 'hover:bg-gray-50'
+                      } cursor-pointer`}
+                      style={{ animationDelay: `${index * 50}ms` }}
+                      onClick={() => handleRowClick(example)}
+                      onContextMenu={(event) => handleContextMenu(event, example)}
+                    >
+                      {/* Selection checkbox */}
+                      <td className="px-2 py-2 text-center"> {/* Reduced padding */}
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          checked={selectedExamples.has(example.id)}
+                          onChange={() => handleToggleSelect(example.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
+                      {/* Add Example ID Cell */}
+                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500 font-mono"> {/* Reduced padding */}
+                        {example.id}
+                      </td>
+                      
+                      {/* System Prompt (showing masked version if available) */}
+                      <td className="px-3 py-2 text-sm text-gray-900 truncate"> {/* Allow text to wrap */}
+                        {editingCell && editingCell.exampleId === example.id && editingCell.field === 'system_prompt' ? (
                           <div className="flex items-center">
-                            {/* Show masked prompt if available, otherwise show actual */}
-                            <span className="truncate flex-grow">
-                              {example.system_prompt_mask ? (
-                                <>
-                                  <span className="mr-1 text-xs bg-indigo-100 text-indigo-800 px-1 rounded">MASKED</span>
-                                  {example.system_prompt_mask.substring(0, 40)}{example.system_prompt_mask.length > 40 ? '...' : ''}
-                                </>
-                              ) : (
-                                example.system_prompt?.substring(0, 50) + (example.system_prompt?.length > 50 ? '...' : '')
-                              )}
-                            </span>
-                            <button 
-                              className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
-                              onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
-                              title="Edit"
-                            >
-                              ✎
-                            </button>
-                          </div>
-                          {/* Conditionally render tooltip with appropriate content */}
-                          {((example.system_prompt_mask && example.system_prompt_mask.length > 40) || 
-                            (!example.system_prompt_mask && example.system_prompt && example.system_prompt.length > 50)) && (
-                            <span className="tooltip-text">
-                              {example.system_prompt_mask || example.system_prompt}
-                              {example.system_prompt_mask && (
-                                <div className="mt-2 text-xs text-indigo-500">
-                                  <em>This is a masked prompt that will be used for exports.</em>
-                                </div>
-                              )}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    
-                    {/* Render slot values */}
-                    {slotKeys.map(slot => (
-                      <td 
-                        key={slot} 
-                        className="px-3 py-2 text-sm text-gray-900 truncate" /* Allow text to wrap */
-                      >
-                        {editingCell && editingCell.exampleId === example.id && editingCell.field === `slot:${slot}` ? (
-                          <div className="flex items-center">
-                            <input
-                              type="text" 
+                            <textarea
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
                               className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                              rows={3}
                               autoFocus
-                              onKeyDown={(e) => handleKeyDown(e, example, `slot:${slot}`)}
+                              onKeyDown={(e) => handleKeyDown(e, example, 'system_prompt')}
                             />
                             <div className="flex flex-col ml-2">
                               <button 
@@ -837,175 +862,259 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
                                 tooltip.style.left = `${e.clientX + 20}px`;
                               }
                             }}
-                            onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, `slot:${slot}`); }}
+                            onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
                           >
                             <div className="flex items-center">
-                              <span className="truncate flex-grow">{(example.slots[slot] || '').substring(0, 30)}{(example.slots[slot] || '').length > 30 ? '...' : ''}</span>
+                              {/* Show masked prompt if available, otherwise show actual */}
+                              <span className="truncate flex-grow">
+                                {example.system_prompt_mask ? (
+                                  <>
+                                    <span className="mr-1 text-xs bg-indigo-100 text-indigo-800 px-1 rounded">MASKED</span>
+                                    {example.system_prompt_mask.substring(0, 40)}{example.system_prompt_mask.length > 40 ? '...' : ''}
+                                  </>
+                                ) : (
+                                  example.system_prompt?.substring(0, 50) + (example.system_prompt?.length > 50 ? '...' : '')
+                                )}
+                              </span>
                               <button 
                                 className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
-                                onClick={(e) => { e.stopPropagation(); handleStartEdit(example, `slot:${slot}`); }}
+                                onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'system_prompt'); }}
+                                title="Edit"
+                              >
+                                ✎
+                              </button>
+                            </div>
+                            {/* Conditionally render tooltip with appropriate content */}
+                            {((example.system_prompt_mask && example.system_prompt_mask.length > 40) || 
+                              (!example.system_prompt_mask && example.system_prompt && example.system_prompt.length > 50)) && (
+                              <span className="tooltip-text">
+                                {example.system_prompt_mask || example.system_prompt}
+                                {example.system_prompt_mask && (
+                                  <div className="mt-2 text-xs text-indigo-500">
+                                    <em>This is a masked prompt that will be used for exports.</em>
+                                  </div>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      
+                      {/* Render slot values */}
+                      {slotKeys.map(slot => (
+                        <td 
+                          key={slot} 
+                          className="px-3 py-2 text-sm text-gray-900 truncate" /* Allow text to wrap */
+                        >
+                          {editingCell && editingCell.exampleId === example.id && editingCell.field === `slot:${slot}` ? (
+                            <div className="flex items-center">
+                              <input
+                                type="text" 
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                autoFocus
+                                onKeyDown={(e) => handleKeyDown(e, example, `slot:${slot}`)}
+                              />
+                              <div className="flex flex-col ml-2">
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
+                                  disabled={isSaving}
+                                  className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
+                                  title="Save"
+                                >
+                                  ✓
+                                </button>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
+                                  disabled={isSaving}
+                                  className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
+                                  title="Cancel"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div 
+                              className="tooltip group relative cursor-pointer"
+                              onMouseEnter={(e) => {
+                                const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                                if (tooltip) {
+                                  tooltip.style.top = `${e.clientY - 20}px`;
+                                  tooltip.style.left = `${e.clientX + 20}px`;
+                                }
+                              }}
+                              onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, `slot:${slot}`); }}
+                            >
+                              <div className="flex items-center">
+                                <span className="truncate flex-grow">{(example.slots[slot] || '').substring(0, 30)}{(example.slots[slot] || '').length > 30 ? '...' : ''}</span>
+                                <button 
+                                  className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
+                                  onClick={(e) => { e.stopPropagation(); handleStartEdit(example, `slot:${slot}`); }}
+                                  title="Edit"
+                                >
+                                  ✎
+                                </button>
+                              </div>
+                              {/* Conditionally render tooltip only if text is long */}
+                              {example.slots[slot] && example.slots[slot].length > 30 && (
+                                <span className="tooltip-text">{example.slots[slot]}</span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      ))}
+                      
+                      {/* User Prompt (showing masked version if available) */}
+                      <td className="px-3 py-2 text-sm text-gray-900 truncate"> {/* Allow text to wrap */}
+                        {editingCell && editingCell.exampleId === example.id && editingCell.field === 'user_prompt' ? (
+                          <div className="flex items-center">
+                            <textarea
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                              rows={3}
+                              autoFocus
+                              onKeyDown={(e) => handleKeyDown(e, example, 'user_prompt')}
+                            />
+                            <div className="flex flex-col ml-2">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
+                                disabled={isSaving}
+                                className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
+                                title="Save"
+                              >
+                                ✓
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
+                                disabled={isSaving}
+                                className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
+                                title="Cancel"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div 
+                            className="tooltip group relative cursor-pointer"
+                            onMouseEnter={(e) => {
+                              const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                              if (tooltip) {
+                                tooltip.style.top = `${e.clientY - 20}px`;
+                                tooltip.style.left = `${e.clientX + 20}px`;
+                              }
+                            }}
+                            onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'user_prompt'); }}
+                          >
+                            <div className="flex items-center">
+                              {/* Show masked prompt if available, otherwise show actual */}
+                              <span className="truncate flex-grow">
+                                {example.user_prompt_mask ? (
+                                  <>
+                                    <span className="mr-1 text-xs bg-indigo-100 text-indigo-800 px-1 rounded">MASKED</span>
+                                    {example.user_prompt_mask.substring(0, 40)}{example.user_prompt_mask.length > 40 ? '...' : ''}
+                                  </>
+                                ) : (
+                                  example.user_prompt?.substring(0, 50) + (example.user_prompt?.length > 50 ? '...' : '')
+                                )}
+                              </span>
+                              <button 
+                                className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
+                                onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'user_prompt'); }}
+                                title="Edit"
+                              >
+                                ✎
+                              </button>
+                            </div>
+                            {/* Conditionally render tooltip with appropriate content */}
+                            {((example.user_prompt_mask && example.user_prompt_mask.length > 40) || 
+                              (!example.user_prompt_mask && example.user_prompt && example.user_prompt.length > 50)) && (
+                              <span className="tooltip-text">
+                                {example.user_prompt_mask || example.user_prompt}
+                                {example.user_prompt_mask && (
+                                  <div className="mt-2 text-xs text-indigo-500">
+                                    <em>This is a masked prompt that will be used for exports.</em>
+                                  </div>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      
+                      {/* Output */}
+                      <td className="px-3 py-2 text-sm text-gray-900 truncate"> {/* Allow text to wrap */}
+                        {editingCell && editingCell.exampleId === example.id && editingCell.field === 'output' ? (
+                          <div className="flex items-center">
+                            <textarea
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                              rows={3}
+                              autoFocus
+                              onKeyDown={(e) => handleKeyDown(e, example, 'output')}
+                            />
+                            <div className="flex flex-col ml-2">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
+                                disabled={isSaving}
+                                className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
+                                title="Save"
+                              >
+                                ✓
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
+                                disabled={isSaving}
+                                className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
+                                title="Cancel"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div 
+                            className="tooltip group relative cursor-pointer"
+                            onMouseEnter={(e) => {
+                              const tooltip = e.currentTarget.querySelector('.tooltip-text');
+                              if (tooltip) {
+                                tooltip.style.top = `${e.clientY - 20}px`;
+                                tooltip.style.left = `${e.clientX + 20}px`;
+                              }
+                            }}
+                            onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'output'); }}
+                          >
+                            <div className="flex items-center">
+                              <span className="truncate flex-grow">{example.output?.substring(0, 50)}{example.output?.length > 50 ? '...' : ''}</span>
+                              <button 
+                                className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
+                                onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'output'); }}
                                 title="Edit"
                               >
                                 ✎
                               </button>
                             </div>
                             {/* Conditionally render tooltip only if text is long */}
-                            {example.slots[slot] && example.slots[slot].length > 30 && (
-                              <span className="tooltip-text">{example.slots[slot]}</span>
+                            {example.output && example.output.length > 50 && (
+                              <span className="tooltip-text">{example.output}</span>
                             )}
                           </div>
                         )}
                       </td>
-                    ))}
-                    
-                    {/* User Prompt (showing masked version if available) */}
-                    <td className="px-3 py-2 text-sm text-gray-900 truncate"> {/* Allow text to wrap */}
-                      {editingCell && editingCell.exampleId === example.id && editingCell.field === 'user_prompt' ? (
-                        <div className="flex items-center">
-                          <textarea
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                            rows={3}
-                            autoFocus
-                            onKeyDown={(e) => handleKeyDown(e, example, 'user_prompt')}
-                          />
-                          <div className="flex flex-col ml-2">
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
-                              disabled={isSaving}
-                              className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
-                              title="Save"
-                            >
-                              ✓
-                            </button>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
-                              disabled={isSaving}
-                              className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
-                              title="Cancel"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div 
-                          className="tooltip group relative cursor-pointer"
-                          onMouseEnter={(e) => {
-                            const tooltip = e.currentTarget.querySelector('.tooltip-text');
-                            if (tooltip) {
-                              tooltip.style.top = `${e.clientY - 20}px`;
-                              tooltip.style.left = `${e.clientX + 20}px`;
-                            }
-                          }}
-                          onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'user_prompt'); }}
-                        >
-                          <div className="flex items-center">
-                            {/* Show masked prompt if available, otherwise show actual */}
-                            <span className="truncate flex-grow">
-                              {example.user_prompt_mask ? (
-                                <>
-                                  <span className="mr-1 text-xs bg-indigo-100 text-indigo-800 px-1 rounded">MASKED</span>
-                                  {example.user_prompt_mask.substring(0, 40)}{example.user_prompt_mask.length > 40 ? '...' : ''}
-                                </>
-                              ) : (
-                                example.user_prompt?.substring(0, 50) + (example.user_prompt?.length > 50 ? '...' : '')
-                              )}
-                            </span>
-                            <button 
-                              className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
-                              onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'user_prompt'); }}
-                              title="Edit"
-                            >
-                              ✎
-                            </button>
-                          </div>
-                          {/* Conditionally render tooltip with appropriate content */}
-                          {((example.user_prompt_mask && example.user_prompt_mask.length > 40) || 
-                            (!example.user_prompt_mask && example.user_prompt && example.user_prompt.length > 50)) && (
-                            <span className="tooltip-text">
-                              {example.user_prompt_mask || example.user_prompt}
-                              {example.user_prompt_mask && (
-                                <div className="mt-2 text-xs text-indigo-500">
-                                  <em>This is a masked prompt that will be used for exports.</em>
-                                </div>
-                              )}
-                            </span>
-                          )}
-                        </div>
+                      
+                      {/* Tool Calls column */}
+                      {examples.some(ex => ex.tool_calls && ex.tool_calls.length > 0) && (
+                        <td className="px-3 py-2 text-sm text-gray-900"> {/* Allow text to wrap */}
+                          {renderToolCalls(example.tool_calls)}
+                        </td>
                       )}
-                    </td>
-                    
-                    {/* Output */}
-                    <td className="px-3 py-2 text-sm text-gray-900 truncate"> {/* Allow text to wrap */}
-                      {editingCell && editingCell.exampleId === example.id && editingCell.field === 'output' ? (
-                        <div className="flex items-center">
-                          <textarea
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            className="w-full p-1 border border-primary-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                            rows={3}
-                            autoFocus
-                            onKeyDown={(e) => handleKeyDown(e, example, 'output')}
-                          />
-                          <div className="flex flex-col ml-2">
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleSaveEdit(); }}
-                              disabled={isSaving}
-                              className="p-1 text-green-600 hover:text-green-800 disabled:text-gray-400"
-                              title="Save"
-                            >
-                              ✓
-                            </button>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleCancelEdit(); }}
-                              disabled={isSaving}
-                              className="p-1 text-red-600 hover:text-red-800 disabled:text-gray-400"
-                              title="Cancel"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div 
-                          className="tooltip group relative cursor-pointer"
-                          onMouseEnter={(e) => {
-                            const tooltip = e.currentTarget.querySelector('.tooltip-text');
-                            if (tooltip) {
-                              tooltip.style.top = `${e.clientY - 20}px`;
-                              tooltip.style.left = `${e.clientX + 20}px`;
-                            }
-                          }}
-                          onDoubleClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'output'); }}
-                        >
-                          <div className="flex items-center">
-                            <span className="truncate flex-grow">{example.output?.substring(0, 50)}{example.output?.length > 50 ? '...' : ''}</span>
-                            <button 
-                              className="opacity-0 group-hover:opacity-100 text-primary-600 hover:text-primary-800 p-1 ml-1 transition-opacity"
-                              onClick={(e) => { e.stopPropagation(); handleStartEdit(example, 'output'); }}
-                              title="Edit"
-                            >
-                              ✎
-                            </button>
-                          </div>
-                          {/* Conditionally render tooltip only if text is long */}
-                          {example.output && example.output.length > 50 && (
-                            <span className="tooltip-text">{example.output}</span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    
-                    {/* Tool Calls column */}
-                    {examples.some(ex => ex.tool_calls && ex.tool_calls.length > 0) && (
-                      <td className="px-3 py-2 text-sm text-gray-900"> {/* Allow text to wrap */}
-                        {renderToolCalls(example.tool_calls)}
-                      </td>
-                    )}
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1092,6 +1201,16 @@ const ExampleTable = ({ datasetId, datasetName, refreshTrigger = 0, onVariationS
           fetchExamples(); // Refresh the list
         }}
       />
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          items={contextMenuItems} // Pass items
+          position={{ x: contextMenu.x, y: contextMenu.y }} // Pass position object
+          onSelect={handleContextMenuSelect}
+          onClose={handleCloseContextMenu}
+        />
+      )}
     </div>
   );
 };

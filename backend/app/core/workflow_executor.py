@@ -30,11 +30,12 @@ class WorkflowExecutor:
         # Registry of node executors mapped by node type
         self.node_executors = {
             "model": self._execute_model_node,
+            "prompt": self._execute_prompt_node,  # Add the prompt node executor
             "transform": self._execute_transform_node,
             "input": self._execute_input_node,
             "output": self._execute_output_node,
             "template": self._execute_template_node,
-            "text": self._execute_text_node,
+            "prompt": self._execute_prompt_node,
         }
 
         # Enable additional logging if in debug mode
@@ -607,13 +608,11 @@ class WorkflowExecutor:
     ) -> Dict[str, Any]:
         """
         Execute a model node by calling the Ollama API directly.
-        - System prompt is hardcoded.
-        - Reads 'model_instruction' from config (previously 'user_prompt' / 'system_instruction').
-        - Appends all inputs to the model instruction if no {input_X} placeholders are found.
+        Expects system_prompt and user_prompt as inputs.
 
         Args:
-            node_config: The node configuration including model, model_instruction, etc.
-            node_inputs: The inputs for the node, with 'inputs' array containing all inputs
+            node_config: The node configuration including model and model_parameters
+            node_inputs: The inputs for the node, with system_prompt and user_prompt
 
         Returns:
             Dict[str, Any]: The outputs from the node
@@ -634,110 +633,56 @@ class WorkflowExecutor:
                     "timestamp": self._get_timestamp(),
                 }
 
-            # Get the base model instruction from config (renamed from user_prompt/system_instruction)
-            model_instruction_template = node_config.get("model_instruction", "")
+            # Get input map for named input access
+            input_map = node_inputs.get("input_map", {})
 
-            # Hardcoded system prompt
-            system_prompt = "Follow the user's prompt exactly."
+            # Get system prompt and user prompt from inputs
+            system_prompt = ""
+            user_prompt = ""
 
-            # Get input array from node_inputs (added by _get_node_inputs)
-            input_array = node_inputs.get("inputs", [])
+            # Try different ways to find the system prompt
+            if "system_prompt" in input_map:
+                system_prompt = str(input_map["system_prompt"])
+            elif "input_system_prompt" in input_map:
+                system_prompt = str(input_map["input_system_prompt"])
+
+            # Try different ways to find the user prompt
+            if "user_prompt" in input_map:
+                user_prompt = str(input_map["user_prompt"])
+            elif "input_user_prompt" in input_map:
+                user_prompt = str(input_map["input_user_prompt"])
+
+            # If no system prompt provided, use a default
+            if not system_prompt:
+                system_prompt = "Follow the user's prompt exactly."
+                if self.debug_mode:
+                    logger.debug(f"Model node {node_id}: Using default system prompt")
+
+            # Must have a user prompt
+            if not user_prompt:
+                # Try to use the first input as a fallback
+                if len(node_inputs.get("inputs", [])) > 0:
+                    user_prompt = str(node_inputs["inputs"][0])
+                    if self.debug_mode:
+                        logger.debug(f"Model node {node_id}: Using first input as user prompt")
+                else:
+                    error_msg = f"No user prompt provided to model node '{node_id}'."
+                    logger.warning(error_msg)
+                    return {
+                        "output": error_msg,
+                        "error": "missing_user_prompt",
+                        "timestamp": self._get_timestamp(),
+                    }
 
             if self.debug_mode:
                 logger.debug(
-                    f"Model node {node_id}: Received {len(input_array)} inputs. Model instruction template: '{model_instruction_template[:100]}...'"
+                    f"Model node {node_id}: System prompt: '{system_prompt[:100]}...'"
+                )
+                logger.debug(
+                    f"Model node {node_id}: User prompt: '{user_prompt[:100]}...'"
                 )
 
-            # --- Construct Final User Prompt (which is based on model_instruction) ---
-            final_user_prompt = ""
-            # Match both old indexed format {input_0} and new named format {slot_name}
-            # We extract all placeholders first for processing
-            all_placeholders = re.findall(r"\{([^{}]+)\}", model_instruction_template)
-            
-            # Get input map (named inputs) from node_inputs
-            input_map = node_inputs.get("input_map", {})
-
-            if not input_array:
-                # No inputs, use the template directly
-                final_user_prompt = model_instruction_template
-                if self.debug_mode:
-                    logger.debug(
-                        f"Model node {node_id}: No inputs provided. Using model instruction template directly."
-                    )
-            elif all_placeholders:
-                # Placeholders found, substitute them
-                processed_prompt = model_instruction_template
-                referenced_slots = set()
-                
-                # Replace placeholders with values from input_map
-                for placeholder in all_placeholders:
-                    placeholder_pattern = f"{{{placeholder}}}"
-                    
-                    # Check if this placeholder is available in input_map
-                    if placeholder in input_map:
-                        input_value = str(input_map[placeholder])
-                        processed_prompt = processed_prompt.replace(
-                            placeholder_pattern, input_value
-                        )
-                        referenced_slots.add(placeholder)
-                        if self.debug_mode:
-                            logger.debug(
-                                f"Model node {node_id}: Replaced placeholder '{placeholder}' with value."
-                            )
-                    else:
-                        # Placeholder not found in inputs
-                        missing_msg = f"[MISSING INPUT: {placeholder}]"
-                        processed_prompt = processed_prompt.replace(
-                            placeholder_pattern, missing_msg
-                        )
-                        logger.warning(
-                            f"Model node {node_id}: No value found for placeholder '{placeholder}'"
-                        )
-
-                final_user_prompt = processed_prompt
-                if self.debug_mode:
-                    logger.debug(
-                        f"Model node {node_id}: Substituted {len(referenced_slots)} placeholders in model instruction."
-                    )
-
-                # Append any unused inputs that weren't referenced by placeholders
-                unused_inputs = []
-                for key, val in input_map.items():
-                    if key not in referenced_slots and key != "input" and not key.startswith("input_"):
-                        unused_inputs.append(f"{key}: {str(val)}")
-
-                if unused_inputs:
-                    appended_text = "\n\n--- Additional Inputs ---\n" + "\n".join(
-                        unused_inputs
-                    )
-                    final_user_prompt += appended_text
-                    if self.debug_mode:
-                        logger.debug(
-                            f"Model node {node_id}: Appended {len(unused_inputs)} unused inputs not referenced by placeholders."
-                        )
-
-            else:
-                # No placeholders, append all named inputs
-                if self.debug_mode:
-                    logger.debug(
-                        f"Model node {node_id}: No placeholders found. Appending all named inputs to model instruction."
-                    )
-
-                named_inputs = []
-                for key, val in input_map.items():
-                    if key != "input" and not key.startswith("input_"):
-                        named_inputs.append(f"{key}: {str(val)}")
-                
-                if not named_inputs:
-                    # Fall back to array inputs if no named inputs
-                    named_inputs = [str(inp) for inp in input_array]
-                
-                appended_text = "\n\n--- Inputs ---\n" + "\n".join(named_inputs)
-                final_user_prompt = model_instruction_template + appended_text
-
             # --- Model Parameters ---
-            from ..api.schemas import ModelParameters
-
             model_parameters_dict = node_config.get("model_parameters")
             model_parameters = ModelParameters()  # Use defaults
             if model_parameters_dict and isinstance(model_parameters_dict, dict):
@@ -754,20 +699,11 @@ class WorkflowExecutor:
                         f"Model node {node_id}: Invalid model parameters format: {e}. Using defaults."
                     )
 
-            if self.debug_mode:
-                logger.debug(
-                    f"Model node {node_id}: Final User Prompt: '{final_user_prompt[:500]}...'"
-                )
-                logger.debug(f"Model node {node_id}: System Prompt: '{system_prompt}'")
-                logger.debug(
-                    f"Model node {node_id}: Model: {model}, Parameters: {model_parameters.dict()}"
-                )
-
             # --- Call Ollama API ---
             result = await call_ollama_generate(
                 model=model,
-                system_prompt=system_prompt,  # Hardcoded
-                user_prompt=final_user_prompt,  # Constructed prompt based on model_instruction
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
                 template_params=model_parameters,
                 template=None,  # Not used directly here
                 user_prefs={},  # Not used here
@@ -786,9 +722,7 @@ class WorkflowExecutor:
                 "output": output_text,
                 "model_used": model,
                 "system_prompt_used": system_prompt,
-                "final_user_prompt": final_user_prompt,  # Include the final prompt sent
-                "model_instruction_template": model_instruction_template,  # Original template
-                "input_count": len(input_array),
+                "user_prompt_used": user_prompt,
                 "timestamp": self._get_timestamp(),
             }
 
@@ -809,6 +743,86 @@ class WorkflowExecutor:
                 "output": error_message,  # Put error in output for rendering
                 "error": error_message,
                 "timestamp": self._get_timestamp(),
+            }
+
+    async def _execute_prompt_node(
+        self, node_config: Dict[str, Any], node_inputs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Execute a prompt node that processes a template with variable slots.
+
+        Args:
+            node_config: The node configuration including prompt_text
+            node_inputs: The inputs for the node, with 'inputs' array containing all inputs
+
+        Returns:
+            Dict[str, Any]: The processed prompt text with slots filled
+        """
+        try:
+            # Get the prompt template from config
+            prompt_text = node_config.get("prompt_text", "")
+            node_id = node_config.get("id", "unknown_prompt_node")
+
+            if not prompt_text:
+                logger.warning(f"Prompt node {node_id} has no prompt text")
+                return {
+                    "output": "",
+                    "error": "missing_prompt_text",
+                    "timestamp": self._get_timestamp()
+                }
+
+            # Get input map (named inputs) from node_inputs
+            input_map = node_inputs.get("input_map", {})
+
+            # Process all placeholder slots in the prompt text
+            processed_prompt = prompt_text
+
+            # Match all placeholders {slot_name} in the prompt text
+            slot_pattern = r"\{([^{}]+)\}"
+            slots = re.findall(slot_pattern, prompt_text)
+
+            # Track which slots were found in inputs
+            filled_slots = []
+            missing_slots = []
+
+            # Replace each slot with its corresponding input value
+            for slot in slots:
+                placeholder = f"{{{slot}}}"
+
+                # Check if this slot has a value in input_map
+                if slot in input_map:
+                    value = str(input_map[slot])
+                    processed_prompt = processed_prompt.replace(placeholder, value)
+                    filled_slots.append(slot)
+                else:
+                    # Mark missing slots in the output
+                    processed_prompt = processed_prompt.replace(
+                        placeholder, f"[MISSING: {slot}]"
+                    )
+                    missing_slots.append(slot)
+                    logger.warning(f"Prompt node {node_id}: No value provided for slot '{slot}'")
+
+            if self.debug_mode:
+                logger.debug(
+                    f"Prompt node {node_id}: Processed {len(filled_slots)} slots. "
+                    f"Missing slots: {missing_slots}"
+                )
+
+            # Return the processed prompt and metadata
+            return {
+                "output": processed_prompt,
+                "original_template": prompt_text,
+                "filled_slots": filled_slots,
+                "missing_slots": missing_slots,
+                "timestamp": self._get_timestamp(),
+            }
+
+        except Exception as e:
+            logger.exception(f"Error executing prompt node {node_config.get('id', 'unknown')}: {str(e)}")
+            return {
+                "output": f"Error in prompt node: {str(e)}",
+                "error": str(e),
+                "timestamp": self._get_timestamp()
             }
 
     async def _execute_template_node(
@@ -941,43 +955,6 @@ class WorkflowExecutor:
         except Exception as e:
             logger.exception(f"Error executing template node: {str(e)}")
             raise ValueError(f"Template execution failed: {str(e)}")
-
-    async def _execute_text_node(
-        self, node_config: Dict[str, Any], node_inputs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Execute a text node - no inputs, just returns the text.
-
-        Args:
-            node_config: The node configuration
-            node_inputs: The inputs for the node (not used)
-        Returns:
-            Dict[str, Any]: The text from the node configuration
-        """
-        # Get the text from the node configuration
-        text = node_config.get("text_content", "")
-        if not text:
-            logger.warning("Text node received no text - using empty string")
-            text = ""
-
-        # Return the text as output
-        result = {
-            "output": text,
-            "_node_info": {
-                "type": "text",
-                "id": node_config.get("id", "text-node"),
-                "timestamp": datetime.utcnow().isoformat(),
-            },
-        }
-        # Add debug info only in debug mode
-        if self.debug_mode:
-            result["_debug"] = {
-                "text_length": len(text) if isinstance(text, str) else 0
-            }
-            logger.debug(
-                f"Text node final result length: {len(text) if isinstance(text, str) else 0}"
-            )
-        return result
 
     async def _execute_transform_node(
         self, node_config: Dict[str, Any], node_inputs: Dict[str, Any]

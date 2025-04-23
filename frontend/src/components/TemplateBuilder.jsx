@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'; // Import useCallback
+import { useState, useEffect, useCallback, useRef } from 'react'; // Import useCallback and useRef
 import { toast } from 'react-toastify';
 // Removed useOutletContext
 import api from '../api/apiClient';
@@ -8,6 +8,7 @@ import ToggleSwitch from './ToggleSwitch'; // Assuming a ToggleSwitch component 
 import ConfirmationModal from './ConfirmationModal'; // Import the new component
 import Icon from './Icons';
 import ToolParameterSchemaEditor from './ToolParameterSchemaEditor'; // Import the new schema editor
+import CustomTextInput from './CustomTextInput'; // Import CustomTextInput
 import _ from 'lodash'; // Import lodash for deep comparison
 
 // Default model parameters
@@ -32,6 +33,10 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [nameError, setNameError] = useState(false);
   const [newToolNameError, setNewToolNameError] = useState(false);
   const [newToolDescriptionError, setNewToolDescriptionError] = useState(false);
+
+  // Refs for text inputs to handle slot insertion
+  const userPromptRef = useRef(null);
+  const userPromptMaskRef = useRef(null);
 
   // Form fields
   const [name, setName] = useState('');
@@ -363,18 +368,36 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
 
   // Insert a slot into the userPrompt
   const handleInsertSlot = (slot) => {
-    const cursorPos = document.getElementById('user-prompt').selectionStart;
-    const textBefore = userPrompt.substring(0, cursorPos);
-    const textAfter = userPrompt.substring(cursorPos);
-    setUserPrompt(`${textBefore}{${slot}}${textAfter}`);
+    const inputElement = userPromptRef.current; // Use the ref
+    if (inputElement) {
+      const cursorPos = inputElement.selectionStart;
+      const textBefore = userPrompt.substring(0, cursorPos);
+      const textAfter = userPrompt.substring(cursorPos);
+      const newValue = `${textBefore}{${slot}}${textAfter}`;
+      setUserPrompt(newValue);
+      // Optionally, focus and set cursor position after insertion
+      setTimeout(() => {
+        inputElement.focus();
+        inputElement.setSelectionRange(cursorPos + slot.length + 2, cursorPos + slot.length + 2);
+      }, 0);
+    }
   };
 
   // Insert a slot into the userPromptMask (when masks are visible)
   const handleInsertSlotIntoMask = (slot) => {
-    const cursorPos = document.getElementById('user-prompt-mask').selectionStart;
-    const textBefore = userPromptMask.substring(0, cursorPos);
-    const textAfter = userPromptMask.substring(cursorPos);
-    setUserPromptMask(`${textBefore}{${slot}}${textAfter}`);
+    const inputElement = userPromptMaskRef.current; // Use the ref
+    if (inputElement) {
+      const cursorPos = inputElement.selectionStart;
+      const textBefore = userPromptMask.substring(0, cursorPos);
+      const textAfter = userPromptMask.substring(cursorPos);
+      const newValue = `${textBefore}{${slot}}${textAfter}`;
+      setUserPromptMask(newValue);
+      // Optionally, focus and set cursor position after insertion
+      setTimeout(() => {
+        inputElement.focus();
+        inputElement.setSelectionRange(cursorPos + slot.length + 2, cursorPos + slot.length + 2);
+      }, 0);
+    }
   };
 
   // Create a new template
@@ -604,32 +627,22 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
 
         {/* Template Form */}
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Template Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (e.target.value.trim()) setNameError(false); // Clear error on change
-              }}
-              className={`w-full p-2 border rounded-md disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
-                nameError ? 'border-red-300 bg-red-50' : 'border-gray-300'
-              }`}
-              placeholder="Enter template name"
-              disabled={isLoading || isSaving}
-              required
-              aria-invalid={nameError}
-              aria-describedby={nameError ? 'template-name-error' : undefined}
-            />
-            {nameError && (
-              <p id="template-name-error" className="text-xs text-red-500 mt-1 font-medium">
-                Template name is required.
-              </p>
-            )}
-          </div>
+          {/* Use CustomTextInput for Template Name */}
+          <CustomTextInput
+            label="Template Name"
+            required
+            name="templateName" // Added name prop
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (e.target.value.trim()) setNameError(false); // Clear error on change
+            }}
+            placeholder="Enter template name"
+            disabled={isLoading || isSaving}
+            error={nameError ? 'Template name is required.' : null}
+            containerClassName="mb-0" // Adjust spacing if needed
+            aiContext="You are operating on text describing the name for a generation template." // Add AI context
+          />
 
           {/* Model Override Selector */}
           <div>
@@ -737,79 +750,109 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
 
           {/* System Prompt Section with conditional mask field */}
           <div className="space-y-2">
-            <SystemPromptEditor
+            <CustomTextInput
               value={systemPrompt}
-              onChange={setSystemPrompt}
-              templateId={selectedTemplate?.id}
-              disabled={isLoading || isSaving}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              name="systemPrompt"
               label={showMasks ? "System Prompt (Actual)" : "System Prompt"}
+              placeholder="Enter system prompt for the model"
+              disabled={isLoading || isSaving}
+              mode="multi"
+              rows={5}
+              collapsible={false}
+              defaultCollapsed={false} 
+              collapsedHeight="100px"
+              previewLines={3}
+              aiContext="You are creating a system prompt for an LLM generation template. The system prompt sets the context and behavior for the model."
+              helpText="The system prompt provides initial context and instructions for the model. It helps set the tone and behavior of responses."
             />
 
             {showMasks && (
               <div className="mt-3">
-                <div className="flex items-center">
-                  <label className="block text-sm font-medium text-indigo-600 mb-1">
+                <div className="flex items-center justify-between mb-1"> {/* Adjusted layout */}
+                  <label className="block text-sm font-medium text-indigo-600">
                     System Prompt Mask <span className="text-xs font-normal text-gray-500">(for exports)</span>
                   </label>
-                  <button 
-                    className="ml-2 text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
+                  <button
+                    className="text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
                     onClick={() => setSystemPromptMask(systemPrompt)}
                     disabled={isLoading || isSaving}
                   >
                     Copy from actual
                   </button>
                 </div>
-                <textarea
+                {/* Use CustomTextInput for System Prompt Mask */}
+                <CustomTextInput
+                  name="systemPromptMask" // Added name prop
+                  mode="multi"
+                  rows={5} // Adjust rows as needed
                   value={systemPromptMask}
                   onChange={(e) => setSystemPromptMask(e.target.value)}
-                  className="w-full p-2 border border-indigo-300 rounded-md h-32 disabled:bg-gray-100 bg-indigo-50"
                   placeholder="Enter masked system prompt for exports (leave empty to use actual prompt)"
                   disabled={isLoading || isSaving}
+                  className="bg-indigo-50 border-indigo-300 focus:border-indigo-500 focus:ring-indigo-500" // Apply custom styling
+                  helpText="This is what will appear in exported data instead of the actual system prompt."
+                  helpTextClassName="text-indigo-500 italic" // Style help text
+                  containerClassName="mb-0" // Adjust spacing
+                  aiContext="You are operating on text that represents a masked version of a system prompt for an LLM. This mask is used for exports and should hide sensitive or internal details while retaining the prompt's general structure or purpose." // Add AI context
+                  collapsible={true}
+                  defaultCollapsed={true}
+                  collapsedHeight="100px"
+                  previewLines={3}
                 />
-                <p className="text-xs text-indigo-500 italic">This is what will appear in exported data instead of the actual system prompt.</p>
               </div>
             )}
           </div>
 
           {/* User Prompt Section with conditional mask field */}
           <div className="space-y-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {showMasks ? "User Prompt Template (Actual)" : "User Prompt Template"}
-              </label>
-              <textarea
-                id="user-prompt"
-                value={userPrompt}
-                onChange={(e) => setUserPrompt(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md h-32 disabled:bg-gray-100"
-                placeholder="Enter user prompt with {slot} placeholders"
-                disabled={isLoading || isSaving}
-              />
-            </div>
+            {/* Use CustomTextInput for User Prompt */}
+            <CustomTextInput
+              ref={userPromptRef} // Add ref
+              id="user-prompt" // Keep id for potential label association elsewhere if needed
+              name="userPrompt" // Added name prop
+              label={showMasks ? "User Prompt Template (Actual)" : "User Prompt Template"}
+              mode="multi"
+              rows={5} // Adjust rows as needed
+              value={userPrompt}
+              onChange={(e) => setUserPrompt(e.target.value)}
+              placeholder="Enter user prompt with {slot} placeholders"
+              disabled={isLoading || isSaving}
+              containerClassName="mb-0" // Adjust spacing
+              aiContext="You are operating on text that serves as a user prompt template for an LLM. It may contain placeholders like {slot_name} which will be filled in later." // Add AI context
+            />
 
             {showMasks && (
               <div className="mt-3">
-                <div className="flex items-center">
-                  <label className="block text-sm font-medium text-indigo-600 mb-1">
+                <div className="flex items-center justify-between mb-1"> {/* Adjusted layout */}
+                  <label className="block text-sm font-medium text-indigo-600">
                     User Prompt Mask <span className="text-xs font-normal text-gray-500">(for exports)</span>
                   </label>
-                  <button 
-                    className="ml-2 text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
+                  <button
+                    className="text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
                     onClick={() => setUserPromptMask(userPrompt)}
                     disabled={isLoading || isSaving}
                   >
                     Copy from actual
                   </button>
                 </div>
-                <textarea
-                  id="user-prompt-mask"
+                {/* Use CustomTextInput for User Prompt Mask */}
+                <CustomTextInput
+                  ref={userPromptMaskRef} // Add ref
+                  id="user-prompt-mask" // Keep id
+                  name="userPromptMask" // Added name prop
+                  mode="multi"
+                  rows={5} // Adjust rows as needed
                   value={userPromptMask}
                   onChange={(e) => setUserPromptMask(e.target.value)}
-                  className="w-full p-2 border border-indigo-300 rounded-md h-32 disabled:bg-gray-100 bg-indigo-50"
                   placeholder="Enter masked user prompt for exports (leave empty to use actual prompt)"
                   disabled={isLoading || isSaving}
+                  className="bg-indigo-50 border-indigo-300 focus:border-indigo-500 focus:ring-indigo-500" // Apply custom styling
+                  helpText="This is what will appear in exported data instead of the actual user prompt."
+                  helpTextClassName="text-indigo-500 italic" // Style help text
+                  containerClassName="mb-0" // Adjust spacing
+                  aiContext="You are operating on text that represents a masked version of a user prompt template for an LLM. This mask is used for exports and should hide sensitive or internal details while retaining the prompt's general structure or purpose, including any {slot_name} placeholders." // Add AI context
                 />
-                <p className="text-xs text-indigo-500 italic">This is what will appear in exported data instead of the actual user prompt.</p>
               </div>
             )}
           </div>
@@ -818,17 +861,20 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Slots
             </label>
-            <div className="flex space-x-2">
-              <input
-                type="text"
+            <div className="flex space-x-2 items-start"> {/* Use items-start */}
+              {/* Use CustomTextInput for New Slot */}
+              <CustomTextInput
+                name="newSlot" // Added name prop
                 value={newSlot}
                 onChange={(e) => setNewSlot(e.target.value)}
-                className="flex-grow p-2 border border-gray-300 rounded-md disabled:bg-gray-100"
                 placeholder="New slot name"
                 disabled={isLoading || isSaving}
+                containerClassName="flex-grow mb-0" // Adjust spacing and allow growth
+                // Removed label prop as it's handled externally here
+                aiContext="You are operating on text defining a placeholder name (a 'slot') used within a prompt template. Slot names should be concise and descriptive, typically using snake_case or camelCase." // Add AI context
               />
               <button
-                className="px-3 py-1 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+                className="px-3 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 self-center" // Adjusted padding and alignment
                 onClick={handleAddSlot}
                 disabled={isLoading || isSaving}
               >
@@ -934,54 +980,38 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
                   <div className="p-4 border border-gray-200 rounded-md bg-white shadow-sm"> {/* New container */}
                     <h4 className="text-sm font-semibold text-gray-700 mb-3">Add New Tool</h4>
                     <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Tool Name <span className="text-red-500">*</span></label>
-                        <input
-                          type="text"
-                          placeholder="e.g., getWeather"
-                          value={newToolName}
-                          onChange={(e) => {
-                            setNewToolName(e.target.value);
-                            if (e.target.value.trim()) setNewToolNameError(false); // Clear error on change
-                          }}
-                          className={`w-full p-2 border rounded-md text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
-                            newToolNameError ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                          }`}
-                          disabled={!isToolCallingTemplate || isLoading || isSaving}
-                          required
-                          aria-invalid={newToolNameError}
-                          aria-describedby={newToolNameError ? 'new-tool-name-error' : undefined}
-                        />
-                        {newToolNameError && (
-                          <p id="new-tool-name-error" className="text-xs text-red-500 mt-1 font-medium">
-                            Tool name is required.
-                          </p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Tool Description <span className="text-red-500">*</span></label>
-                        <input
-                          type="text"
-                          placeholder="e.g., Gets the current weather for a location"
-                          value={newToolDescription}
-                          onChange={(e) => {
-                            setNewToolDescription(e.target.value);
-                            if (e.target.value.trim()) setNewToolDescriptionError(false); // Clear error on change
-                          }}
-                          className={`w-full p-2 border rounded-md text-sm disabled:bg-gray-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 ${
-                            newToolDescriptionError ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                          }`}
-                          disabled={!isToolCallingTemplate || isLoading || isSaving}
-                          required
-                          aria-invalid={newToolDescriptionError}
-                          aria-describedby={newToolDescriptionError ? 'new-tool-desc-error' : undefined}
-                        />
-                        {newToolDescriptionError && (
-                          <p id="new-tool-desc-error" className="text-xs text-red-500 mt-1 font-medium">
-                            Tool description is required.
-                          </p>
-                        )}
-                      </div>
+                      {/* Use CustomTextInput for New Tool Name */}
+                      <CustomTextInput
+                        label="Tool Name"
+                        required
+                        name="newToolName" // Added name prop
+                        value={newToolName}
+                        onChange={(e) => {
+                          setNewToolName(e.target.value);
+                          if (e.target.value.trim()) setNewToolNameError(false); // Clear error on change
+                        }}
+                        placeholder="e.g., getWeather"
+                        disabled={!isToolCallingTemplate || isLoading || isSaving}
+                        error={newToolNameError ? 'Tool name is required.' : null}
+                        containerClassName="mb-0" // Adjust spacing
+                        aiContext="You are operating on text defining the name of a function or 'tool' that an LLM can call. Tool names should follow programming conventions, often camelCase or snake_case, and be concise and descriptive of the function's action." // Add AI context
+                      />
+                      {/* Use CustomTextInput for New Tool Description */}
+                      <CustomTextInput
+                        label="Tool Description"
+                        required
+                        name="newToolDescription" // Added name prop
+                        value={newToolDescription}
+                        onChange={(e) => {
+                          setNewToolDescription(e.target.value);
+                          if (e.target.value.trim()) setNewToolDescriptionError(false); // Clear error on change
+                        }}
+                        placeholder="e.g., Gets the current weather for a location"
+                        disabled={!isToolCallingTemplate || isLoading || isSaving}
+                        error={newToolDescriptionError ? 'Tool description is required.' : null}
+                        containerClassName="mb-0" // Adjust spacing
+                        aiContext="You are operating on text describing a function or 'tool' that an LLM can call. The description should clearly explain what the tool does, what parameters it expects (if any), and what it returns." // Add AI context
+                      />
                       <ToolParameterSchemaEditor
                         value={newToolSchema}
                         onChange={setNewToolSchema}
@@ -1041,18 +1071,16 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
           <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
             <h3 className="text-lg font-medium mb-4">Create New Template</h3>
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Template Name
-              </label>
-              <input
-                type="text"
-                className="w-full p-2 border border-gray-300 rounded-md"
-                value={newTemplateName}
-                onChange={(e) => setNewTemplateName(e.target.value)}
-                placeholder="Enter template name"
-              />
-            </div>
+            {/* Use CustomTextInput for New Template Name in Modal */}
+            <CustomTextInput
+              label="Template Name"
+              name="newTemplateNameModal" // Added name prop
+              value={newTemplateName}
+              onChange={(e) => setNewTemplateName(e.target.value)}
+              placeholder="Enter template name"
+              containerClassName="mb-4" // Add margin bottom
+              aiContext="You are operating on text describing the name for a generation template." // Add AI context (same as the main editor one)
+            />
 
             <div className="flex justify-end space-x-2">
               <button

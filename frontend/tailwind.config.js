@@ -40,7 +40,20 @@ export default {
       transitionProperty: {
         'height': 'height',
         'spacing': 'margin, padding',
-      }
+      },
+      fontSize: {
+        xs: '0.7em',
+        sm: '0.85em',
+        base: '0.875em',
+        lg: '1em',
+        xl: '1.125em',
+        '2xl': '1.25em',
+        '3xl': '1.5em',
+        '4xl': '1.75em',
+        '5xl': '2em',
+        '6xl': '2.25em',
+        '7xl': '2.5em',
+      },
     },
   },
   plugins: [],

@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import Icon from './Icons';
 import ParaphraseModal from './ParaphraseModal';
+import CustomTextInput from './CustomTextInput';
 
 const ExampleDetailModal = ({ 
   isOpen, 
@@ -334,13 +335,14 @@ const ExampleDetailModal = ({
           )}
         </label>
         {isEditing ? (
-          <textarea
+          <CustomTextInput
             ref={firstInputRef}
             value={editedExample.system_prompt}
             onChange={(e) => handleInputChange('system_prompt', e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors"
+            mode="multi"
             rows={4}
             placeholder="Enter system prompt..."
+            systemPrompt="Edit this system prompt. Make improvements while maintaining the original intent and functionality."
           />
         ) : (
           <div className="p-3 bg-gray-50 rounded-md whitespace-pre-wrap min-h-[4em] border border-gray-100">
@@ -371,12 +373,13 @@ const ExampleDetailModal = ({
           )}
         </label>
         {isEditing ? (
-          <textarea
+          <CustomTextInput
             value={editedExample.user_prompt}
             onChange={(e) => handleInputChange('user_prompt', e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors"
+            mode="multi"
             rows={3}
             placeholder="Enter user prompt..."
+            systemPrompt="Edit this user prompt. Make improvements while maintaining the original intent and functionality."
           />
         ) : (
           <div className="p-3 bg-gray-50 rounded-md whitespace-pre-wrap min-h-[3em] border border-gray-100">
@@ -400,12 +403,13 @@ const ExampleDetailModal = ({
           Output
         </label>
         {isEditing ? (
-          <textarea
+          <CustomTextInput
             value={editedExample.output}
             onChange={(e) => handleInputChange('output', e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors"
+            mode="multi"
             rows={6}
             placeholder="Enter expected output..."
+            systemPrompt="Edit this expected output. Improve the formatting and clarity while preserving the original meaning and content."
           />
         ) : (
           <div className="p-3 bg-gray-50 rounded-md whitespace-pre-wrap min-h-[6em] border border-gray-100">
@@ -523,13 +527,25 @@ const ExampleDetailModal = ({
               </button>
             </div>
             
-            <textarea
-              className={`w-full h-64 p-2 border ${
-                toolCallValidationError ? 'border-red-300 bg-red-50' : 'border-blue-300'
-              } rounded-md font-mono text-sm focus:ring-blue-500 focus:border-blue-500 transition-colors`}
+            <CustomTextInput
               value={editedToolCalls}
               onChange={(e) => setEditedToolCalls(e.target.value)}
-              spellCheck="false"
+              mode="multi"
+              rows={12}
+              className={toolCallValidationError ? 'border-red-300 bg-red-50' : 'border-blue-300'}
+              placeholder="Enter tool calls as JSON array..."
+              helpText="Tool calls must be a valid JSON array"
+              error={toolCallValidationError}
+              showAiActionButton={false}
+              actionButtons={
+                <button
+                  onClick={formatToolCalls}
+                  className="text-blue-500 hover:text-blue-700"
+                  title="Format JSON"
+                >
+                  <Icon name="code" className="h-4 w-4" />
+                </button>
+              }
             />
             
             <div className="flex justify-end space-x-2 mt-3">
@@ -758,12 +774,31 @@ const ExampleDetailModal = ({
                   )}
                 </div>
                 {isEditing ? (
-                  <textarea
+                  <CustomTextInput
                     value={editedExample.system_prompt_mask || ''}
                     onChange={(e) => handleInputChange('system_prompt_mask', e.target.value)}
-                    className="w-full p-2 border border-indigo-300 bg-indigo-50 rounded-md focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                    mode="multi"
                     rows={4}
                     placeholder="Enter masked system prompt (leave empty to use actual prompt)"
+                    className="border-indigo-300 bg-indigo-50"
+                    actionButtons={
+                      <>
+                        <button 
+                          onClick={() => handleInputChange('system_prompt_mask', example.system_prompt)}
+                          className="text-indigo-600 hover:text-indigo-800 pr-2"
+                          title="Copy from actual prompt"
+                        >
+                          <Icon name="download" className="h-4 w-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleInputChange('system_prompt_mask', '')}
+                          className="text-red-600 hover:text-red-800 pr-2"
+                          title="Clear mask"
+                        >
+                          <Icon name="close" className="h-4 w-4" />
+                        </button>
+                      </>
+                    }
                   />
                 ) : (
                   <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-md text-sm whitespace-pre-wrap min-h-[2em]">
@@ -772,22 +807,6 @@ const ExampleDetailModal = ({
                     ) : (
                       <span className="text-gray-400 italic">No mask (exports will use actual prompt)</span>
                     )}
-                  </div>
-                )}
-                {isEditing && (
-                  <div className="flex justify-end mt-1">
-                    <button 
-                      className="text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
-                      onClick={() => handleInputChange('system_prompt_mask', example.system_prompt)}
-                    >
-                      Copy from actual
-                    </button>
-                    <button 
-                      className="text-xs px-2 py-0.5 text-red-600 bg-red-50 rounded hover:bg-red-100 ml-2"
-                      onClick={() => handleInputChange('system_prompt_mask', '')}
-                    >
-                      Clear mask
-                    </button>
                   </div>
                 )}
               </div>
@@ -817,12 +836,31 @@ const ExampleDetailModal = ({
                   )}
                 </div>
                 {isEditing ? (
-                  <textarea
+                  <CustomTextInput
                     value={editedExample.user_prompt_mask || ''}
                     onChange={(e) => handleInputChange('user_prompt_mask', e.target.value)}
-                    className="w-full p-2 border border-indigo-300 bg-indigo-50 rounded-md focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+                    mode="multi"
                     rows={4}
                     placeholder="Enter masked user prompt (leave empty to use actual prompt)"
+                    className="border-indigo-300 bg-indigo-50"
+                    actionButtons={
+                      <>
+                        <button 
+                          onClick={() => handleInputChange('user_prompt_mask', example.user_prompt)}
+                          className="text-indigo-600 hover:text-indigo-800 pr-2"
+                          title="Copy from actual prompt"
+                        >
+                          <Icon name="download" className="h-4 w-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleInputChange('user_prompt_mask', '')}
+                          className="text-red-600 hover:text-red-800 pr-2"
+                          title="Clear mask"
+                        >
+                          <Icon name="close" className="h-4 w-4" />
+                        </button>
+                      </>
+                    }
                   />
                 ) : (
                   <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-md text-sm whitespace-pre-wrap min-h-[2em]">
@@ -831,22 +869,6 @@ const ExampleDetailModal = ({
                     ) : (
                       <span className="text-gray-400 italic">No mask (exports will use actual prompt)</span>
                     )}
-                  </div>
-                )}
-                {isEditing && (
-                  <div className="flex justify-end mt-1">
-                    <button 
-                      className="text-xs px-2 py-0.5 text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100"
-                      onClick={() => handleInputChange('user_prompt_mask', example.user_prompt)}
-                    >
-                      Copy from actual
-                    </button>
-                    <button 
-                      className="text-xs px-2 py-0.5 text-red-600 bg-red-50 rounded hover:bg-red-100 ml-2"
-                      onClick={() => handleInputChange('user_prompt_mask', '')}
-                    >
-                      Clear mask
-                    </button>
                   </div>
                 )}
               </div>

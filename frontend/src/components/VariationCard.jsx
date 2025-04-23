@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import ToolCallEditor from './ToolCallEditor';
 import Icon from './Icons';
 import api from '../api/apiClient';
+import CustomTextInput from './CustomTextInput';
 
 const VariationCard = ({ 
   id, // Added id prop
@@ -82,8 +83,15 @@ const VariationCard = ({
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
         if (isEditing) {
-          // Save changes instead of canceling when pressing Escape
+          // Save changes when pressing Escape
           saveEdit();
+          
+          // After exiting edit mode, refocus the card itself
+          setTimeout(() => {
+            if (outputDisplayRef.current) {
+              outputDisplayRef.current.closest('[data-variation-id]')?.focus();
+            }
+          }, 0);
         } else if (isToolEditorOpen) {
           setIsToolEditorOpen(false);
         }
@@ -474,6 +482,40 @@ const VariationCard = ({
     );
   }, [workflow_progress]);
 
+  // Logic to preserve focus during state updates like new generations
+  useEffect(() => {
+    // Only run this when not generating and component is mounted
+    if (!isGenerating) {
+      const card = outputDisplayRef.current?.closest('[data-variation-id]');
+      
+      // If this card had focus before a state update (like new generation),
+      // restore focus to it using the data-variation-id attribute
+      if (card && document.activeElement?.getAttribute('data-was-focused') === id) {
+        card.focus();
+        // Remove the marker attribute after focusing
+        document.activeElement?.removeAttribute('data-was-focused');
+      }
+    }
+  }, [isGenerating, id]);
+
+  // Store focus state before updates
+  useEffect(() => {
+    const handleBeforeStateUpdate = () => {
+      // If this card has focus when a state update is about to happen
+      // mark it with an attribute to refocus after update
+      const card = outputDisplayRef.current?.closest('[data-variation-id]');
+      if (card && document.activeElement === card) {
+        card.setAttribute('data-was-focused', id);
+      }
+    };
+
+    // Listen for custom event that parent can trigger before updating variations
+    window.addEventListener('beforeVariationsUpdate', handleBeforeStateUpdate);
+    return () => {
+      window.removeEventListener('beforeVariationsUpdate', handleBeforeStateUpdate);
+    };
+  }, [id]);
+
   // Conditional rendering for loading state
   if (isGenerating) {
     return (
@@ -508,7 +550,7 @@ const VariationCard = ({
       </div>
     );
   }
-  
+
   // Conditional rendering for error state
   if (error) {
     return (
@@ -537,25 +579,88 @@ const VariationCard = ({
   // Main render for normal state
   return (
     <div 
+      ref={outputDisplayRef}
       className={`p-4 bg-white rounded-lg border ${
         isSelected 
           ? 'border-primary-300 ring-2 ring-primary-200' // Style for selected
           : 'border-gray-200'
       } shadow-sm transition-all duration-200 hover:shadow-md ${
         isSelected ? 'scale-[1.01]' : 'hover:scale-[1.01]'
-      } relative cursor-pointer ${isDragging ? 'opacity-50' : ''}`} // Add dragging opacity effect
+      } relative cursor-pointer ${isDragging ? 'opacity-50' : ''} focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-300`} // Added visible focus styles
       onClick={handleSelect} // Make the whole card clickable for selection
       role="checkbox" // Role for accessibility
       aria-checked={isSelected} // State for accessibility
       tabIndex={0} // Make it focusable
+      data-variation-id={id} // Add data attribute for auto-focusing
       onKeyDown={(e) => {
-        // Only handle space key when not in an input element
+        // Space to toggle selection
         if (e.key === ' ' && 
             e.target.tagName !== 'INPUT' && 
             e.target.tagName !== 'TEXTAREA' && 
             !e.target.isContentEditable) {
           e.preventDefault();
           handleSelect();
+        }
+        // Enter key to start editing
+        else if (e.key === 'Enter' && !isEditing && !isGenerating) {
+          e.preventDefault();
+          startEditing();
+        }
+        // Delete or Backspace key to remove card - only if not editing and not in an input field
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && 
+                 !isEditing && 
+                 e.target.tagName !== 'INPUT' && 
+                 e.target.tagName !== 'TEXTAREA' && 
+                 !e.target.isContentEditable) {
+          e.preventDefault();
+          onDismiss();
+        }
+        // Arrow key navigation between cards
+        else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && 
+                 !isEditing && 
+                 e.target.tagName !== 'INPUT' && 
+                 e.target.tagName !== 'TEXTAREA' && 
+                 !e.target.isContentEditable) {
+          e.preventDefault();
+          
+          // Get all focusable variation cards
+          const cards = Array.from(document.querySelectorAll('[data-variation-id]'));
+          if (cards.length <= 1) return; // No navigation needed with only one card
+          
+          const currentIndex = cards.findIndex(card => card === e.target);
+          if (currentIndex === -1) return;
+          
+          let nextIndex;
+          const cardsPerRow = window.innerWidth >= 768 ? 2 : 1; // Based on md:grid-cols-2
+          
+          switch(e.key) {
+            case 'ArrowLeft':
+              nextIndex = currentIndex > 0 ? currentIndex - 1 : cards.length - 1;
+              break;
+            case 'ArrowRight':
+              nextIndex = currentIndex < cards.length - 1 ? currentIndex + 1 : 0;
+              break;
+            case 'ArrowUp':
+              nextIndex = currentIndex - cardsPerRow;
+              if (nextIndex < 0) {
+                // Go to last row, same column
+                const lastRowItems = cards.length % cardsPerRow || cardsPerRow;
+                const column = currentIndex % cardsPerRow;
+                nextIndex = cards.length - lastRowItems + Math.min(column, lastRowItems - 1);
+              }
+              break;
+            case 'ArrowDown':
+              nextIndex = currentIndex + cardsPerRow;
+              if (nextIndex >= cards.length) {
+                // Go to first row, same column
+                nextIndex = currentIndex % cardsPerRow;
+              }
+              break;
+          }
+          
+          if (nextIndex >= 0 && nextIndex < cards.length) {
+            cards[nextIndex].focus();
+          }
         }
       }}
       draggable={!isEditing && !isGenerating} // Enable dragging when not editing or generating
@@ -680,15 +785,22 @@ const VariationCard = ({
         {isEditing ? (
           // Ensure the editing area is above the overlay
           <div className="relative z-30" onClick={(e) => e.stopPropagation()} /* Prevent clicks inside editor from toggling selection */>
-            <textarea
+            <CustomTextInput
               ref={textareaRef}
               value={editedOutput}
               onChange={handleOutputChange}
               onBlur={saveEdit} // Save on blur (clicking outside)
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200 scrollbar-thin scrollbar-thumb-gray-300"
               placeholder="Output"
               autoFocus
-              style={{ height: textareaHeight, minHeight: '8rem' }}
+              mode="multi"
+              rows={6}
+              className="transition-colors duration-200 scrollbar-thin scrollbar-thumb-gray-300"
+              containerClassName="mb-0"
+              style={{ minHeight: '8rem' }}
+              aiContext="You are helping to edit a variation output in a dataset generation tool. The content should be high-quality and match the intended purpose."
+              systemPrompt="Improve this output to be more coherent, well-structured, and accurate while maintaining the original intent and information."
+              collapsible={false}
+              autoExpandThreshold={200}
             />
             {/* Removed save/cancel buttons */}
           </div>
