@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api/apiClient';
+import CustomTextInput from './CustomTextInput';
 
 const SystemPromptEditor = ({ value, onChange, templateId }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -51,11 +52,16 @@ const SystemPromptEditor = ({ value, onChange, templateId }) => {
       
       {isExpanded ? (
         <div className="space-y-2">
-          <textarea
+          <CustomTextInput
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md h-40"
+            mode="multi"
+            rows={6}
             placeholder="Enter system prompt"
+            aiContext="You are assisting with writing a system prompt for an AI assistant. System prompts define the AI's role, behavior, and constraints."
+            systemPrompt="Improve this system prompt to be more specific, detailed, and effective. Maintain the user's intent but enhance clarity, specificity, and helpfulness."
+            collapsible={false}
+            autoExpandThreshold={200}
           />
           
           {templateId && (

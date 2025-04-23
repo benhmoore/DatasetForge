@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import PropTypes from 'prop-types';
 import Icon from './Icons'; 
 import CustomSelect from './CustomSelect'; // Import CustomSelect
+import CustomTextInput from './CustomTextInput'; // Import CustomTextInput
 import _ from 'lodash'; // Import lodash for deep comparison
 
 // Initial empty schema structure with memo to prevent recreation
@@ -68,27 +69,19 @@ const ParameterPropertyEditor = React.memo(({ property, onChange, onRemove, disa
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <label htmlFor={nameId} className="block text-xs font-medium text-gray-700 mb-1">
-            Name <span className="text-red-500">*</span>
-          </label>
-          <input
+          <CustomTextInput
             id={nameId}
-            type="text"
+            label={<>Name <span className="text-red-500">*</span></>}
+            mode="single"
             placeholder="parameter_name"
             value={property.name || ''}
             onChange={handleNameChange}
-            className={`w-full p-2 border text-sm rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 h-10
-                      ${!property.name ? 'border-red-300 bg-red-50' : 'border-gray-300'}`}
             required
             disabled={disabled}
-            aria-invalid={!property.name}
-            aria-describedby={!property.name ? `${nameId}-error` : undefined}
+            error={!property.name ? "Parameter name is required" : null}
+            className="text-sm h-10"
+            showAiActionButton={false}
           />
-          {!property.name && (
-            <p id={`${nameId}-error`} className="text-xs text-red-500 mt-1 font-medium">
-              Parameter name is required
-            </p>
-          )}
         </div>
         
         <div>
@@ -109,17 +102,18 @@ const ParameterPropertyEditor = React.memo(({ property, onChange, onRemove, disa
       </div>
       
       <div>
-        <label htmlFor={descId} className="block text-xs font-medium text-gray-700 mb-1">
-          Description
-        </label>
-        <textarea
+        <CustomTextInput
           id={descId}
+          label="Description"
+          mode="multi"
           placeholder="Describe what this parameter is used for"
           value={property.description || ''}
           onChange={handleDescriptionChange}
-          rows="2"
-          className="w-full p-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 resize-y"
+          rows={2}
+          className="text-sm resize-y"
           disabled={disabled}
+          aiContext="You are helping document a tool parameter for an API. This description will help users understand what the parameter is for and how to use it properly."
+          systemPrompt="Write a clear, concise description for this parameter. Explain its purpose, any valid values, and when it should be used."
         />
       </div>
       

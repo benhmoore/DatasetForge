@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import ToolCallEditor from './ToolCallEditor';
 import Icon from './Icons';
 import api from '../api/apiClient';
+import CustomTextInput from './CustomTextInput';
 
 const VariationCard = ({ 
   id, // Added id prop
@@ -680,15 +681,22 @@ const VariationCard = ({
         {isEditing ? (
           // Ensure the editing area is above the overlay
           <div className="relative z-30" onClick={(e) => e.stopPropagation()} /* Prevent clicks inside editor from toggling selection */>
-            <textarea
+            <CustomTextInput
               ref={textareaRef}
               value={editedOutput}
               onChange={handleOutputChange}
               onBlur={saveEdit} // Save on blur (clicking outside)
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200 scrollbar-thin scrollbar-thumb-gray-300"
               placeholder="Output"
               autoFocus
-              style={{ height: textareaHeight, minHeight: '8rem' }}
+              mode="multi"
+              rows={6}
+              className="transition-colors duration-200 scrollbar-thin scrollbar-thumb-gray-300"
+              containerClassName="mb-0"
+              style={{ minHeight: '8rem' }}
+              aiContext="You are helping to edit a variation output in a dataset generation tool. The content should be high-quality and match the intended purpose."
+              systemPrompt="Improve this output to be more coherent, well-structured, and accurate while maintaining the original intent and information."
+              collapsible={false}
+              autoExpandThreshold={200}
             />
             {/* Removed save/cancel buttons */}
           </div>

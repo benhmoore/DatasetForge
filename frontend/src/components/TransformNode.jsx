@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import CustomSelect from './CustomSelect';
 import NodeBase from './NodeBase';
 import Icon from './Icons';
+import CustomTextInput from './CustomTextInput';
 
 /**
  * Enhanced TransformNode component for configuring text transformations in a workflow
@@ -423,58 +424,66 @@ const TransformNode = ({
       {/* Pattern input (hidden for trim) */}
       {showPatternField && (
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            {getPatternLabel()}
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              className={`w-full p-2 border rounded pr-8 ${!regexStatus.isValid ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 'focus:border-blue-500 focus:ring-blue-500'}`}
-              value={pattern}
-              onChange={(e) => handleConfigUpdate('pattern', e.target.value)}
-              placeholder={transform_type === 'regex' ? 'e.g., \\b(hello|hi)\\b' : 
-                          transform_type === 'template' ? 'Hello, ${name}!' :
-                          transform_type === 'extract' ? '\\b\\w+\\b' : 
-                          'Text to find...'}
-              disabled={disabled}
-            />
-            {transform_type === 'regex' && (
-              <div className="absolute inset-y-0 right-0 flex items-center pr-2">
-                <Icon 
-                  name={regexStatus.isValid ? "check-circle" : "alert-circle"} 
-                  className={`w-4 h-4 ${regexStatus.isValid ? 'text-green-500' : 'text-red-500'}`} 
-                />
-              </div>
-            )}
-          </div>
-          {!regexStatus.isValid && (
-            <p className="text-xs text-red-500">{regexStatus.error}</p>
-          )}
+          <CustomTextInput
+            label={getPatternLabel()}
+            mode="single"
+            value={pattern}
+            onChange={(e) => handleConfigUpdate('pattern', e.target.value)}
+            placeholder={transform_type === 'regex' ? 'e.g., \\b(hello|hi)\\b' : 
+                        transform_type === 'template' ? 'Hello, ${name}!' :
+                        transform_type === 'extract' ? '\\b\\w+\\b' : 
+                        'Text to find...'}
+            disabled={disabled}
+            error={!regexStatus.isValid ? regexStatus.error : null}
+            showAiActionButton={transform_type !== 'regex'}
+            aiContext={transform_type === 'regex' ? 
+              "You are helping with regular expressions for text pattern matching." :
+              transform_type === 'extract' ? 
+              "You are helping with extraction patterns to pull text from a larger document." :
+              transform_type === 'template' ?
+              "You are helping with template formatting using ${variable} placeholder syntax." :
+              "You are helping find specific text for a search and replace operation."}
+            systemPrompt={transform_type === 'regex' ?
+              "Create a valid regular expression that matches the described pattern. Provide only the regex pattern with no explanation." :
+              "Improve this search pattern to be more precise and effective for the user's needs."}
+            actionButtons={transform_type === 'regex' ? (
+              <Icon 
+                name={regexStatus.isValid ? "check-circle" : "alert-circle"} 
+                className={`w-4 h-4 ${regexStatus.isValid ? 'text-green-500' : 'text-red-500'}`} 
+              />
+            ) : null}
+          />
         </div>
       )}
       
       {/* Replacement input or case options */}
       {showReplacementField && (
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            {getReplacementLabel()}
-          </label>
-          
           {transform_type === 'case' ? (
-            <CustomSelect
-              options={caseOptions}
-              value={replacement}
-              onChange={(value) => handleConfigUpdate('replacement', value)}
-              disabled={disabled}
-            />
+            <>
+              <label className="block text-sm font-medium text-gray-700">
+                {getReplacementLabel()}
+              </label>
+              <CustomSelect
+                options={caseOptions}
+                value={replacement}
+                onChange={(value) => handleConfigUpdate('replacement', value)}
+                disabled={disabled}
+              />
+            </>
           ) : (
-            <input
-              type="text"
-              className="w-full p-2 border rounded focus:border-blue-500 focus:ring-blue-500"
+            <CustomTextInput
+              label={getReplacementLabel()}
+              mode="single"
               value={replacement}
               onChange={(e) => handleConfigUpdate('replacement', e.target.value)}
               placeholder={transform_type === 'regex' ? 'Use $1, $& for captures' : 'Replacement text...'}
               disabled={disabled}
+              showAiActionButton={transform_type !== 'regex'}
+              aiContext={transform_type === 'regex' ? 
+                "You are helping with regex replacements where $1, $2 refer to capture groups and $& refers to the whole match." : 
+                "You are helping create replacement text for a search and replace operation."}
+              systemPrompt="Improve this replacement text to be more effective for the user's needs."
             />
           )}
         </div>
@@ -496,15 +505,17 @@ const TransformNode = ({
         
         {/* Preview input */}
         <div>
-          <label className="block text-xs text-gray-500 mb-1">
-            Sample Input
-          </label>
-          <textarea
-            className="w-full h-16 p-2 border rounded text-sm focus:ring-blue-500 focus:border-blue-500"
+          <CustomTextInput
+            label="Sample Input"
+            className="text-sm"
+            containerClassName="mb-0"
             value={previewInput}
             onChange={handlePreviewInputChange}
             placeholder="Enter text to preview transformation..."
             disabled={disabled}
+            mode="multi"
+            rows={2}
+            showAiActionButton={false}
           />
         </div>
         

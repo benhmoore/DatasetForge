@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Icon from './Icons';
 import api from '../api/apiClient';
+import CustomTextInput from './CustomTextInput';
 
 const AiSeedModal = ({ isOpen, onClose, onGenerate, isGenerating }) => {
   const [numSeedsToGenerate, setNumSeedsToGenerate] = useState(3);
@@ -41,36 +42,55 @@ const AiSeedModal = ({ isOpen, onClose, onGenerate, isGenerating }) => {
         
         {/* Number of Seeds Input */}
         <div className="mb-4">
-          <label htmlFor="numSeeds" className="block text-sm font-medium text-gray-700 mb-1">
-            Number of new seeds to generate:
-          </label>
-          <input
-            type="number"
+          <CustomTextInput
             id="numSeeds"
             name="numSeeds"
-            min="1"
-            max="20" // Set a reasonable max
-            value={numSeedsToGenerate}
+            label="Number of new seeds to generate:"
+            mode="single"
+            value={numSeedsToGenerate.toString()}
             onChange={(e) => setNumSeedsToGenerate(Math.max(1, parseInt(e.target.value) || 1))}
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             disabled={isGenerating}
+            showAiActionButton={false}
+            actionButtons={
+              <>
+                <button
+                  type="button"
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors rounded-full"
+                  onClick={() => setNumSeedsToGenerate(prev => Math.max(1, prev - 1))}
+                  disabled={numSeedsToGenerate <= 1 || isGenerating}
+                  title="Decrease"
+                >
+                  <Icon name="minus" className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors rounded-full"
+                  onClick={() => setNumSeedsToGenerate(prev => Math.min(20, prev + 1))}
+                  disabled={numSeedsToGenerate >= 20 || isGenerating}
+                  title="Increase"
+                >
+                  <Icon name="plus" className="h-4 w-4" />
+                </button>
+              </>
+            }
+            helpText="Enter a number between 1 and 20"
           />
         </div>
 
         {/* Additional Instructions Textarea */}
         <div className="mb-4">
-          <label htmlFor="additionalInstructions" className="block text-sm font-medium text-gray-700 mb-1">
-            Additional Instructions (Optional):
-          </label>
-          <textarea
+          <CustomTextInput
             id="additionalInstructions"
             name="additionalInstructions"
-            rows="3"
+            label="Additional Instructions (Optional):"
+            mode="multi"
+            rows={3}
             value={additionalInstructions}
             onChange={(e) => setAdditionalInstructions(e.target.value)}
-            className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             placeholder="e.g., Make the tone more formal, focus on feature X..."
             disabled={isGenerating}
+            aiContext="You are helping craft instructions for an AI seed generation process. Provide clear, specific guidance that will help create quality dataset seed examples."
+            systemPrompt="Improve these instructions to be more specific, detailed, and helpful for generating high-quality dataset examples. Maintain the user's intent but make the instructions more effective."
           />
         </div>
 

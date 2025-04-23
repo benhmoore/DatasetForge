@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Position, useUpdateNodeInternals } from '@xyflow/react';
 import NodeBase from './NodeBase';
+import CustomTextInput from './CustomTextInput';
 
 /**
  * Extract slot names from prompt text
@@ -123,22 +124,23 @@ const PromptNode = ({
     >
       {/* Prompt text editor */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700">
-          Prompt Template
-        </label>
-        <textarea
+        <CustomTextInput
+          label="Prompt Template"
           value={prompt_text}
           onChange={handlePromptTextChange}
-          className="w-full p-2 border rounded text-sm"
+          mode="multi"
           rows={6}
           placeholder="Enter your prompt template here. Use {slot_name} syntax to create placeholders for dynamic content."
           disabled={disabled}
+          aiContext="You are helping to write a prompt template for an AI system. This template may include variables in {curly_braces} that will be filled in dynamically."
+          systemPrompt="Improve this prompt template to be more effective while maintaining all the existing slot variables such as {variable_name}. DO NOT change or remove any variables inside curly braces. DO NOT add new variables."
+          helpText={
+            <>
+              <p>Use <code>{'{slot_name}'}</code> syntax to create labeled input slots.</p>
+              <p>Example: "Process this story by {'{author}'}: {'{story}'}" creates 'author' and 'story' inputs.</p>
+            </>
+          }
         />
-        
-        <div className="text-xs text-gray-500 mt-1">
-          <p>Use <code>{'{slot_name}'}</code> syntax to create labeled input slots.</p>
-          <p>Example: "Process this story by {'{author}'}: {'{story}'}" creates 'author' and 'story' inputs.</p>
-        </div>
       </div>
 
       {/* Display detected slots for convenience */}

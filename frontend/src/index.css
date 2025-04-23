@@ -15,18 +15,47 @@
   }
   
   .tooltip-text {
-    @apply fixed z-50 p-3 text-xs bg-gray-800 text-white rounded-md shadow-xl
-    max-w-sm whitespace-normal opacity-0 transition-opacity duration-200 delay-300
-    pointer-events-none transform-gpu max-h-60 overflow-y-auto;
+    @apply fixed z-50 p-2 text-xs bg-gray-800 text-white rounded-md shadow-lg
+    max-w-xs whitespace-normal opacity-0 pointer-events-none transform-gpu max-h-48 overflow-y-auto
+    transition-all duration-150 delay-100 translate-y-1;
     /* Position will be set by JS */
   }
   
   .tooltip:hover .tooltip-text {
-    @apply opacity-100;
+    @apply opacity-90 translate-y-0;
   }
   
   .group:hover .group-hover\:block {
     @apply block;
+  }
+  
+  /* Custom Toast Styling */
+  .Toastify__toast {
+    @apply shadow-sm rounded-md;
+    min-height: 48px;
+    padding: 4px 10px;
+    margin-bottom: 6px;
+  }
+  
+  .Toastify__toast-body {
+    @apply text-xs;
+    padding: 2px 6px;
+    margin: 0;
+  }
+  
+  .Toastify__toast-icon {
+    margin-right: 4px;
+    width: 16px;
+  }
+  
+  .Toastify__slide-enter--top-right {
+    animation-duration: 150ms;
+    animation-timing-function: ease;
+  }
+  
+  .Toastify__slide-exit--top-right {
+    animation-duration: 150ms;
+    animation-timing-function: ease;
   }
 }
 

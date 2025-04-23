@@ -22,6 +22,7 @@ import InputNode from './InputNode';
 import OutputNode from './OutputNode';
 import PromptNode from './PromptNode'; // Import the new PromptNode component
 import CustomSelect from './CustomSelect';
+import CustomTextInput from './CustomTextInput';
 import Icon from './Icons';
 import ConfirmationModal from './ConfirmationModal';
 import ContextMenu from './ContextMenu';
@@ -623,21 +624,27 @@ const WorkflowEditor = forwardRef(({
       <div className="p-2 border-b bg-gray-50 flex items-center space-x-4 justify-between">
         {/* Left Group: Workflow Info */}
         <div className="flex items-center space-x-2 flex-grow mr-4">
-          <input 
-            type="text"
+          <CustomTextInput 
             value={workflowName}
             onChange={handleNameChange}
             placeholder="Workflow Name"
-            className="px-2 py-1 border rounded text-sm font-medium focus:ring-blue-500 focus:border-blue-500"
+            className="text-sm"
+            containerClassName="m-0 w-48"
+            mode="single"
             disabled={disabled}
+            showAiActionButton={false}
           />
-          <input 
-            type="text"
+          <CustomTextInput 
             value={workflowDescription}
             onChange={handleDescriptionChange}
             placeholder="Workflow Description (optional)"
-            className="px-2 py-1 border rounded text-sm flex-grow focus:ring-blue-500 focus:border-blue-500"
+            className="text-sm"
+            containerClassName="m-0 flex-grow"
+            mode="single"
             disabled={disabled}
+            showAiActionButton={true}
+            aiContext="You are helping create a concise yet descriptive workflow description for a data transformation pipeline. This description should clearly explain what the workflow does."
+            systemPrompt="Improve this workflow description to be clear, concise, and informative about what the workflow does and its purpose."
           />
         </div>
         

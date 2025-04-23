@@ -3,6 +3,7 @@ import { toast } from 'react-toastify';
 import Icon from './Icons';
 import api from '../api/apiClient';
 import FileImportButton from './FileImportButton';
+import CustomTextInput from './CustomTextInput';
 
 // Helper function to check if a seed is blank
 const isBlankSeed = (seed, slots) => {
@@ -413,27 +414,30 @@ const SeedBankModal = ({
         <div className="p-4 border-b border-gray-200 flex flex-wrap gap-2 items-center bg-gray-50">
           {/* Search */}
           <div className="relative flex-grow max-w-md">
-            <input
+            <CustomTextInput
               ref={searchInputRef}
-              type="text"
+              mode="single"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search seeds..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
               disabled={isDisabled}
+              showAiActionButton={false}
+              containerClassName="m-0"
+              actionButtons={
+                searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    title="Clear search"
+                  >
+                    <Icon name="close" className="h-4 w-4" />
+                  </button>
+                )
+              }
+              className="pl-10"
             />
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Icon name="search" className="h-5 w-5 text-gray-400" />
             </div>
-            {searchTerm && (
-              <button
-                className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                onClick={() => setSearchTerm('')}
-                title="Clear search"
-              >
-                <Icon name="close" className="h-4 w-4 text-gray-400 hover:text-gray-600" />
-              </button>
-            )}
           </div>
 
           {/* Actions buttons */}
@@ -579,8 +583,8 @@ const SeedBankModal = ({
                           {template.slots.map((slot, slotIndex) => (
                             <td key={slot} className="px-3 py-4 text-sm">
                               <div className="relative">
-                                <input 
-                                  type="text" 
+                                <CustomTextInput 
+                                  mode="single"
                                   value={seed[slot] || ''} 
                                   onChange={(e) => {
                                     if (isDisabled) return;
@@ -647,19 +651,45 @@ const SeedBankModal = ({
                                     setCurrentSeedIndex(indexToUse);
                                     onClose();
                                   }}
-                                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
                                   placeholder={`Enter ${slot}...`}
                                   disabled={isDisabled}
+                                  containerClassName="m-0"
+                                  className="text-sm"
+                                  showAiActionButton={true}
+                                  aiContext={`You are helping create content for a "${slot}" field in a dataset. This field represents a ${slot} entry in seed data for AI prompts.`}
+                                  systemPrompt={`Generate or improve the text for this "${slot}" field. Keep the content authentic, relevant, and concise.`}
+                                  actionButtons={
+                                    <button
+                                      className="text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors rounded-full"
+                                      title={`Import file for ${slot}`}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        const input = document.createElement('input');
+                                        input.type = 'file';
+                                        input.accept = '.txt,.md,.json,.csv';
+                                        input.onchange = (event) => {
+                                          const file = event.target.files?.[0];
+                                          if (!file) return;
+                                          
+                                          const reader = new FileReader();
+                                          reader.onload = (e) => {
+                                            const content = e.target?.result;
+                                            if (typeof content === 'string') {
+                                              // Call the handler
+                                              const handler = handleImportFileToSlot(seed, slot);
+                                              if (handler) handler(content, file);
+                                            }
+                                          };
+                                          reader.readAsText(file);
+                                        };
+                                        input.click();
+                                      }}
+                                      disabled={isDisabled}
+                                    >
+                                      <Icon name="upload" className="h-4 w-4" />
+                                    </button>
+                                  }
                                 />
-                                <div className="absolute inset-y-0 right-0 flex items-center pr-2">
-                                  <FileImportButton 
-                                    onImport={handleImportFileToSlot(seed, slot)} 
-                                    slotName={slot}
-                                    disabled={isDisabled}
-                                    buttonType="icon"
-                                    position="absolute"
-                                  />
-                                </div>
                               </div>
                               {seed[slot] && seed[slot].length > 100 && (
                                 <p className="mt-1 text-xs text-gray-500">

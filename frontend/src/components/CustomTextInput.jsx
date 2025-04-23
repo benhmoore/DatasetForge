@@ -462,6 +462,11 @@ const CustomTextInput = React.forwardRef(({
       icon: "language"
     },
     {
+      label: "Polish",
+      value: "polish",
+      icon: "edit"
+    },
+    {
       label: "Generate",
       value: "generate",
       icon: "sparkles"
@@ -533,6 +538,9 @@ const CustomTextInput = React.forwardRef(({
         break;
       case "paraphrase":
         systemPromptToUse = "Paraphrase the following text. Provide only the paraphrased text. Never return comments or explanations.";
+        break;
+      case "polish":
+        systemPromptToUse = "Polish and refine the following text to make it well-written. Improve word choice, flow, and clarity while preserving the original meaning. Maintain level of conciseness. Provide only the polished text. Never return comments or explanations.";
         break;
       case "generate":
         // For generate, we might use the component's systemPrompt or a default
