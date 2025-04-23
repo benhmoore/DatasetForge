@@ -560,6 +560,11 @@ const VariationCard = ({
           e.preventDefault();
           handleSelect();
         }
+        // Enter key to start editing
+        else if (e.key === 'Enter' && !isEditing && !isGenerating) {
+          e.preventDefault();
+          startEditing();
+        }
         // Delete or Backspace key to remove card
         else if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault();
