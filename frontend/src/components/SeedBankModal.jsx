@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import Icon from './Icons';
 import api from '../api/apiClient';
-import FileImportButton from './FileImportButton';
+import FileImportButton from './CustomFileImportButton';
 import CustomTextInput from './CustomTextInput';
 
 // Helper function to check if a seed is blank

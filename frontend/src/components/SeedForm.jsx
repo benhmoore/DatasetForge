@@ -5,8 +5,9 @@ import AiSeedModal from './AiSeedModal'; // Import the new modal component
 import SeedBankModal from './SeedBankModal'; // Import the seed bank modal
 import Icon from './Icons'; // Import the Icon component
 import CustomSlider from './CustomSlider'; // Import the new CustomSlider component
-import FileImportButton from './FileImportButton'; // Import the new FileImportButton component
+import CustomFileImportButton from './CustomFileImportButton'; // Import the new FileImportButton component
 import CustomTextInput from './CustomTextInput'; // Import the new CustomTextInput component
+import { importTextFile } from '../lib/FileImportUtil';
 
 // Define the helper function to generate the prompt preview
 const generatePromptPreview = (promptTemplate, slotValues) => {
@@ -516,34 +517,32 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
   const handleImportFileToSlot = useCallback((slot) => {
     if (isDisabled) return;
     
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.md,.txt,.json,.csv,.text,.markdown,.html';
+    const selectAndImportFiles = () => {
+      // Create input element and configure it
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.md,.txt,.json,.csv,.text,.markdown,.html';
+      input.multiple = true; // Allow multiple file selection
+      
+      input.onchange = (event) => {
+        const files = Array.from(event.target.files || []);
+        if (files.length === 0) return;
+        
+        // Handle single file selection case
+        if (files.length === 1) {
+          processFile(files[0]);
+          return;
+        }
+        
+        // Handle multiple files selection case
+        processMultipleFiles(files);
+      };
+      
+      input.click();
+    };
     
-    input.onchange = (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      
-      // Check if file is text-based by MIME type
-      const validTextTypes = [
-        'text/plain', 
-        'text/markdown', 
-        'text/csv', 
-        'text/html', 
-        'application/json',
-        'application/x-md',
-        'application/markdown'
-      ];
-      
-      // Also allow any type with no specified MIME type but valid extension
-      const validExtensions = ['.md', '.txt', '.text', '.markdown', '.csv', '.json', '.html'];
-      const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      
-      if (!validTextTypes.includes(file.type) && !validExtensions.includes(fileExtension)) {
-        toast.error(`Unsupported file type. Please select a text file (markdown, plaintext, etc).`);
-        return;
-      }
-      
+    // Process a single file for the current seed
+    const processFile = (file) => {
       const reader = new FileReader();
       
       reader.onload = (e) => {
@@ -553,7 +552,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
             throw new Error("Failed to read file content.");
           }
           
-          // Update the slot with the file content
+          // Update the current seed with the file content
           handleSlotChange(slot, content);
           toast.success(`Successfully imported content from ${file.name} into ${slot}.`);
         } catch (error) {
@@ -562,16 +561,120 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
         }
       };
       
-      reader.onerror = (e) => {
-        console.error("Error reading file:", e);
-        toast.error("Failed to read the selected file.");
+      reader.onerror = () => {
+        toast.error(`Failed to read ${file.name}.`);
       };
       
       reader.readAsText(file);
     };
     
-    input.click();
-  }, [handleSlotChange, isDisabled]);
+    // Process multiple files, creating new seeds
+    const processMultipleFiles = (files) => {
+      // Check if any files are invalid (unsupported types)
+      const validExtensions = ['.md', '.txt', '.json', '.csv', '.text', '.markdown', '.html'];
+      const validMimeTypes = [
+        'text/plain', 
+        'text/markdown', 
+        'text/csv', 
+        'text/html', 
+        'application/json',
+        'application/x-md',
+        'application/markdown'
+      ];
+      
+      const validFiles = files.filter(file => {
+        const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        return validMimeTypes.includes(file.type) || validExtensions.includes(fileExtension);
+      });
+      
+      if (validFiles.length === 0) {
+        toast.error('No valid text files selected. Please select supported file types only.');
+        return;
+      }
+      
+      if (validFiles.length < files.length) {
+        toast.warning(`${files.length - validFiles.length} file(s) were skipped due to unsupported formats.`);
+      }
+      
+      // Show loading indicator for larger file sets
+      let loadingToast;
+      if (validFiles.length > 3) {
+        loadingToast = toast.info(`Processing ${validFiles.length} files...`, { autoClose: false });
+      }
+      
+      // Use Promise.all to read all files in parallel
+      Promise.all(
+        validFiles.map(file => 
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+              try {
+                const content = e.target?.result;
+                if (typeof content !== 'string') {
+                  reject(new Error(`Failed to read file content from ${file.name}.`));
+                  return;
+                }
+                resolve({ fileName: file.name, content });
+              } catch (error) {
+                reject(error);
+              }
+            };
+            
+            reader.onerror = () => reject(new Error(`Failed to read ${file.name}.`));
+            reader.readAsText(file);
+          })
+        )
+      )
+      .then(results => {
+        // Create new seeds for each file
+        const newSeeds = results.map(({ fileName, content }) => {
+          // Create a new seed based on the current template slots
+          return template?.slots.reduce((acc, slotName) => {
+            // Copy values from current seed for other slots
+            if (slotName !== slot) {
+              acc[slotName] = currentSeed[slotName] || '';
+            } else {
+              // Set the targeted slot to the file content
+              acc[slotName] = content;
+            }
+            return acc;
+          }, {});
+        });
+        
+        // Add the new seeds to the seed list
+        setSeedList(prevList => {
+          // Keep all existing seeds, then add the new ones
+          const updatedList = [...prevList, ...newSeeds];
+          // Navigate to the first of the newly added seeds
+          setCurrentSeedIndex(prevList.length);
+          // Clear any validation errors
+          setValidationErrors({});
+          return updatedList;
+        });
+        
+        // Clear loading toast if it exists
+        if (loadingToast) {
+          toast.dismiss(loadingToast);
+        }
+        
+        toast.success(`Successfully added ${results.length} new seeds from imported files.`);
+      })
+      .catch(error => {
+        console.error('Error processing files:', error);
+        
+        // Clear loading toast if it exists
+        if (loadingToast) {
+          toast.dismiss(loadingToast);
+        }
+        
+        toast.error(`Error processing files: ${error.message}`);
+      });
+    };
+    
+    // Start the import process
+    selectAndImportFiles();
+  }, [currentSeed, template, handleSlotChange, isDisabled, setSeedList, setCurrentSeedIndex, setValidationErrors]);
 
   // Memoize the pagination indicators to prevent unnecessary recalculations
   const renderPaginationIndicators = useMemo(() => {
@@ -669,15 +772,10 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
 
       // Create file import action button
       const fileImportButton = (
-        <button
-          type="button"
-          onClick={() => handleImportFileToSlot(slot)}
-          className="px-3 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-          title="Import from file"
+        <CustomFileImportButton
+          onImport={() => handleImportFileToSlot(slot)}
           disabled={isDisabled}
-        >
-          <Icon name="upload" className="h-4 w-4" />
-        </button>
+        />
       );
 
       return (

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 're
 import { toast } from 'react-toastify';
 import WorkflowEditor from './WorkflowEditor';
 import api from '../api/apiClient';
-import { importTextFile } from '../lib/FileImportUtil';
 
 /**
  * WorkflowManager component for managing workflow definitions
@@ -316,87 +315,6 @@ const WorkflowManager = forwardRef(({
     }
   };
   
-  // Handle workflow imports
-  const handleImportWorkflow = () => {
-    if (disabled) return;
-
-    importTextFile({
-      acceptTypes: ['.json'], // Only accept JSON files
-      onSuccess: async (content, file) => {
-        try {
-          const importedWorkflow = JSON.parse(content);
-          
-          // Basic validation
-          if (!importedWorkflow.name) {
-            toast.error('Invalid workflow JSON format. Must include name property.');
-            return;
-          }
-          
-          // Prepare data for API
-          const workflowData = {
-            name: `${importedWorkflow.name} (Imported)`,
-            description: importedWorkflow.description || '',
-            data: {
-              nodes: importedWorkflow.nodes || {},
-              connections: importedWorkflow.connections || []
-            }
-          };
-          
-          // Create a new workflow in the database
-          setIsSaving(true);
-          const savedWorkflow = await api.createWorkflow(workflowData);
-          setIsSaving(false);
-          
-          // Update the state with the saved workflow
-          setWorkflow(savedWorkflow);
-          setShowJsonEditor(false);
-          toast.success(`Workflow "${savedWorkflow.name}" imported and saved to database`);
-
-        } catch (error) {
-          setIsSaving(false);
-          console.error("Error processing imported workflow:", error);
-          toast.error(`Failed to import workflow: ${error.message}`);
-        }
-      },
-      onError: (error) => {
-        console.error("Error selecting or reading workflow file:", error);
-      }
-    });
-  };
-  
-  // Handle workflow exports
-  const handleExportWorkflow = (workflowToExport) => {
-    if (!workflowToExport) {
-      toast.warn("No workflow data to export.");
-      return;
-    }
-    
-    try {
-      const workflowJsonString = JSON.stringify(workflowToExport, null, 2);
-      const blob = new Blob([workflowJsonString], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      // Sanitize name for filename
-      const safeName = (workflowToExport.name || 'untitled').replace(/[^a-z0-9_\-]/gi, '_').toLowerCase();
-      link.download = `workflow-${safeName}.json`;
-      
-      document.body.appendChild(link);
-      link.click();
-      
-      // Clean up
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-      toast.success(`Workflow "${workflowToExport.name}" exported.`);
-      
-    } catch (error) {
-      console.error("Error exporting workflow:", error);
-      toast.error(`Failed to export workflow: ${error.message}`);
-    }
-  };
-  
   // Handle creating a new workflow via API
   const handleNewWorkflow = async () => {
     if (disabled || isSaving) return;
@@ -474,8 +392,6 @@ const WorkflowManager = forwardRef(({
             workflow={workflow}
             setWorkflow={setWorkflow}
             availableTemplates={templates}
-            onImport={handleImportWorkflow} 
-            onExport={handleExportWorkflow} 
             onNew={handleNewWorkflow}
             disabled={disabled || isLoading || isSaving}
           />

@@ -75,8 +75,6 @@ const nodeTypes = {
 const WorkflowEditor = forwardRef(({ 
   workflow, 
   setWorkflow, // Callback to update the parent's workflow state
-  onImport, // Callback for import action
-  onExport, // Callback for export action
   onNew, // Callback for creating a new workflow
   disabled = false // Disable editing controls
 }, ref) => {
@@ -701,26 +699,6 @@ const WorkflowEditor = forwardRef(({
               title="Create New Workflow"
             >
               New Workflow
-            </button>
-          )}
-          {onImport && (
-            <button 
-              onClick={onImport} 
-              className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
-              disabled={disabled}
-              title="Import Workflow from JSON"
-            >
-              <Icon name="upload" className="w-4 h-4" />
-            </button>
-          )}
-          {onExport && (
-            <button 
-              onClick={() => onExport(workflow)} 
-              className="px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition text-sm disabled:opacity-50 flex items-center space-x-1"
-              disabled={disabled || !workflow} 
-              title="Export Workflow to JSON"
-            >
-              <Icon name="download" className="w-4 h-4" />
             </button>
           )}
         </div>
