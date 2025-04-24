@@ -12,6 +12,8 @@ class User(SQLModel, table=True):
     name: str
     default_gen_model: str
     default_para_model: str
+    gen_model_context_size: Optional[int] = None
+    para_model_context_size: Optional[int] = None
 
 
 class Template(SQLModel, table=True):

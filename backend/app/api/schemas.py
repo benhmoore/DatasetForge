@@ -9,11 +9,15 @@ class UserPreferences(BaseModel):
     name: str
     default_gen_model: str
     default_para_model: str
+    gen_model_context_size: Optional[int] = None
+    para_model_context_size: Optional[int] = None
 
 
 class UserPreferencesUpdate(BaseModel):
     default_gen_model: str
     default_para_model: str
+    gen_model_context_size: Optional[int] = Field(default=None, ge=1024, le=128000)
+    para_model_context_size: Optional[int] = Field(default=None, ge=1024, le=128000)
 
 
 # Model Parameters schema
@@ -21,6 +25,7 @@ class ModelParameters(BaseModel):
     temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
     top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     max_tokens: Optional[int] = Field(default=None, ge=1)
+    context_size: Optional[int] = Field(default=None, ge=1024)  # Context window size in tokens
 
     # Add validator to ensure at least one field is not None if the object is provided?
     # Or handle defaults/merging logic in the endpoint/service layer.

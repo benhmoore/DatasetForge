@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Dict
 from pydantic import BaseSettings, validator
 
 
@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str
     LOGIN_RATE_LIMIT: int = 5
     SESSION_TIMEOUT: int = 30  # minutes
+    
+    # Default context size is 4096 for all models unless overridden by user preferences
+    DEFAULT_CONTEXT_SIZE: int = 4096
 
     @validator("DB_PATH", pre=True)
     def override_db_path_for_tests(cls, v):

@@ -90,7 +90,9 @@ async def get_user_preferences(user: User = Depends(get_current_user)):
     return {
         "name": user.name,
         "default_gen_model": user.default_gen_model,
-        "default_para_model": user.default_para_model
+        "default_para_model": user.default_para_model,
+        "gen_model_context_size": user.gen_model_context_size,
+        "para_model_context_size": user.para_model_context_size
     }
 
 
@@ -106,6 +108,10 @@ async def update_user_preferences(
         user.default_gen_model = preferences["default_gen_model"]
     if "default_para_model" in preferences:
         user.default_para_model = preferences["default_para_model"]
+    if "gen_model_context_size" in preferences:
+        user.gen_model_context_size = preferences["gen_model_context_size"]
+    if "para_model_context_size" in preferences:
+        user.para_model_context_size = preferences["para_model_context_size"]
         
     # Save changes to the database
     session.add(user)

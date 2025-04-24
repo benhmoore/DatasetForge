@@ -248,6 +248,7 @@ async def call_ollama_generate(
     tools: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Calls the Ollama API with merged parameters."""
+    from app.core.config import settings
 
     # --- Parameter Merging Logic ---
     final_options = {}
@@ -259,6 +260,21 @@ async def call_ollama_generate(
     }
     final_options.update(base_defaults)
 
+    # Apply context size based on model category (generation or paraphrase)
+    context_size = settings.DEFAULT_CONTEXT_SIZE  # Start with default from config
+    
+    # Check if this is a generation or paraphrase operation
+    # For generation models
+    if template and template.id:  # If this is a template-based generation
+        if "gen_model_context_size" in user_prefs and user_prefs["gen_model_context_size"]:
+            context_size = user_prefs["gen_model_context_size"]
+    # For paraphrase models (inferred from no template or special cases)
+    elif "para_model_context_size" in user_prefs and user_prefs["para_model_context_size"]:
+        context_size = user_prefs["para_model_context_size"]
+    
+    # Set context size in options
+    final_options["num_ctx"] = context_size
+
     # Layer 2: Template-specific parameters (highest priority if set)
     if template_params:
         if template_params.temperature is not None:
@@ -267,6 +283,9 @@ async def call_ollama_generate(
             final_options["top_p"] = template_params.top_p
         if template_params.max_tokens is not None:
             final_options["num_predict"] = template_params.max_tokens
+        if template_params.context_size is not None:
+            # Override with template-specific context size if specified
+            final_options["num_ctx"] = template_params.context_size
 
     # --- End Parameter Merging ---
 
