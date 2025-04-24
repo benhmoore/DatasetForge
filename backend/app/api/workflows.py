@@ -77,11 +77,21 @@ async def create_workflow(
 ):
     """Create a new workflow."""
     # Check for duplicate name for this user before creating
-    existing_query = select(Workflow).where(
-        Workflow.owner_id == user.id, 
-        Workflow.name == workflow_data.name
-    )
-    existing = session.exec(existing_query).first()
+    # Try to find a unique name by appending a number if needed
+    base_name = workflow_data.name
+    name = base_name
+    index = 1
+    while True:
+        existing_query = select(Workflow).where(
+            Workflow.owner_id == user.id, 
+            Workflow.name == name
+        )
+        existing = session.exec(existing_query).first()
+        if not existing:
+            break
+        index += 1
+        name = f"{base_name} ({index})"
+    workflow_data.name = name
 
     if existing:
         raise HTTPException(

@@ -10,22 +10,68 @@ import { toast } from 'react-toastify';
  * @param {Array<string>} [options.acceptTypes=['.md','.txt','.json','.csv','.text','.markdown','.html']] - Acceptable file extensions
  * @param {Function} options.onSuccess - Callback function when file is successfully imported (content) => void
  * @param {Function} [options.onError] - Optional callback function for handling errors (error) => void
+ * @param {boolean} [options.multiple=false] - Whether to allow multiple file selection
  */
 export const importTextFile = (options) => {
   const {
     acceptTypes = ['.md','.txt','.json','.csv','.text','.markdown','.html'],
     onSuccess,
-    onError
+    onError,
+    multiple = false
   } = options;
   
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = acceptTypes.join(',');
+  input.multiple = multiple; // Enable/disable multiple file selection
   
   input.onchange = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
     
+    // For single file mode, just process one file
+    if (!multiple) {
+      processFile(files[0]);
+      return;
+    }
+    
+    // For multiple files mode, process all files
+    const validFiles = [];
+    let errorCount = 0;
+    
+    // Process files sequentially with Promise.all to track all results
+    Promise.all(files.map(file => {
+      return new Promise(resolve => {
+        validateAndReadFile(file, 
+          (content) => {
+            validFiles.push({ file, content });
+            resolve();
+          },
+          () => {
+            errorCount++;
+            resolve();
+          }
+        );
+      });
+    })).then(() => {
+      // After all files are processed, call the success handler with the array of valid files
+      if (validFiles.length > 0) {
+        onSuccess(validFiles.map(item => item.content), validFiles.map(item => item.file));
+        
+        // Show summary toast
+        if (errorCount > 0) {
+          toast.warning(`Imported ${validFiles.length} files. ${errorCount} file(s) were skipped due to errors.`);
+        } else {
+          toast.success(`Successfully imported ${validFiles.length} files.`);
+        }
+      } else if (errorCount > 0) {
+        toast.error(`Failed to import any of the ${errorCount} selected files.`);
+        if (onError) onError(new Error("No valid files were imported."));
+      }
+    });
+  };
+  
+  function validateAndReadFile(file, onSuccess, onError) {
     // Check if file is text-based by MIME type
     const validTextTypes = [
       'text/plain', 
@@ -41,8 +87,8 @@ export const importTextFile = (options) => {
     const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     
     if (!validTextTypes.includes(file.type) && !acceptTypes.includes(fileExtension)) {
-      const errorMessage = `Unsupported file type. Please select a supported text file (${acceptTypes.join(', ')}).`;
-      toast.error(errorMessage);
+      const errorMessage = `Skipped "${file.name}": Unsupported file type.`;
+      toast.warning(errorMessage);
       if (onError) onError(new Error(errorMessage));
       return;
     }
@@ -53,25 +99,33 @@ export const importTextFile = (options) => {
       try {
         const content = e.target?.result;
         if (typeof content !== 'string') {
-          throw new Error("Failed to read file content.");
+          throw new Error(`Failed to read file content from "${file.name}".`);
         }
         
-        onSuccess(content, file);
+        onSuccess(content);
       } catch (error) {
-        console.error("Error importing file content:", error);
-        toast.error(`Failed to import file: ${error.message || "Unknown error"}`);
+        console.error(`Error importing file ${file.name}:`, error);
+        toast.error(`Failed to import "${file.name}": ${error.message || "Unknown error"}`);
         if (onError) onError(error);
       }
     };
     
     reader.onerror = (e) => {
-      console.error("Error reading file:", e);
-      toast.error("Failed to read the selected file.");
-      if (onError) onError(new Error("Failed to read the selected file."));
+      console.error(`Error reading file ${file.name}:`, e);
+      toast.error(`Failed to read "${file.name}".`);
+      if (onError) onError(new Error(`Failed to read "${file.name}".`));
     };
     
     reader.readAsText(file);
-  };
+  }
+  
+  // For single file mode
+  function processFile(file) {
+    validateAndReadFile(file, 
+      (content) => onSuccess(content, file),
+      (error) => { if (onError) onError(error); }
+    );
+  }
   
   input.click();
 };
