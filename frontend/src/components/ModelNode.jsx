@@ -106,7 +106,7 @@ const ModelNode = ({
       isConnectable={isConnectable} 
       disabled={disabled} 
       nodeType="model"
-      iconName="cpu"
+      iconName="workflow"
       inputHandles={inputHandles}
       outputHandles={outputHandles}
     >

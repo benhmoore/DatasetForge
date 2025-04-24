@@ -33,7 +33,8 @@ const NodeBase = ({
                             nodeType === 'transform' ? '!bg-orange-500' :
                             nodeType === 'input' ? '!bg-green-500' :
                             nodeType === 'output' ? '!bg-purple-500' :
-                            nodeType === 'text' ? '!bg-yellow-500' :
+                            nodeType === 'prompt' ? '!bg-yellow-500' :
+                            nodeType === 'filter' ? '!bg-red-500' :
                            '!bg-gray-500'; // Default
 
   // Determine background color based on type
@@ -41,7 +42,8 @@ const NodeBase = ({
                                nodeType === 'transform' ? 'bg-orange-50' :
                                nodeType === 'input' ? 'bg-green-50' :
                                nodeType === 'output' ? 'bg-purple-50' :
-                               nodeType === 'text' ? 'bg-yellow-50' :
+                               nodeType === 'prompt' ? 'bg-yellow-50' :
+                                nodeType === 'filter' ? 'bg-red-50' :
                                'bg-white'; // Default background
 
   const toggleCollapse = () => {

@@ -17,8 +17,9 @@ const OutputNode = ({
       data={data} 
       isConnectable={isConnectable} 
       disabled={disabled} 
-      nodeType="output" // Specify type for styling and handle logic
-      iconName="arrow-left-circle" // Specify icon
+      nodeType="output"
+      iconName="document"
+      outputHandles={[]} // Pass empty array to hide output handles
     >
       {/* No specific content needed for Output node, but could add info */}
       <div className="text-xs text-gray-500">

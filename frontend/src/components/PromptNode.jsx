@@ -118,7 +118,7 @@ const PromptNode = ({
       isConnectable={isConnectable} 
       disabled={disabled} 
       nodeType="prompt"
-      iconName="messageSquare"
+      iconName="chat"
       inputHandles={inputHandles}
       outputHandles={outputHandles}
     >

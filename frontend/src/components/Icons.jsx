@@ -40,7 +40,8 @@ import {
   ChatBubbleLeftRightIcon,
   BookOpenIcon,
   ArrowUturnLeftIcon,
-  EyeIcon
+  EyeIcon,
+  FunnelIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 
@@ -87,6 +88,7 @@ const icons = {
   bookOpen: { outline: BookOpenIcon },
   undo: { outline: ArrowUturnLeftIcon },
   eye: { outline: EyeIcon },
+  filter: { outline: FunnelIcon },
 };
 
 export default function Icon({ name, variant = 'outline', className = '', ...props }) {

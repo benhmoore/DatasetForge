@@ -600,6 +600,7 @@ const WorkflowEditor = forwardRef(({
   // Options for the node type selector
   const nodeTypeOptions = Object.entries(NODE_TYPES).map(([key, label]) => ({
     value: key,
+    icon: NODE_ICONS[key],
     label: label
   }));
 

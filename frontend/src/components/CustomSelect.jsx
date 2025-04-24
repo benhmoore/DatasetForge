@@ -73,13 +73,20 @@ const CustomSelect = ({
           aria-expanded={isOpen}
           aria-labelledby="select-label"
         >
-          <span className="truncate text-sm">
+          <span className="truncate text-sm flex items-center">
             {isLoading ? (
               <div className="flex items-center">
                 <Icon name="spinner" className="animate-spin h-4 w-4 mr-2 text-gray-400" />
                 <span>Loading...</span>
               </div>
-            ) : displayLabel}
+            ) : (
+              <>
+                {selectedOption && selectedOption.icon && (
+                  <Icon name={selectedOption.icon} className="h-4 w-4 text-gray-500 mr-2" aria-hidden="true" />
+                )}
+                <span>{displayLabel}</span>
+              </>
+            )}
           </span>
           <Icon
             name="chevronDown"
@@ -137,7 +144,18 @@ const CustomSelect = ({
                   {option.value === value && (
                     <Icon name="check" className="h-4 w-4 text-primary-600 mr-2" aria-hidden="true" />
                   )}
-                  <span className="truncate">{option.label}</span>
+                  {option.icon && (
+                    <Icon 
+                      name={option.icon} 
+                      className={`h-4 w-4 ${
+                        option.value === value ? 'text-primary-600' : 'text-gray-500'
+                      } ${option.value === value ? 'ml-2' : 'mr-2'}`} 
+                      aria-hidden="true" 
+                    />
+                  )}
+                  <span className={`truncate ${option.icon && option.value !== value ? 'ml-2' : ''}`}>
+                    {option.label}
+                  </span>
                 </li>
               ))
             )}

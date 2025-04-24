@@ -343,7 +343,7 @@ const TransformNode = ({
       isConnectable={isConnectable} 
       disabled={disabled} 
       nodeType="transform"
-      iconName="wand"
+      iconName="edit"
     >
       {/* Transformation type selection */}
       <div className="space-y-2">

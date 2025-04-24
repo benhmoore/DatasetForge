@@ -559,38 +559,38 @@ const CustomTextInput = React.forwardRef(({
     await performAiAction(systemPromptToUse);
   };
 
-  // Generate unique IDs for accessibility - MOVED EARLIER
-  // const inputId = id || `input-${name || Math.random().toString(36).substring(2, 9)}`; 
-  const helpTextId = helpText ? `${inputId}-help` : undefined;
-  const errorId = error ? `${inputId}-error` : undefined;
-  const aiErrorId = aiValidationError ? `${inputId}-ai-error` : undefined;
-  const describedBy = [helpTextId, errorId, aiErrorId].filter(Boolean).join(' ') || undefined;
+  // Function to ensure any child action buttons have consistent styling
+  const wrapActionButton = (actionButton) => {
+    // If the action button is already a React element, wrap it with our styling
+    if (React.isValidElement(actionButton)) {
+      // Clone with proper button styling
+      const wrappedButton = React.cloneElement(actionButton, {
+        className: `p-2 m-1 transition-colors rounded-full ${actionButton.props.className || ''}`,
+      });
+      
+      // Find and process any SVG/icon children to ensure consistent sizing
+      if (React.Children.count(wrappedButton.props.children) > 0) {
+        const processedChildren = React.Children.map(wrappedButton.props.children, child => {
+          // Apply consistent sizing to SVG or Icon components
+          if (React.isValidElement(child) && 
+              (child.type === 'svg' || 
+               (typeof child.type === 'function' && child.type.name === 'Icon'))) {
+            return React.cloneElement(child, {
+              className: `h-4 w-4 ${child.props.className || ''}`,
+            });
+          }
+          return child;
+        });
+        
+        // Return button with processed children
+        return React.cloneElement(wrappedButton, {}, processedChildren);
+      }
+      
+      return wrappedButton;
+    }
+    return actionButton;
+  };
 
-  // Base input classes
-  const baseInputClasses = `
-    w-full p-2 border transition-colors duration-200
-    ${error ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500' 
-            : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500'}
-    ${disabled || isAiLoading ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''}
-    ${(!isMultiline && (
-        (actionButtons) || 
-        (showAiActionButton && !(disabled || aiActionDisabled)) || 
-        (canUndo && !userEditedAfterAi)
-      )) ? 'rounded-r-none' : ''}
-    ${isMultiline ? 'rounded-t-none rounded-b-md text-sm overflow-y-hidden' : 'rounded-md'}
-    ${isMultiline && isExpanded ? 'max-h-[70vh] overflow-y-auto' : ''}
-    ${className}
-  `;
-  
-  // Action buttons container classes
-  const actionButtonsContainerClasses = `
-    flex items-center 
-    ${isMultiline 
-      ? 'w-full justify-end border-l border-t border-r border-gray-300 rounded-t-md bg-gray-50' 
-      : 'border-t border-r border-b rounded-r-md bg-gray-50'}
-    ${error ? 'border-red-300' : ''}
-  `;
-  
   // Undo button - only show if user hasn't made edits after AI generation
   const undoButton = canUndo && !userEditedAfterAi ? (
     <button
@@ -641,38 +641,6 @@ const CustomTextInput = React.forwardRef(({
     </motion.button>
   ) : null;
 
-  // Function to ensure any child action buttons have consistent styling
-  const wrapActionButton = (actionButton) => {
-    // If the action button is already a React element, wrap it with our styling
-    if (React.isValidElement(actionButton)) {
-      // Clone with proper button styling
-      const wrappedButton = React.cloneElement(actionButton, {
-        className: `p-2 m-1 transition-colors rounded-full ${actionButton.props.className || ''}`,
-      });
-      
-      // Find and process any SVG/icon children to ensure consistent sizing
-      if (React.Children.count(wrappedButton.props.children) > 0) {
-        const processedChildren = React.Children.map(wrappedButton.props.children, child => {
-          // Apply consistent sizing to SVG or Icon components
-          if (React.isValidElement(child) && 
-              (child.type === 'svg' || 
-               (typeof child.type === 'function' && child.type.name === 'Icon'))) {
-            return React.cloneElement(child, {
-              className: `h-4 w-4 ${child.props.className || ''}`,
-            });
-          }
-          return child;
-        });
-        
-        // Return button with processed children
-        return React.cloneElement(wrappedButton, {}, processedChildren);
-      }
-      
-      return wrappedButton;
-    }
-    return actionButton;
-  };
-
   // Combine custom action buttons with AI button and undo button if needed
   const combinedActionButtons = (
     <>
@@ -685,10 +653,47 @@ const CustomTextInput = React.forwardRef(({
     </>
   );
 
+  // Determine if any action buttons will actually render
+  const hasVisibleActionButtons = !!(
+    collapseButton ||
+    undoButton ||
+    aiButton ||
+    (actionButtons && React.Children.count(actionButtons) > 0) // Check if actionButtons prop has children
+  );
+
   // Collapsed view styles and content
   const collapsedViewClasses = `
     overflow-hidden transition-all duration-300 ease-in-out
     ${isCollapsed ? `max-h-[${collapsedHeight}]` : 'max-h-[1000px]'}
+  `;
+
+  // Generate unique IDs for accessibility - MOVED EARLIER
+  // const inputId = id || `input-${name || Math.random().toString(36).substring(2, 9)}`; 
+  const helpTextId = helpText ? `${inputId}-help` : undefined;
+  const errorId = error ? `${inputId}-error` : undefined;
+  const aiErrorId = aiValidationError ? `${inputId}-ai-error` : undefined;
+  const describedBy = [helpTextId, errorId, aiErrorId].filter(Boolean).join(' ') || undefined;
+
+  // Base input classes
+  const baseInputClasses = `
+    w-full p-2 border transition-colors duration-200
+    ${error ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500'
+            : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500'}
+    ${disabled || isAiLoading ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''}
+    ${(!isMultiline && hasVisibleActionButtons) ? 'rounded-r-none' : ''} // Use hasVisibleActionButtons
+    ${isMultiline ? 'rounded-t-none rounded-b-md text-sm overflow-y-hidden' : 'rounded-md'}
+    ${isMultiline && isExpanded ? 'max-h-[70vh] overflow-y-auto' : ''}
+    ${className}
+  `;
+
+  // Action buttons container classes
+  const actionButtonsContainerClasses = `
+    flex items-center
+    ${isMultiline
+      ? 'w-full justify-end border-l border-t border-r border-gray-300 rounded-t-md bg-gray-50'
+      : 'border-t border-b border-gray-300 rounded-r-md bg-gray-50'}
+    ${!isMultiline && hasVisibleActionButtons ? 'border-r' : ''} // Use hasVisibleActionButtons
+    ${error ? 'border-red-300' : ''}
   `;
 
   // Function to render the collapsed preview
@@ -816,8 +821,8 @@ const CustomTextInput = React.forwardRef(({
                 aria-describedby={describedBy}
               />
               
-              {/* Action buttons */}
-              {(combinedActionButtons) && (
+              {/* Action buttons - Only render container if there are visible buttons */}
+              {hasVisibleActionButtons && (
                 <div className={actionButtonsContainerClasses}>
                   {combinedActionButtons}
                 </div>

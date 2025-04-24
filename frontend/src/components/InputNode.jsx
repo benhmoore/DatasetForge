@@ -18,7 +18,8 @@ const InputNode = ({
       isConnectable={isConnectable} 
       disabled={disabled} 
       nodeType="input" // Specify type for styling and handle logic
-      iconName="arrow-right-circle" // Specify icon
+      iconName="database" // Specify icon
+      inputHandles={[]} // Pass empty array to hide input handles
     >
       {/* No specific content needed for Input node, but could add info */}
       <div className="text-xs text-gray-500">
