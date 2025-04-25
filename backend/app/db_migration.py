@@ -107,18 +107,31 @@ def migrate_database():
         )
         return
         
+    # Ensure database has proper permissions if it exists
+    if settings.DB_PATH != ":memory:" and os.path.exists(settings.DB_PATH):
+        try:
+            # Set file permissions to be writable by all (666)
+            os.chmod(settings.DB_PATH, 0o666)
+            logger.info(f"Set permissions on database file {settings.DB_PATH}")
+        except Exception as e:
+            logger.error(f"Could not set database file permissions: {e}")
+
     # New database without users - clean slate approach
     try:
         # For a clean approach, we'll create a new DB file if it exists
         # This assumes we're starting with a fresh database as per the plan
         if settings.DB_PATH != ":memory:" and os.path.exists(settings.DB_PATH):
-            logger.info(f"Removing existing database for clean migration to no-user mode")
+            logger.info(
+                f"Removing existing database for clean migration to no-user mode"
+            )
             os.remove(settings.DB_PATH)
             # Also remove any WAL/SHM files
             for ext in ["-wal", "-shm", "-journal"]:
                 if os.path.exists(f"{settings.DB_PATH}{ext}"):
                     os.remove(f"{settings.DB_PATH}{ext}")
-            logger.info(f"Existing database removed, will create new one without user constraints")
+            logger.info(
+                f"Existing database removed, will create new one without user constraints"
+            )
     except Exception as e:
         logger.error(f"Error removing old database files: {e}")
         # Continue anyway - we'll handle table creation below
@@ -127,27 +140,32 @@ def migrate_database():
 
     conn = sqlite3.connect(settings.DB_PATH)
     cursor = conn.cursor()
-    
+
     # Check if this is a fresh database, if so create all tables from scratch
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='dataset'")
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='dataset'"
+    )
     if not cursor.fetchone():
-        # Create dataset table without owner_id constraint
         logger.info("Creating dataset table (no-user mode)")
-        cursor.execute("""
+        cursor.execute(
+            """
         CREATE TABLE dataset (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             archived INTEGER NOT NULL DEFAULT 0
         )
-        """)
-        
+        """
+        )
+
     # Check if template table exists
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='template'")
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='template'"
+    )
     if not cursor.fetchone():
-        # Create template table without owner_id constraint
         logger.info("Creating template table (no-user mode)")
-        cursor.execute("""
+        cursor.execute(
+            """
         CREATE TABLE template (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -164,14 +182,18 @@ def migrate_database():
             is_tool_calling_template INTEGER NOT NULL DEFAULT 0,
             tool_definitions TEXT
         )
-        """)
-        
-    # Check if example table exists  
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='example'")
+        """
+        )
+
+    # Check if example table exists
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='example'"
+    )
     if not cursor.fetchone():
         # Create example table
         logger.info("Creating example table (no-user mode)")
-        cursor.execute("""
+        cursor.execute(
+            """
         CREATE TABLE example (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             dataset_id INTEGER NOT NULL,
@@ -183,10 +205,10 @@ def migrate_database():
             tool_calls TEXT,
             FOREIGN KEY(dataset_id) REFERENCES dataset(id)
         )
-        """)
+        """
+        )
         # Create index on dataset_id for faster lookups
         cursor.execute("CREATE INDEX idx_example_dataset ON example(dataset_id)")
-        
 
     try:
         # Get default templates for use throughout the function
@@ -222,19 +244,21 @@ def migrate_database():
         if "user_prompt" not in column_names:
             logger.info("Adding user_prompt column to Example table")
             cursor.execute("ALTER TABLE example ADD COLUMN user_prompt TEXT DEFAULT ''")
-            
+
             # For existing examples, populate user_prompt using template and slots
             logger.info("Populating user_prompt field for existing examples")
             # First, get all examples without a user_prompt
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT e.id, e.slots, t.user_prompt
                 FROM example e
                 JOIN dataset d ON e.dataset_id = d.id
                 JOIN template t ON 1=1
                 WHERE e.user_prompt IS NULL OR e.user_prompt = ''
-            """)
+            """
+            )
             examples_to_update = cursor.fetchall()
-            
+
             # For each example, try to generate a user_prompt from the slots
             for example_id, slots_json, template_prompt in examples_to_update:
                 try:
@@ -242,20 +266,27 @@ def migrate_database():
                     # A simple template population algorithm
                     user_prompt = template_prompt
                     for slot_name, slot_value in slots.items():
-                        user_prompt = user_prompt.replace("{" + slot_name + "}", slot_value)
-                    
+                        user_prompt = user_prompt.replace(
+                            "{" + slot_name + "}", slot_value
+                        )
+
                     # Update the example with the populated user_prompt
                     cursor.execute(
-                        "UPDATE example SET user_prompt = ? WHERE id = ?", 
-                        (user_prompt, example_id)
+                        "UPDATE example SET user_prompt = ? WHERE id = ?",
+                        (user_prompt, example_id),
                     )
                     logger.info(f"Updated user_prompt for example {example_id}")
                 except Exception as e:
-                    logger.error(f"Error updating user_prompt for example {example_id}: {e}")
+                    logger.error(
+                        f"Error updating user_prompt for example {example_id}: {e}"
+                    )
                     # Set a default value if we can't populate properly
                     cursor.execute(
-                        "UPDATE example SET user_prompt = ? WHERE id = ?", 
-                        ("[User prompt not available for existing examples]", example_id)
+                        "UPDATE example SET user_prompt = ? WHERE id = ?",
+                        (
+                            "[User prompt not available for existing examples]",
+                            example_id,
+                        ),
                     )
 
         # Check if export_template table exists
@@ -323,11 +354,9 @@ def migrate_database():
             )
             """
             )
-            
+
             # Create unique index on name
-            cursor.execute(
-                "CREATE UNIQUE INDEX uq_workflow_name ON workflow(name)"
-            )
+            cursor.execute("CREATE UNIQUE INDEX uq_workflow_name ON workflow(name)")
 
             logger.info("Workflow table created successfully")
 

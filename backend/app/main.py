@@ -2,7 +2,16 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
 
-from .api import health, templates, datasets, generate, paraphrase, export_templates, workflows, filter
+from .api import (
+    health,
+    templates,
+    datasets,
+    generate,
+    paraphrase,
+    export_templates,
+    workflows,
+    filter,
+)
 from .core.config import settings
 from .core.logging import LoggingMiddleware
 from .db import create_db_and_tables
@@ -12,7 +21,7 @@ from .db_migration import migrate_database
 app = FastAPI(
     title="DatasetForge API",
     description="API for generating fine-tuning datasets",
-    version="0.1.0"
+    version="0.1.0",
 )
 
 # Add CORS middleware
@@ -42,17 +51,14 @@ app.include_router(filter.router, tags=["filter"])
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     # Log the exception (already handled by LoggingMiddleware)
-    
+
     # Return a standardized error response
     if isinstance(exc, HTTPException):
         # Keep FastAPI's HTTPExceptions as is
         raise exc
-    
+
     # Convert other exceptions to 500 errors
-    return HTTPException(
-        status_code=500,
-        detail=f"Internal server error: {str(exc)}"
-    )
+    return HTTPException(status_code=500, detail=f"Internal server error: {str(exc)}")
 
 
 @app.on_event("startup")
@@ -66,4 +72,5 @@ def on_startup():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -16,6 +16,19 @@ else:
     # Create data directory if it doesn't exist and using file-based DB
     if settings.DB_PATH and settings.DB_PATH != ":memory:":
         os.makedirs(os.path.dirname(settings.DB_PATH), exist_ok=True)
+        
+        # Set directory permissions to be writable by all
+        try:
+            os.chmod(os.path.dirname(settings.DB_PATH), 0o777)
+        except Exception as e:
+            print(f"Warning: Could not set directory permissions: {e}")
+            
+        # If DB file exists, make it writable
+        if os.path.exists(settings.DB_PATH):
+            try:
+                os.chmod(settings.DB_PATH, 0o666)
+            except Exception as e:
+                print(f"Warning: Could not set file permissions: {e}")
 
     # Create SQLite engine
     engine = create_engine(
@@ -28,6 +41,13 @@ else:
 def create_db_and_tables():
     """Create all tables defined by SQLModel.metadata"""
     SQLModel.metadata.create_all(engine)
+    
+    # After database is created, ensure it has proper permissions
+    if settings.DB_PATH != ":memory:" and os.path.exists(settings.DB_PATH):
+        try:
+            os.chmod(settings.DB_PATH, 0o666)
+        except Exception as e:
+            print(f"Warning: Could not set database file permissions after creation: {e}")
 
 
 def get_session():
