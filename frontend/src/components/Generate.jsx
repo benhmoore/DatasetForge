@@ -6,7 +6,6 @@ import api from '../api/apiClient';
 import SeedForm from './SeedForm';
 import VariationCard from './VariationCard';
 import ExampleTable from './ExampleTable';
-import SettingsModal from './SettingsModal';
 import ParaphraseModal from './ParaphraseModal';
 import RegenerateModal from './RegenerateModal';
 import CustomSelect from './CustomSelect';
@@ -2523,11 +2522,6 @@ const Generate = ({ context }) => {
           </div>
         </div>
       )}
-
-      <SettingsModal
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
     </div>
   );
 };

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import DatasetSelector from './DatasetSelector';
-import SettingsModal from './SettingsModal';
 import Icon from './Icons';
 import TemplateBuilder from './TemplateBuilder';
 import Generate from './Generate';
@@ -14,7 +13,6 @@ const Layout = () => {
     const savedDatasetId = localStorage.getItem('datasetforge_selectedDatasetId');
     return savedDatasetId ? { id: parseInt(savedDatasetId, 10), name: 'Loading...' } : null;
   });
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const location = useLocation();
 
   // Determine active tab based on current path
@@ -70,13 +68,6 @@ const Layout = () => {
               />
             </div>
             <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="text-gray-500 hover:text-gray-700 px-3 py-2"
-                title="Settings"
-              >
-                <Icon name="settings" className="h-5 w-5" aria-hidden="true" />
-              </button>
             </div>
           </div>
         </div>
@@ -149,12 +140,6 @@ const Layout = () => {
             </div>
           </div>
         </main>
-
-        {/* Settings Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-      />
     </div>
   );
 };

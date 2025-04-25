@@ -22,10 +22,10 @@ apiClient.interceptors.response.use(
 const api = {
   // App settings
   getAppSettings: () => Promise.resolve({
-    default_gen_model: import.meta.env.VITE_DEFAULT_GEN_MODEL || "mistral:latest",
-    default_para_model: import.meta.env.VITE_DEFAULT_PARA_MODEL || "mistral:latest",
-    gen_model_context_size: parseInt(import.meta.env.VITE_GEN_MODEL_CONTEXT_SIZE || "8192"),
-    para_model_context_size: parseInt(import.meta.env.VITE_PARA_MODEL_CONTEXT_SIZE || "4096"),
+    default_gen_model: import.meta.env.DEFAULT_GEN_MODEL || "gemma3:latest",
+    default_para_model: import.meta.env.DEFAULT_PARA_MODEL || "gemma3:latest",
+    gen_model_context_size: parseInt(import.meta.env.GEN_MODEL_CONTEXT_SIZE || "8192"),
+    para_model_context_size: parseInt(import.meta.env.PARA_MODEL_CONTEXT_SIZE || "4096"),
   }),
   
   // Models
@@ -44,10 +44,7 @@ const api = {
   
   archiveTemplate: (id) => apiClient.put(`/templates/${id}/archive`)
     .then(response => response.data),
-  
-  getTemplateHistory: (id) => apiClient.get(`/templates/${id}/history`)
-    .then(response => response.data),
-  
+    
   // Generation
   generate: async (data, onData, signal) => { // Modify to accept signal
     // Debug log to verify data format

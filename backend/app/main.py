@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
 
 from .api import (
-    health,
     templates,
     datasets,
     generate,
@@ -37,7 +36,6 @@ app.add_middleware(
 app.add_middleware(LoggingMiddleware)
 
 # Include API routers
-app.include_router(health.router, tags=["health"])
 app.include_router(templates.router, tags=["templates"])
 app.include_router(datasets.router, tags=["datasets"])
 app.include_router(generate.router, tags=["generate"])

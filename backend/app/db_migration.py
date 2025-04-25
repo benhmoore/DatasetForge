@@ -106,35 +106,6 @@ def migrate_database():
             f"Database file {settings.DB_PATH} does not exist, no migration needed"
         )
         return
-        
-    # Ensure database has proper permissions if it exists
-    if settings.DB_PATH != ":memory:" and os.path.exists(settings.DB_PATH):
-        try:
-            # Set file permissions to be writable by all (666)
-            os.chmod(settings.DB_PATH, 0o666)
-            logger.info(f"Set permissions on database file {settings.DB_PATH}")
-        except Exception as e:
-            logger.error(f"Could not set database file permissions: {e}")
-
-    # New database without users - clean slate approach
-    try:
-        # For a clean approach, we'll create a new DB file if it exists
-        # This assumes we're starting with a fresh database as per the plan
-        if settings.DB_PATH != ":memory:" and os.path.exists(settings.DB_PATH):
-            logger.info(
-                f"Removing existing database for clean migration to no-user mode"
-            )
-            os.remove(settings.DB_PATH)
-            # Also remove any WAL/SHM files
-            for ext in ["-wal", "-shm", "-journal"]:
-                if os.path.exists(f"{settings.DB_PATH}{ext}"):
-                    os.remove(f"{settings.DB_PATH}{ext}")
-            logger.info(
-                f"Existing database removed, will create new one without user constraints"
-            )
-    except Exception as e:
-        logger.error(f"Error removing old database files: {e}")
-        # Continue anyway - we'll handle table creation below
 
     logger.info(f"Starting database migration for {settings.DB_PATH}")
 
@@ -146,6 +117,7 @@ def migrate_database():
         "SELECT name FROM sqlite_master WHERE type='table' AND name='dataset'"
     )
     if not cursor.fetchone():
+        # Create dataset table without owner_id constraint
         logger.info("Creating dataset table (no-user mode)")
         cursor.execute(
             """
@@ -163,6 +135,7 @@ def migrate_database():
         "SELECT name FROM sqlite_master WHERE type='table' AND name='template'"
     )
     if not cursor.fetchone():
+        # Create template table without owner_id constraint
         logger.info("Creating template table (no-user mode)")
         cursor.execute(
             """

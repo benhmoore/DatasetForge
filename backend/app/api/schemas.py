@@ -13,10 +13,6 @@ class ModelParameters(BaseModel):
         default=None, ge=1024
     )  # Context window size in tokens
 
-    # Add validator to ensure at least one field is not None if the object is provided?
-    # Or handle defaults/merging logic in the endpoint/service layer.
-    # For now, allow all fields to be optional.
-
 
 # Template schemas
 class TemplateBase(BaseModel):
@@ -212,8 +208,8 @@ def validate_data_size(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any
 
 # Workflow persistence schemas
 class WorkflowBase(BaseModel):
-    name: constr(min_length=1, max_length=100)
-    description: Optional[constr(max_length=1000)] = None
+    name: constr(min_length=1, max_length=100)  # type: ignore
+    description: Optional[constr(max_length=1000)] = None  # type: ignore
     data: Dict[str, Any]
 
     # Apply the validator to the 'data' field
@@ -233,8 +229,8 @@ class WorkflowRead(WorkflowBase):
 
 class WorkflowUpdate(BaseModel):
     # All fields are optional for updates
-    name: Optional[constr(min_length=1, max_length=100)] = None
-    description: Optional[constr(max_length=1000)] = None
+    name: Optional[constr(min_length=1, max_length=100)] = None  # type: ignore
+    description: Optional[constr(max_length=1000)] = None  # type: ignore
     data: Optional[Dict[str, Any]] = None
 
     # Apply the same validator to the 'data' field on update
