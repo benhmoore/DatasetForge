@@ -4,7 +4,6 @@ import { toast } from 'react-toastify';
 import DatasetSelector from './DatasetSelector';
 import SettingsModal from './SettingsModal';
 import Icon from './Icons';
-import LogoutButton from './LogoutButton';
 import TemplateBuilder from './TemplateBuilder';
 import Generate from './Generate';
 import api from '../api/apiClient';
@@ -78,7 +77,6 @@ const Layout = () => {
               >
                 <Icon name="settings" className="h-5 w-5" aria-hidden="true" />
               </button>
-              <LogoutButton />
             </div>
           </div>
         </div>

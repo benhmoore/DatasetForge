@@ -3,8 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from ..db import get_session
-from ..core.security import get_current_user
-from ..api.models import User, Template
+from ..api.models import Template
 from ..api.schemas import TemplateCreate, TemplateRead, TemplateUpdate
 
 router = APIRouter()
@@ -12,7 +11,6 @@ router = APIRouter()
 
 @router.get("/templates", response_model=List[TemplateRead])
 async def get_templates(
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -28,7 +26,6 @@ async def get_templates(
 @router.post("/templates", response_model=TemplateRead, status_code=status.HTTP_201_CREATED)
 async def create_template(
     template: TemplateCreate,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -46,7 +43,6 @@ async def create_template(
 @router.get("/templates/{template_id}", response_model=TemplateRead)
 async def get_template(
     template_id: int,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -67,7 +63,6 @@ async def get_template(
 async def update_template(
     template_id: int,
     template_update: TemplateUpdate,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -101,7 +96,6 @@ async def update_template(
 @router.put("/templates/{template_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
 async def archive_template(
     template_id: int,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -126,7 +120,6 @@ async def archive_template(
 @router.get("/templates/{template_id}/history", response_model=List[str])
 async def get_template_history(
     template_id: int,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """

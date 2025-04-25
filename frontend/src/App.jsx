@@ -1,9 +1,8 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastContainer, Slide } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-import Login from './components/Login';
 import Layout from './components/Layout';
 import TemplateBuilder from './components/TemplateBuilder';
 import Generate from './components/Generate';
@@ -18,34 +17,12 @@ const queryClient = new QueryClient({
   },
 });
 
-// Protected route wrapper
-const ProtectedRoute = ({ children }) => {
-  const auth = sessionStorage.getItem('auth');
-  const location = useLocation();
-  
-  if (!auth) {
-    // Redirect to login page but remember where the user was trying to go
-    return <Navigate to="/login" state={{ from: location }} />;
-  }
-  
-  return children;
-};
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
         <Routes>
-          <Route path="/login" element={<Login />} />
-          
-          <Route 
-            path="/" 
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
+          <Route path="/" element={<Layout />}>
             <Route index element={<TemplateBuilder />} />
             <Route path="generate" element={<Generate />} />
           </Route>

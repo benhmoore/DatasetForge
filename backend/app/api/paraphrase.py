@@ -9,9 +9,8 @@ import json
 import asyncio  # Import asyncio for potential parallelization later if needed
 from pydantic import BaseModel, Field
 
-from ..core.security import get_current_user
 from ..core.config import settings
-from ..api.models import User, Template
+from ..api.models import Template
 from ..api.schemas import SeedData
 from ..db import get_session
 
@@ -41,14 +40,13 @@ class TextParaphraseResponse(BaseModel):
 @router.post("/paraphrase", response_model=ParaphraseResponse)
 async def paraphrase_seeds(
     request: ParaphraseRequest,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """Generate new seeds by paraphrasing existing ones, one request per seed, updating context."""
-    if not user.default_para_model:
+    if not settings.DEFAULT_PARA_MODEL:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Default paraphrase model is not set. Please set it in the settings."
+            detail="Default paraphrase model is not set. Please set DEFAULT_PARA_MODEL in the .env file."
         )
 
     if len(request.seeds) < 1:
@@ -112,7 +110,7 @@ async def paraphrase_seeds(
                 response = await client.post(
                     f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
                     json={
-                        "model": user.default_para_model,
+                        "model": settings.DEFAULT_PARA_MODEL,
                         "temperature": 0.5,
                         "prompt": user_prompt, # Use the dynamically generated user prompt
                         "system": system_prompt,
@@ -180,14 +178,13 @@ async def paraphrase_seeds(
 
 @router.post("/paraphrase_text", response_model=TextParaphraseResponse)
 async def paraphrase_text(
-    request: TextParaphraseRequest,
-    user: User = Depends(get_current_user)
+    request: TextParaphraseRequest
 ):
     """Generate varied, natural paraphrases of a given text using advanced diversity techniques."""
-    if not user.default_para_model:
+    if not settings.DEFAULT_PARA_MODEL:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Default paraphrase model is not set. Please set it in the settings."
+            detail="Default paraphrase model is not set. Please set DEFAULT_PARA_MODEL in the .env file."
         )
     
     if not request.text or not request.text.strip():
@@ -380,8 +377,7 @@ async def generate_candidate(
     example_original: str,
     example_paraphrases: List[str],
     max_retries: int,
-    settings: Any,
-    user: Any
+    settings: Any
 ) -> Tuple[int, str]:
     """Generate a single candidate paraphrase with retries."""
     for retry in range(max_retries + 1):
@@ -430,7 +426,7 @@ async def generate_candidate(
             response = await client.post(
                 f"http://{settings.OLLAMA_HOST}:{settings.OLLAMA_PORT}/api/generate",
                 json={
-                    "model": user.default_para_model,
+                    "model": settings.DEFAULT_PARA_MODEL,
                     "temperature": temperature,
                     "top_p": top_p,
                     "frequency_penalty": frequency_penalty,

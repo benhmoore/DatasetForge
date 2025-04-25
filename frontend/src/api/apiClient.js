@@ -10,74 +10,23 @@ const apiClient = axios.create({
   }
 });
 
-// Intercept requests to add auth headers
-apiClient.interceptors.request.use(
-  (config) => {
-    const auth = sessionStorage.getItem('auth');
-    
-    if (auth) {
-      config.headers.Authorization = `Basic ${auth}`;
-    }
-    
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
 // Intercept responses to handle common errors
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle session expiry (401 errors), but NOT the specific 'no_users_exist' error
-    if (
-      error.response &&
-      error.response.status === 401 &&
-      error.response.headers?.['x-error-code'] !== 'no_users_exist' // <-- Add this check
-    ) {
-      // Clear auth and redirect to login if not already there
-      if (window.location.pathname !== '/login') {
-        sessionStorage.removeItem('auth');
-        sessionStorage.removeItem('loginAt');
-        window.location.href = '/login';
-      }
-    }
-
     return Promise.reject(error);
   }
 );
 
 // API functions
 const api = {
-  // New function to check setup status
-  getSetupStatus: () => apiClient.get('/setup/status')
-    .then(response => response.data), // Returns { users_exist: boolean, needs_setup: boolean }
-
-  // Auth
-  login: (username, password) => {
-    const auth = btoa(`${username}:${password}`);
-    return apiClient.post('/login', {}, {
-      headers: { Authorization: `Basic ${auth}` }
-    })
-    .then(() => {
-      // Store auth and login time
-      sessionStorage.setItem('auth', auth);
-      sessionStorage.setItem('loginAt', Date.now().toString());
-      return true;
-    });
-  },
-  
-  logout: () => apiClient.post('/logout')
-    .then(() => {
-      sessionStorage.removeItem('auth');
-      sessionStorage.removeItem('loginAt');
-    }),
-  
-  // User preferences
-  getUserPreferences: () => apiClient.get('/user/preferences')
-    .then(response => response.data),
-  
-  updateUserPreferences: (preferences) => apiClient.put('/user/preferences', preferences)
-    .then(response => response.data),
+  // App settings
+  getAppSettings: () => Promise.resolve({
+    default_gen_model: import.meta.env.VITE_DEFAULT_GEN_MODEL || "mistral:latest",
+    default_para_model: import.meta.env.VITE_DEFAULT_PARA_MODEL || "mistral:latest",
+    gen_model_context_size: parseInt(import.meta.env.VITE_GEN_MODEL_CONTEXT_SIZE || "8192"),
+    para_model_context_size: parseInt(import.meta.env.VITE_PARA_MODEL_CONTEXT_SIZE || "4096"),
+  }),
   
   // Models
   getModels: () => apiClient.get('/models')
@@ -108,8 +57,7 @@ const api = {
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(data),
       signal: signal // Pass the signal to fetch
@@ -209,8 +157,7 @@ const api = {
     const response = await fetch('/api/generate/simple', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody),
       signal: signal // Pass the signal to fetch for cancellation
@@ -511,8 +458,7 @@ const api = {
     const response = await fetch('/api/workflow/execute/stream', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Basic ${sessionStorage.getItem('auth')}`,
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         workflow: normalizedWorkflow, // Send normalized workflow structure

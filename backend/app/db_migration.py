@@ -89,8 +89,9 @@ def get_default_templates():
 
 def migrate_database():
     """
-    Migrate the database to add tool calling support columns
-    and create export_template and workflow tables if needed
+    Migrate the database to add tool calling support columns,
+    create export_template and workflow tables if needed,
+    and remove owner_id constraints for the no-user mode
     """
     # Skip migration for in-memory database (used in tests)
     if settings.DB_PATH == ":memory:":
@@ -105,11 +106,87 @@ def migrate_database():
             f"Database file {settings.DB_PATH} does not exist, no migration needed"
         )
         return
+        
+    # New database without users - clean slate approach
+    try:
+        # For a clean approach, we'll create a new DB file if it exists
+        # This assumes we're starting with a fresh database as per the plan
+        if settings.DB_PATH != ":memory:" and os.path.exists(settings.DB_PATH):
+            logger.info(f"Removing existing database for clean migration to no-user mode")
+            os.remove(settings.DB_PATH)
+            # Also remove any WAL/SHM files
+            for ext in ["-wal", "-shm", "-journal"]:
+                if os.path.exists(f"{settings.DB_PATH}{ext}"):
+                    os.remove(f"{settings.DB_PATH}{ext}")
+            logger.info(f"Existing database removed, will create new one without user constraints")
+    except Exception as e:
+        logger.error(f"Error removing old database files: {e}")
+        # Continue anyway - we'll handle table creation below
 
     logger.info(f"Starting database migration for {settings.DB_PATH}")
 
     conn = sqlite3.connect(settings.DB_PATH)
     cursor = conn.cursor()
+    
+    # Check if this is a fresh database, if so create all tables from scratch
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='dataset'")
+    if not cursor.fetchone():
+        # Create dataset table without owner_id constraint
+        logger.info("Creating dataset table (no-user mode)")
+        cursor.execute("""
+        CREATE TABLE dataset (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            archived INTEGER NOT NULL DEFAULT 0
+        )
+        """)
+        
+    # Check if template table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='template'")
+    if not cursor.fetchone():
+        # Create template table without owner_id constraint
+        logger.info("Creating template table (no-user mode)")
+        cursor.execute("""
+        CREATE TABLE template (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            system_prompt TEXT NOT NULL,
+            user_prompt TEXT NOT NULL,
+            slots TEXT NOT NULL DEFAULT '[]',
+            archived INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            model_override TEXT,
+            model_parameters TEXT,
+            system_prompt_mask INTEGER NOT NULL DEFAULT 1,
+            user_prompt_mask INTEGER NOT NULL DEFAULT 1,
+            is_tool_calling_template INTEGER NOT NULL DEFAULT 0,
+            tool_definitions TEXT
+        )
+        """)
+        
+    # Check if example table exists  
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='example'")
+    if not cursor.fetchone():
+        # Create example table
+        logger.info("Creating example table (no-user mode)")
+        cursor.execute("""
+        CREATE TABLE example (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dataset_id INTEGER NOT NULL,
+            system_prompt TEXT NOT NULL,
+            user_prompt TEXT,
+            slots TEXT NOT NULL,
+            output TEXT NOT NULL,
+            timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            tool_calls TEXT,
+            FOREIGN KEY(dataset_id) REFERENCES dataset(id)
+        )
+        """)
+        # Create index on dataset_id for faster lookups
+        cursor.execute("CREATE INDEX idx_example_dataset ON example(dataset_id)")
+        
 
     try:
         # Get default templates for use throughout the function
@@ -196,10 +273,8 @@ def migrate_database():
                 format_name TEXT NOT NULL,
                 template TEXT NOT NULL,
                 is_default INTEGER NOT NULL DEFAULT 0,
-                owner_id INTEGER,
                 created_at TIMESTAMP NOT NULL,
-                archived INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY(owner_id) REFERENCES user(id)
+                archived INTEGER NOT NULL DEFAULT 0
             )
             """
             )
@@ -239,26 +314,19 @@ def migrate_database():
                 """
             CREATE TABLE workflow (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 description TEXT,
                 data TEXT NOT NULL,
                 created_at TIMESTAMP NOT NULL,
                 updated_at TIMESTAMP NOT NULL,
-                version INTEGER NOT NULL DEFAULT 1,
-                FOREIGN KEY(owner_id) REFERENCES user(id)
+                version INTEGER NOT NULL DEFAULT 1
             )
             """
             )
-
-            # Create index on owner_id for faster owner-based lookups
-            cursor.execute(
-                "CREATE INDEX idx_workflow_owner_id ON workflow(owner_id)"
-            )
             
-            # Create unique constraint on owner_id and name
+            # Create unique index on name
             cursor.execute(
-                "CREATE UNIQUE INDEX uq_owner_name ON workflow(owner_id, name)"
+                "CREATE UNIQUE INDEX uq_workflow_name ON workflow(name)"
             )
 
             logger.info("Workflow table created successfully")
@@ -350,12 +418,12 @@ def migrate_database():
         ]
         for spec in default_specs:
             cursor.execute(
-                "SELECT COUNT(*) FROM exporttemplate WHERE format_name=? AND owner_id IS NULL",
+                "SELECT COUNT(*) FROM exporttemplate WHERE format_name=?",
                 (spec["format_name"],),
             )
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
-                    "INSERT INTO exporttemplate (name, description, format_name, template, is_default, owner_id, created_at, archived) VALUES (?, ?, ?, ?, ?, NULL, datetime('now'), ?)",
+                    "INSERT INTO exporttemplate (name, description, format_name, template, is_default, created_at, archived) VALUES (?, ?, ?, ?, ?, datetime('now'), ?)",
                     (
                         spec["name"],
                         spec["description"],

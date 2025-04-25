@@ -4,8 +4,6 @@ import re
 import logging
 import spacy  # Added import
 from ..db import get_session
-from ..core.security import get_current_user
-from ..api.models import User
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -27,7 +25,7 @@ router = APIRouter()
 
 @router.post("/filter/preview")
 async def preview_filter_rules(
-    request: Dict[str, Any], user: User = Depends(get_current_user)
+    request: Dict[str, Any]
 ):
     """
     Preview filter rule evaluation against sample text

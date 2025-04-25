@@ -6,52 +6,45 @@ import CustomSlider from './CustomSlider';
 import Icon from './Icons';
 
 const SettingsModal = ({ isOpen, onClose, onSave }) => {
-  const [isLoading, setIsLoading] = useState(true);
   const [defaultGenModel, setDefaultGenModel] = useState('');
   const [defaultParaModel, setDefaultParaModel] = useState('');
   const [genContextSize, setGenContextSize] = useState(4096);
-  const [paraContextSize, setParaContextSize] = useState(4096); 
+  const [paraContextSize, setParaContextSize] = useState(4096);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Fetch user preferences
+  
+  // Load application settings when modal opens
   useEffect(() => {
     if (isOpen) {
-      const fetchPreferences = async () => {
+      const loadAppSettings = async () => {
         setIsLoading(true);
         setError(null);
         
         try {
-          const preferencesResponse = await api.getUserPreferences();
-          setDefaultGenModel(preferencesResponse.default_gen_model);
-          setDefaultParaModel(preferencesResponse.default_para_model);
-          
-          // Get context sizes (if set) or use default of 4096
-          setGenContextSize(preferencesResponse.gen_model_context_size || 4096);
-          setParaContextSize(preferencesResponse.para_model_context_size || 4096);
+          const appSettings = await api.getAppSettings();
+          setDefaultGenModel(appSettings.default_gen_model);
+          setDefaultParaModel(appSettings.default_para_model);
+          setGenContextSize(appSettings.gen_model_context_size || 4096);
+          setParaContextSize(appSettings.para_model_context_size || 4096);
         } catch (err) {
-          console.error('Failed to fetch preferences:', err);
-          setError('Failed to load settings. Please try again.');
-          toast.error('Failed to load settings');
+          console.error('Failed to load app settings:', err);
+          setError('Failed to load settings');
         } finally {
           setIsLoading(false);
         }
       };
       
-      fetchPreferences();
+      loadAppSettings();
     }
   }, [isOpen]);
+
+  // No data fetching needed as we're using environment variables
 
   // Handle save
   const handleSave = async () => {
     try {
-      await api.updateUserPreferences({
-        default_gen_model: defaultGenModel,
-        default_para_model: defaultParaModel,
-        gen_model_context_size: genContextSize,
-        para_model_context_size: paraContextSize
-      });
-      
-      toast.success('Settings saved successfully');
+      // Since we don't have API to save preferences now, just notify the parent component
+      toast.success('Settings applied for this session');
       
       if (onSave) {
         onSave({
@@ -64,8 +57,8 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
       
       onClose();
     } catch (err) {
-      console.error('Failed to save settings:', err);
-      toast.error('Failed to save settings');
+      console.error('Failed to apply settings:', err);
+      toast.error('Failed to apply settings');
     }
   };
 
@@ -85,15 +78,13 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
           </button>
         </div>
 
-        {isLoading ? (
-          <div className="py-4 text-center">Loading Preferences...</div>
-        ) : error ? (
+        {error ? (
           <div className="py-4 text-red-500 text-center">{error}</div>
         ) : (
           <div className="space-y-6">
             {/* Default Models Section */}
             <div className="space-y-4">
-              <h3 className="text-md font-medium">Default Models</h3>
+              <h3 className="text-md font-medium">Application Models</h3>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Default Generation Model
@@ -104,8 +95,11 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
                 <ModelSelector
                   selectedModel={defaultGenModel}
                   onModelChange={setDefaultGenModel}
-                  label="Select default generation model..."
+                  label="Select generation model for this session..."
                 />
+                <p className="text-xs text-gray-400 mt-1">
+                  Default from .env: {DEFAULT_GEN_MODEL}
+                </p>
               </div>
 
               <div>
@@ -118,8 +112,11 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
                 <ModelSelector
                   selectedModel={defaultParaModel}
                   onModelChange={setDefaultParaModel}
-                  label="Select default paraphrase model..."
+                  label="Select paraphrase model for this session..."
                 />
+                <p className="text-xs text-gray-400 mt-1">
+                  Default from .env: {DEFAULT_PARA_MODEL}
+                </p>
               </div>
             </div>
 
@@ -149,7 +146,7 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
                     />
                     <button 
                       className="ml-2 text-sm text-primary-600 hover:text-primary-700"
-                      onClick={() => setGenContextSize(4096)}
+                      onClick={() => setGenContextSize(GEN_MODEL_CONTEXT_SIZE)}
                     >
                       Reset
                     </button>
@@ -166,8 +163,8 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
                   />
                 )}
                 
-                <p className="text-xs text-gray-500 mt-1">
-                  Default: 4096 tokens
+                <p className="text-xs text-gray-400 mt-1">
+                  Default from .env: {GEN_MODEL_CONTEXT_SIZE} tokens
                 </p>
               </div>
 
@@ -190,7 +187,7 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
                     />
                     <button 
                       className="ml-2 text-sm text-primary-600 hover:text-primary-700"
-                      onClick={() => setParaContextSize(4096)}
+                      onClick={() => setParaContextSize(PARA_MODEL_CONTEXT_SIZE)}
                     >
                       Reset
                     </button>
@@ -207,8 +204,8 @@ const SettingsModal = ({ isOpen, onClose, onSave }) => {
                   />
                 )}
                 
-                <p className="text-xs text-gray-500 mt-1">
-                  Default: 4096 tokens
+                <p className="text-xs text-gray-400 mt-1">
+                  Default from .env: {PARA_MODEL_CONTEXT_SIZE} tokens
                 </p>
               </div>
             </div>

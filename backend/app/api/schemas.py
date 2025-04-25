@@ -4,28 +4,14 @@ from datetime import datetime
 import json
 
 
-# User schemas
-class UserPreferences(BaseModel):
-    name: str
-    default_gen_model: str
-    default_para_model: str
-    gen_model_context_size: Optional[int] = None
-    para_model_context_size: Optional[int] = None
-
-
-class UserPreferencesUpdate(BaseModel):
-    default_gen_model: str
-    default_para_model: str
-    gen_model_context_size: Optional[int] = Field(default=None, ge=1024, le=128000)
-    para_model_context_size: Optional[int] = Field(default=None, ge=1024, le=128000)
-
-
 # Model Parameters schema
 class ModelParameters(BaseModel):
     temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
     top_p: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     max_tokens: Optional[int] = Field(default=None, ge=1)
-    context_size: Optional[int] = Field(default=None, ge=1024)  # Context window size in tokens
+    context_size: Optional[int] = Field(
+        default=None, ge=1024
+    )  # Context window size in tokens
 
     # Add validator to ensure at least one field is not None if the object is provided?
     # Or handle defaults/merging logic in the endpoint/service layer.
@@ -128,7 +114,6 @@ class ExportTemplateCreate(ExportTemplateBase):
 
 class ExportTemplateRead(ExportTemplateBase):
     id: int
-    owner_id: Optional[int] = None
     created_at: datetime
     archived: bool
 
@@ -150,7 +135,7 @@ class ExportTemplatePagination(BaseModel):
 class SeedData(BaseModel):
     slots: Dict[str, str]
     # Optional instruction per seed could be added later if needed
-    # instruction: Optional[str] = None 
+    # instruction: Optional[str] = None
 
 
 class GenerationRequest(BaseModel):
@@ -158,17 +143,18 @@ class GenerationRequest(BaseModel):
     seeds: List[SeedData]  # Changed from slots: Dict[str, str]
     count: int = Field(default=3, ge=1, le=10)  # Count per seed
     # Global instruction applied to all seeds in the request
-    instruction: Optional[str] = None 
+    instruction: Optional[str] = None
+
 
 # Simple generation request for CustomTextInput
 class SimpleGenerationRequest(BaseModel):
     prompt: str
     name: Optional[str] = "input"
     system_prompt: Optional[str] = None
-    
+
 
 class GenerationResult(BaseModel):
-    template_id: int # Add template_id
+    template_id: int  # Add template_id
     seed_index: int  # Index of the seed in the request list
     variation_index: int  # Index of the variation for this seed (0 to count-1)
     variation: str  # Combined identifier (e.g., "Seed 1 / Variation 2")
@@ -189,13 +175,13 @@ class ParaphraseRequest(BaseModel):
 
 class ParaphraseSeedsRequest(BaseModel):
     template_id: int
-    seeds: List[SeedData] # Reuses SeedData from Generation schemas
+    seeds: List[SeedData]  # Reuses SeedData from Generation schemas
     # Optional: Add a count for how many new seeds to generate
-    # count: int = Field(default=3, ge=1, le=5) 
+    # count: int = Field(default=3, ge=1, le=5)
 
 
 class ParaphraseSeedsResponse(BaseModel):
-    generated_seeds: List[SeedData] # Returns a list of new seeds
+    generated_seeds: List[SeedData]  # Returns a list of new seeds
 
 
 # Export schemas
@@ -206,6 +192,7 @@ class ExportRequest(BaseModel):
 # Define a reasonable size limit for local storage (e.g., 10MB)
 MAX_WORKFLOW_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
 
+
 # Shared validator function for workflow data size
 def validate_data_size(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if data is None:
@@ -213,12 +200,15 @@ def validate_data_size(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any
     try:
         data_json = json.dumps(data)
         # Check byte size for a more accurate limit assessment
-        if len(data_json.encode('utf-8')) > MAX_WORKFLOW_SIZE_BYTES:
-            raise ValueError(f"Workflow data exceeds size limit: {len(data_json.encode('utf-8')) / (1024*1024):.1f}MB (max: {MAX_WORKFLOW_SIZE_BYTES / (1024*1024):.0f}MB)")
+        if len(data_json.encode("utf-8")) > MAX_WORKFLOW_SIZE_BYTES:
+            raise ValueError(
+                f"Workflow data exceeds size limit: {len(data_json.encode('utf-8')) / (1024*1024):.1f}MB (max: {MAX_WORKFLOW_SIZE_BYTES / (1024*1024):.0f}MB)"
+            )
     except TypeError as e:
         # Catch errors if data is not JSON serializable
         raise ValueError(f"Invalid data format: {e}")
     return data
+
 
 # Workflow persistence schemas
 class WorkflowBase(BaseModel):
@@ -227,17 +217,19 @@ class WorkflowBase(BaseModel):
     data: Dict[str, Any]
 
     # Apply the validator to the 'data' field
-    _validate_size = validator('data', allow_reuse=True)(validate_data_size)
+    _validate_size = validator("data", allow_reuse=True)(validate_data_size)
+
 
 class WorkflowCreate(WorkflowBase):
     pass  # Inherits fields and validation from WorkflowBase
 
+
 class WorkflowRead(WorkflowBase):
     id: int
-    owner_id: int
     created_at: datetime
     updated_at: datetime
     version: int
+
 
 class WorkflowUpdate(BaseModel):
     # All fields are optional for updates
@@ -246,11 +238,13 @@ class WorkflowUpdate(BaseModel):
     data: Optional[Dict[str, Any]] = None
 
     # Apply the same validator to the 'data' field on update
-    _validate_size = validator('data', allow_reuse=True)(validate_data_size)
+    _validate_size = validator("data", allow_reuse=True)(validate_data_size)
+
 
 class WorkflowPagination(BaseModel):
     items: List[WorkflowRead]
     total: int
+
 
 # Workflow schemas - used for API validation but not database storage
 class NodePosition(BaseModel):
@@ -271,7 +265,9 @@ class ModelNodeConfig(BaseNodeConfig):
     system_instruction: Optional[str] = None  # User can edit directly
     template_id: Optional[int] = None
     model_parameters: Optional[ModelParameters] = None
-    inputs: Optional[List[Dict[str, Any]]] = Field(default_factory=list)  # List of input objects with id and connected state
+    inputs: Optional[List[Dict[str, Any]]] = Field(
+        default_factory=list
+    )  # List of input objects with id and connected state
 
 
 class TransformNodeConfig(BaseNodeConfig):
@@ -279,7 +275,9 @@ class TransformNodeConfig(BaseNodeConfig):
     pattern: str
     replacement: str
     is_regex: bool = False
-    apply_to_field: str = "output"  # Which field to transform (output, system_prompt, etc.)
+    apply_to_field: str = (
+        "output"  # Which field to transform (output, system_prompt, etc.)
+    )
 
 
 class InputNodeConfig(BaseNodeConfig):
@@ -295,7 +293,9 @@ class OutputNodeConfig(BaseNodeConfig):
 class TemplateNodeConfig(BaseNodeConfig):
     type: str = "template"
     template_id: int
-    instruction: Optional[str] = None  # Additional instruction to add to the template's system prompt
+    instruction: Optional[str] = (
+        None  # Additional instruction to add to the template's system prompt
+    )
 
 
 class FilterRule(BaseModel):
@@ -352,5 +352,7 @@ class WorkflowExecutionResult(BaseModel):
     final_output: Dict[str, Any]
     execution_time: float
     status: str = "success"  # success, error, partial_success
-    meta: Optional[Dict[str, Any]] = None  # Additional metadata about the workflow execution
+    meta: Optional[Dict[str, Any]] = (
+        None  # Additional metadata about the workflow execution
+    )
     output_node_results: Optional[Dict[str, Any]] = None  # Results from output nodes

@@ -24,128 +24,135 @@ def test_user_with_dataset():
             salt=salt,
             name="Test Export",
             default_gen_model="llama3",
-            default_para_model="llama3"
+            default_para_model="llama3",
         )
         session.add(user)
         session.commit()
         session.refresh(user)
-        
+
         # Create dataset
-        dataset_salt = base64.b64encode(os.urandom(16)).decode('utf-8')
-        dataset = Dataset(
-            name="Test Export Dataset",
-            owner_id=user.id,
-            salt=dataset_salt
-        )
+        dataset_salt = base64.b64encode(os.urandom(16)).decode("utf-8")
+        dataset = Dataset(name="Test Export Dataset", salt=dataset_salt)
         session.add(dataset)
         session.commit()
         session.refresh(dataset)
-        
+
         # Add example
         example1 = Example(
             dataset_id=dataset.id,
             system_prompt="You are a helpful assistant",
             slots={"question": "What is the weather like?"},
-            output="I don't have real-time weather information, but I'd be happy to help you find weather forecasts."
+            output="I don't have real-time weather information, but I'd be happy to help you find weather forecasts.",
         )
-        
+
         example2 = Example(
             dataset_id=dataset.id,
             system_prompt="You are a helpful assistant",
             slots={"question": "How do I bake a cake?"},
             output="To bake a cake, you'll need ingredients like flour, sugar, eggs, and butter. Start by preheating your oven...",
-            tool_calls=[{
-                "function": {
-                    "name": "search_recipes",
-                    "arguments": json.dumps({"query": "simple cake recipe", "dietary": "none"})
+            tool_calls=[
+                {
+                    "function": {
+                        "name": "search_recipes",
+                        "arguments": json.dumps(
+                            {"query": "simple cake recipe", "dietary": "none"}
+                        ),
+                    }
                 }
-            }]
+            ],
         )
-        
+
         session.add(example1)
         session.add(example2)
         session.commit()
-        
+
         # Create active session
         active_sessions[user.username] = {
             "user_id": user.id,
-            "valid_until": datetime.now(datetime.timezone.utc) + timedelta(minutes=30)
+            "valid_until": datetime.now(datetime.timezone.utc) + timedelta(minutes=30),
         }
         token = base64.b64encode(f"{user.username}:password123".encode()).decode()
-        
+
         yield user, dataset, token
 
 
 def test_export_dataset_default_format(test_user_with_dataset):
     """Test exporting a dataset with the default format"""
     user, dataset, token = test_user_with_dataset
-    
+
     response = client.get(
-        f"/datasets/{dataset.id}/export",
-        headers={"Authorization": f"Basic {token}"}
+        f"/datasets/{dataset.id}/export", headers={"Authorization": f"Basic {token}"}
     )
-    
+
     assert response.status_code == 200
     assert response.headers["Content-Type"] == "application/jsonl"
-    assert response.headers["Content-Disposition"] == f"attachment; filename=dataset-{dataset.id}.jsonl"
-    
+    assert (
+        response.headers["Content-Disposition"]
+        == f"attachment; filename=dataset-{dataset.id}.jsonl"
+    )
+
     # Parse JSONL content
-    content = response.content.decode('utf-8')
-    examples = [json.loads(line) for line in content.strip().split('\n')]
-    
+    content = response.content.decode("utf-8")
+    examples = [json.loads(line) for line in content.strip().split("\n")]
+
     assert len(examples) == 2
-    
+
     # Check structure of examples
     for example in examples:
         assert "system_prompt" in example
         assert "slots" in example
         assert "output" in example
         assert "timestamp" in example
-    
+
     # One example should have tool_calls
     tool_calls_examples = [ex for ex in examples if "tool_calls" in ex]
     assert len(tool_calls_examples) == 1
-    assert tool_calls_examples[0]["tool_calls"][0]["function"]["name"] == "search_recipes"
+    assert (
+        tool_calls_examples[0]["tool_calls"][0]["function"]["name"] == "search_recipes"
+    )
 
 
 def test_export_dataset_with_custom_template(test_user_with_dataset):
     """Test exporting a dataset with a custom template"""
     user, dataset, token = test_user_with_dataset
-    
+
     # First create a custom template
     custom_template = {
         "name": "Test Export Format",
         "description": "Custom format for testing",
         "format_name": "test-export",
         "template": '{"prompt": {{ system_prompt|tojson }} + "\\n" + {% for key, value in slots.items() %}{{ value|tojson }}{% endfor %}, "completion": {{ output|tojson }}}',
-        "is_default": False
+        "is_default": False,
     }
-    
+
     response = client.post(
         "/export_templates/",
         json=custom_template,
-        headers={"Authorization": f"Basic {token}"}
+        headers={"Authorization": f"Basic {token}"},
     )
-    
+
     assert response.status_code == 201
     template_id = response.json()["id"]
-    
+
     # Now export using the template
     response = client.get(
         f"/datasets/{dataset.id}/export?template_id={template_id}",
-        headers={"Authorization": f"Basic {token}"}
+        headers={"Authorization": f"Basic {token}"},
     )
-    
+
     assert response.status_code == 200
     assert response.headers["Content-Type"] == "application/jsonl"
-    assert response.headers["Content-Disposition"] == f"attachment; filename=dataset-{dataset.id}-test-export.jsonl"
-    
+    assert (
+        response.headers["Content-Disposition"]
+        == f"attachment; filename=dataset-{dataset.id}-test-export.jsonl"
+    )
+
     # Parse JSONL content
-    content = response.content.decode('utf-8')
-    examples = [json.loads(line) for line in content.strip().split('\n')]
-    
+    content = response.content.decode("utf-8")
+    examples = [json.loads(line) for line in content.strip().split("\n")]
+
     assert len(examples) == 2
-    
+
     # Check structure matches our custom template
     for example in examples:
         assert "prompt" in example
@@ -156,30 +163,30 @@ def test_export_dataset_with_custom_template(test_user_with_dataset):
 def test_export_with_mlx_chat_template(test_user_with_dataset):
     """Test exporting with the built-in MLX Chat template"""
     user, dataset, token = test_user_with_dataset
-    
+
     # Find the MLX Chat template
     with Session(engine) as session:
         template = session.exec(
             select(ExportTemplate).where(ExportTemplate.format_name == "mlx-chat")
         ).first()
-        
+
         assert template is not None
         template_id = template.id
-    
+
     # Export using the template
     response = client.get(
         f"/datasets/{dataset.id}/export?template_id={template_id}",
-        headers={"Authorization": f"Basic {token}"}
+        headers={"Authorization": f"Basic {token}"},
     )
-    
+
     assert response.status_code == 200
-    
+
     # Parse JSONL content
-    content = response.content.decode('utf-8')
-    examples = [json.loads(line) for line in content.strip().split('\n')]
-    
+    content = response.content.decode("utf-8")
+    examples = [json.loads(line) for line in content.strip().split("\n")]
+
     assert len(examples) == 2
-    
+
     # Check MLX Chat format
     for example in examples:
         assert "messages" in example
@@ -193,36 +200,41 @@ def test_export_with_mlx_chat_template(test_user_with_dataset):
 def test_export_with_tool_calling_template(test_user_with_dataset):
     """Test exporting with the built-in tool calling template"""
     user, dataset, token = test_user_with_dataset
-    
+
     # Find the tool calling template
     with Session(engine) as session:
         template = session.exec(
             select(ExportTemplate).where(ExportTemplate.format_name == "tool-calling")
         ).first()
-        
+
         assert template is not None
         template_id = template.id
-    
+
     # Export using the template
     response = client.get(
         f"/datasets/{dataset.id}/export?template_id={template_id}",
-        headers={"Authorization": f"Basic {token}"}
+        headers={"Authorization": f"Basic {token}"},
     )
-    
+
     assert response.status_code == 200
-    
+
     # Parse JSONL content
-    content = response.content.decode('utf-8')
-    examples = [json.loads(line) for line in content.strip().split('\n')]
-    
+    content = response.content.decode("utf-8")
+    examples = [json.loads(line) for line in content.strip().split("\n")]
+
     assert len(examples) == 2
-    
+
     # Find the example with tool calls
-    tool_example = next((ex for ex in examples if any(msg.get("tool_calls") for msg in ex["messages"])), None)
+    tool_example = next(
+        (ex for ex in examples if any(msg.get("tool_calls") for msg in ex["messages"])),
+        None,
+    )
     assert tool_example is not None
-    
+
     # Find the assistant message with tool calls
-    assistant_msg = next((msg for msg in tool_example["messages"] if msg["role"] == "assistant"), None)
+    assistant_msg = next(
+        (msg for msg in tool_example["messages"] if msg["role"] == "assistant"), None
+    )
     assert assistant_msg is not None
     assert "tool_calls" in assistant_msg
     assert len(assistant_msg["tool_calls"]) == 1
@@ -232,59 +244,64 @@ def test_export_with_tool_calling_template(test_user_with_dataset):
 def test_export_with_user_prompt_field(test_user_with_dataset):
     """Test that exports include the user_prompt field"""
     user, dataset, token = test_user_with_dataset
-    
+
     # First modify an example to have a user_prompt explicitly set
     with Session(engine) as session:
         example = session.exec(
             select(Example).where(Example.dataset_id == dataset.id)
         ).first()
-        
+
         # Set a specific user_prompt
         example.user_prompt = "This is a test user prompt with slot values filled in"
         session.add(example)
         session.commit()
-    
+
     # Now export the dataset and check for user_prompt
     response = client.get(
-        f"/datasets/{dataset.id}/export",
-        headers={"Authorization": f"Basic {token}"}
+        f"/datasets/{dataset.id}/export", headers={"Authorization": f"Basic {token}"}
     )
-    
+
     assert response.status_code == 200
-    
+
     # Parse JSONL content
-    content = response.content.decode('utf-8')
-    examples = [json.loads(line) for line in content.strip().split('\n')]
-    
+    content = response.content.decode("utf-8")
+    examples = [json.loads(line) for line in content.strip().split("\n")]
+
     # Verify user_prompt is included in the export
-    assert any(ex.get("user_prompt") == "This is a test user prompt with slot values filled in" for ex in examples)
-    
+    assert any(
+        ex.get("user_prompt") == "This is a test user prompt with slot values filled in"
+        for ex in examples
+    )
+
     # Test with the MLX Chat template to ensure it uses user_prompt
     with Session(engine) as session:
         template = session.exec(
             select(ExportTemplate).where(ExportTemplate.format_name == "mlx-chat")
         ).first()
         template_id = template.id
-    
+
     response = client.get(
         f"/datasets/{dataset.id}/export?template_id={template_id}",
-        headers={"Authorization": f"Basic {token}"}
+        headers={"Authorization": f"Basic {token}"},
     )
-    
+
     assert response.status_code == 200
-    
+
     # Parse JSONL content for MLX Chat format
-    content = response.content.decode('utf-8')
-    examples = [json.loads(line) for line in content.strip().split('\n')]
-    
+    content = response.content.decode("utf-8")
+    examples = [json.loads(line) for line in content.strip().split("\n")]
+
     # Find the example with our specific user_prompt
     for example in examples:
         messages = example["messages"]
         user_messages = [msg for msg in messages if msg["role"] == "user"]
-        if user_messages and any(msg["content"] == "This is a test user prompt with slot values filled in" for msg in user_messages):
+        if user_messages and any(
+            msg["content"] == "This is a test user prompt with slot values filled in"
+            for msg in user_messages
+        ):
             test_passed = True
             break
     else:
         test_passed = False
-    
+
     assert test_passed, "User prompt not found in MLX Chat export format"

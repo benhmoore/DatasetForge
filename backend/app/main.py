@@ -1,11 +1,8 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
-from .api import health, auth, templates, datasets, generate, paraphrase, export_templates, workflows, filter
+from .api import health, templates, datasets, generate, paraphrase, export_templates, workflows, filter
 from .core.config import settings
 from .core.logging import LoggingMiddleware
 from .db import create_db_and_tables
@@ -17,11 +14,6 @@ app = FastAPI(
     description="API for generating fine-tuning datasets",
     version="0.1.0"
 )
-
-# Create rate limiter
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add CORS middleware
 app.add_middleware(
@@ -37,7 +29,6 @@ app.add_middleware(LoggingMiddleware)
 
 # Include API routers
 app.include_router(health.router, tags=["health"])
-app.include_router(auth.router, tags=["auth"])
 app.include_router(templates.router, tags=["templates"])
 app.include_router(datasets.router, tags=["datasets"])
 app.include_router(generate.router, tags=["generate"])
