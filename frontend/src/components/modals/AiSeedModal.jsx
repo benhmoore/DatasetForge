@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import Icon from './Icons';
-import api from '../api/apiClient';
-import CustomTextInput from './CustomTextInput';
+import Icon from '../Icons';
+import api from '../../api/apiClient';
+import CustomTextInput from '../CustomTextInput';
 
 const AiSeedModal = ({ isOpen, onClose, onGenerate, isGenerating }) => {
   const [numSeedsToGenerate, setNumSeedsToGenerate] = useState(3);

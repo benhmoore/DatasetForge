@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import api from '../api/apiClient';
+import api from '../../api/apiClient';
 import ExampleDetailModal from './ExampleDetailModal';
 import ParaphraseModal from './ParaphraseModal';
-import Icon from './Icons';
+import Icon from '../Icons';
 
 /**
  * This component wraps ExampleDetailModal with paraphrase functionality

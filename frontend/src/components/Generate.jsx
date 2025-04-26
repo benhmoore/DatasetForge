@@ -6,13 +6,13 @@ import api from '../api/apiClient';
 import SeedForm from './SeedForm';
 import VariationCard from './VariationCard';
 import ExampleTable from './ExampleTable';
-import ParaphraseModal from './ParaphraseModal';
-import RegenerateModal from './RegenerateModal';
+import ParaphraseModal from './modals/ParaphraseModal';
+import RegenerateModal from './modals/RegenerateModal';
 import CustomSelect from './CustomSelect';
 import Icon from './Icons'; // Import Icon component
 import ToggleSwitch from './ToggleSwitch'; // Import ToggleSwitch
 import WorkflowManager from './WorkflowManager'; // Import WorkflowManager component
-import WorkflowSelectionModal from './WorkflowSelectionModal'; // Import WorkflowSelectionModal component
+import WorkflowSelectionModal from './modals/WorkflowSelectionModal'; // Import WorkflowSelectionModal component
 
 const Generate = ({ context }) => {
   const { selectedDataset } = context;

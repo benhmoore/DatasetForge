@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient'; // Correct: Import the default export 'api'
-import AiSeedModal from './AiSeedModal'; // Import the new modal component
-import SeedBankModal from './SeedBankModal'; // Import the seed bank modal
+import AiSeedModal from './modals/AiSeedModal'; // Import the new modal component
+import SeedBankModal from './modals/SeedBankModal'; // Import the seed bank modal
 import Icon from './Icons'; // Import the Icon component
 import CustomSlider from './CustomSlider'; // Import the new CustomSlider component
 import CustomFileImportButton from './CustomFileImportButton'; // Import the new FileImportButton component

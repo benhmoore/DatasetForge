@@ -25,7 +25,7 @@ import FilterNode from './FilterNode'; // Add import for FilterNode
 import CustomSelect from './CustomSelect';
 import CustomTextInput from './CustomTextInput';
 import Icon from './Icons';
-import ConfirmationModal from './ConfirmationModal';
+import ConfirmationModal from './modals/ConfirmationModal';
 import ContextMenu from './ContextMenu';
 
 // Define node types for selection dropdown and internal logic

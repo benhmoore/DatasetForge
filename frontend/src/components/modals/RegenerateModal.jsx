@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import Icon from './Icons';
 
 const RegenerateModal = ({ 
   isOpen, 

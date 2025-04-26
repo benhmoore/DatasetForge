@@ -680,8 +680,10 @@ const CustomTextInput = React.forwardRef(({
     ${error ? 'border-red-300 bg-red-50 text-red-900 placeholder-red-700 focus:ring-red-500 focus:border-red-500'
             : 'border-gray-300 focus:ring-primary-500 focus:border-primary-500'}
     ${disabled || isAiLoading ? 'bg-gray-100 cursor-not-allowed opacity-70' : ''}
-    ${(!isMultiline && hasVisibleActionButtons) ? 'rounded-r-none' : ''} // Use hasVisibleActionButtons
-    ${isMultiline ? 'rounded-t-none rounded-b-md text-sm overflow-y-hidden' : 'rounded-md'}
+    ${(!isMultiline && hasVisibleActionButtons) ? 'rounded-r-none' : ''} // Keep right rounding logic for single line
+    ${isMultiline ? 'text-sm overflow-y-hidden' : 'rounded-md'} // Base multiline/single line styles
+    ${isMultiline && hasVisibleActionButtons ? 'rounded-t-none rounded-b-md' : ''} // Only remove top rounding if actions are visible
+    ${isMultiline && !hasVisibleActionButtons ? 'rounded-md' : ''} // Add full rounding if multiline and no actions
     ${isMultiline && isExpanded ? 'max-h-[70vh] overflow-y-auto' : ''}
     ${className}
   `;
@@ -711,6 +713,41 @@ const CustomTextInput = React.forwardRef(({
         </div>
       </div>
     );
+  };
+
+  // Ref to track if blur should be ignored
+  const ignoreBlurRef = useRef(false);
+
+  // Modified onBlur handler
+  const handleBlur = (e) => {
+    // If ignoreBlurRef is true, it means the blur was likely caused by clicking an action button
+    if (ignoreBlurRef.current) {
+      // Reset the flag
+      ignoreBlurRef.current = false;
+      // Prevent the original onBlur from firing and refocus the input
+      // Use requestAnimationFrame to ensure focus happens after potential DOM updates
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          // Restore selection if it existed
+          if (selectionRange) {
+            inputRef.current.setSelectionRange(selectionRange.start, selectionRange.end);
+          }
+        }
+      });
+      return;
+    }
+    // Otherwise, call the original onBlur handler if provided
+    if (onBlur) {
+      onBlur(e);
+    }
+  };
+
+  // Handler for mouse down on action button containers
+  const handleActionMouseDown = (e) => {
+    // Prevent the default behavior which might cause the input to lose focus immediately
+    e.preventDefault(); 
+    ignoreBlurRef.current = true;
   };
 
   return (
@@ -778,11 +815,12 @@ const CustomTextInput = React.forwardRef(({
           {isMultiline ? (
             <div className="flex flex-col">
               {/* Multiline mode: Actions on top */}
-              {(combinedActionButtons) && (
-                <div 
+              {hasVisibleActionButtons && ( // Check if there are buttons before rendering container
+                <div
                   className={actionButtonsContainerClasses}
-                  onDoubleClick={handleActionBarDoubleClick} // Add double-click handler
-                  title={isExpanded ? "Double-click to collapse" : "Double-click to expand"} // Add tooltip
+                  onDoubleClick={handleActionBarDoubleClick}
+                  title={isExpanded ? "Double-click to collapse" : "Double-click to expand"}
+                  onMouseDown={handleActionMouseDown} // Add mouse down handler here
                 >
                   {combinedActionButtons}
                 </div>
@@ -793,7 +831,7 @@ const CustomTextInput = React.forwardRef(({
                 name={name}
                 value={value}
                 onChange={handleChange} // Use our wrapped onChange
-                onBlur={onBlur}
+                onBlur={handleBlur} // Use the modified blur handler
                 placeholder={placeholder}
                 disabled={disabled || isAiLoading} // Disable textarea when loading
                 rows={isExpanded ? undefined : rows} // Conditionally apply rows
@@ -813,7 +851,7 @@ const CustomTextInput = React.forwardRef(({
                 type="text"
                 value={value}
                 onChange={handleChange} // Use our wrapped onChange
-                onBlur={onBlur}
+                onBlur={handleBlur} // Use the modified blur handler
                 placeholder={placeholder}
                 disabled={disabled || isAiLoading} // Disable input when loading
                 className={baseInputClasses}
@@ -823,7 +861,10 @@ const CustomTextInput = React.forwardRef(({
               
               {/* Action buttons - Only render container if there are visible buttons */}
               {hasVisibleActionButtons && (
-                <div className={actionButtonsContainerClasses}>
+                <div 
+                  className={actionButtonsContainerClasses}
+                  onMouseDown={handleActionMouseDown} // Add mouse down handler here
+                >
                   {combinedActionButtons}
                 </div>
               )}

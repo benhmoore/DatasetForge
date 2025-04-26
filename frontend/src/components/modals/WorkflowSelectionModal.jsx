@@ -1,8 +1,8 @@
 import React from "react";
 import { toast } from "react-toastify";
 import ConfirmationModal from "./ConfirmationModal"; // Re-use existing modal component
-import WorkflowSelector from "./WorkflowSelector";
-import Icon from "./Icons";
+import WorkflowSelector from "../WorkflowSelector";
+import Icon from "../Icons";
 
 /**
  * Default template for creating new workflows

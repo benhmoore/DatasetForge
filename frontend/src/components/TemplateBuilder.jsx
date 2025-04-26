@@ -5,7 +5,7 @@ import api from '../api/apiClient';
 import SystemPromptEditor from './SystemPromptEditor';
 import ModelSelector from './ModelSelector'; // Import ModelSelector
 import ToggleSwitch from './ToggleSwitch'; // Assuming a ToggleSwitch component exists or will be created
-import ConfirmationModal from './ConfirmationModal'; // Import the new component
+import ConfirmationModal from './modals/ConfirmationModal'; // Import the new component
 import Icon from './Icons';
 import ToolParameterSchemaEditor from './ToolParameterSchemaEditor'; // Import the new schema editor
 import CustomTextInput from './CustomTextInput'; // Import CustomTextInput

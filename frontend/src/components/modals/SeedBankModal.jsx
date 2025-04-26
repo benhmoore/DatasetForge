@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
-import Icon from './Icons';
-import api from '../api/apiClient';
-import FileImportButton from './CustomFileImportButton';
-import CustomTextInput from './CustomTextInput';
+import Icon from '../Icons';
+import CustomTextInput from '../CustomTextInput';
 
 // Helper function to check if a seed is blank
 const isBlankSeed = (seed, slots) => {
@@ -42,16 +40,9 @@ const SeedBankModal = ({
   const [localSeedList, setLocalSeedList] = useState([]);
   const [filteredSeeds, setFilteredSeeds] = useState([]);
   const [selectedSeeds, setSelectedSeeds] = useState(new Set());
-  const [savedSeedBanks, setSavedSeedBanks] = useState([]);
-  const [isLoadingSeedBanks, setIsLoadingSeedBanks] = useState(false);
-  const [isSavingSeedBank, setIsSavingSeedBank] = useState(false);
-  const [showSaveSeedBankDialog, setShowSaveSeedBankDialog] = useState(false);
-  const [seedBankName, setSeedBankName] = useState('');
-  const [seedBankDescription, setSeedBankDescription] = useState('');
   
   const modalRef = useRef(null);
   const searchInputRef = useRef(null);
-  const nameInputRef = useRef(null);
   
   // Initialize local copy of seedList when modal opens or seedList changes
   useEffect(() => {
