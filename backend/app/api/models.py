@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, Field, JSON, Column
+from sqlmodel import SQLModel, Field, JSON, Column, Relationship
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 
@@ -21,6 +21,33 @@ class Template(SQLModel, table=True):
     model_parameters: Optional[Dict[str, Any]] = Field(
         default=None, sa_column=Column(JSON)
     )  # Added model parameters
+    
+    # Relationships
+    seed_banks: List["SeedBank"] = Relationship(back_populates="template")
+
+
+class SeedBank(SQLModel, table=True, table_name="seedbank"):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    template_id: int = Field(foreign_key="template.id")
+    description: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    template: Template = Relationship(back_populates="seed_banks")
+    seeds: List["Seed"] = Relationship(back_populates="seed_bank")
+
+
+class Seed(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    seed_bank_id: int = Field(foreign_key="seedbank.id")
+    slots: Dict[str, str] = Field(sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    seed_bank: SeedBank = Relationship(back_populates="seeds")
 
 
 class Dataset(SQLModel, table=True):

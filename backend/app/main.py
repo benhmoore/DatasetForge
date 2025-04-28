@@ -10,6 +10,8 @@ from .api import (
     export_templates,
     workflows,
     filter,
+    seed_banks,
+    batch_generate,
 )
 from .core.config import settings
 from .core.logging import LoggingMiddleware
@@ -43,6 +45,8 @@ app.include_router(paraphrase.router, tags=["paraphrase"])
 app.include_router(export_templates.router, tags=["export_templates"])
 app.include_router(workflows.router, tags=["workflows"])
 app.include_router(filter.router, tags=["filter"])
+app.include_router(seed_banks.router, tags=["seed_banks"])
+app.include_router(batch_generate.router, prefix="/api", tags=["batch_generate"])
 
 
 # Global exception handler

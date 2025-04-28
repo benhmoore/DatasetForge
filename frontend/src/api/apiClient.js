@@ -136,6 +136,210 @@ const api = {
     }
   },
   
+  // Batched Generation for large seed banks
+  batchGenerate: async (data, onData, onProgress, signal) => {
+    console.log('Sending batch generation request:', JSON.stringify(data));
+    
+    // If seed_bank_id is provided, get batch info first
+    let totalBatches = 1;
+    let currentBatch = data.page || 1;
+    let batchSize = data.batch_size || 10;
+    
+    if (data.seed_bank_id) {
+      try {
+        const batchInfoResponse = await fetch(`/api/batch_generate/get_batch_info/${data.seed_bank_id}?batch_size=${batchSize}`, {
+          method: 'GET',
+          signal: signal // Pass the signal to fetch
+        });
+        
+        if (batchInfoResponse.ok) {
+          const batchInfo = await batchInfoResponse.json();
+          totalBatches = batchInfo.total_batches;
+          console.log(`Batch generation will process ${batchInfo.total_seeds} seeds in ${totalBatches} batches`);
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          console.log('Batch info request aborted.');
+          throw error;
+        }
+        console.warn('Failed to get batch info:', error);
+      }
+    }
+    
+    // Call onProgress with initial progress
+    if (onProgress) {
+      onProgress({
+        currentBatch,
+        totalBatches,
+        percentComplete: (currentBatch - 1) / totalBatches * 100,
+        status: 'processing',
+      });
+    }
+    
+    try {
+      // Use fetch API for streaming
+      const response = await fetch('/api/batch_generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data),
+        signal: signal // Pass the signal to fetch
+      });
+
+      if (!response.ok) {
+        // Handle non-2xx responses including AbortError
+        if (signal?.aborted) {
+          console.log('Batch generation request aborted.');
+          throw new DOMException('Aborted', 'AbortError'); 
+        }
+        const errorText = await response.text();
+        console.error('Batch generation request failed:', response.status, errorText);
+        throw new Error(`Batch generation failed: ${response.status} ${errorText || response.statusText}`);
+      }
+
+      if (!response.body) {
+        throw new Error('Response body is null');
+      }
+
+      // Process the stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      
+      // Track completion
+      let generatedCount = 0;
+      const expectedCount = batchSize * data.count; // seeds * variations per seed
+      
+      while (true) {
+        // Check if aborted before reading
+        if (signal?.aborted) {
+          console.log('Batch generation stream aborted during processing.');
+          reader.cancel('Aborted by user'); // Cancel the reader
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        
+        // Check if aborted after reading
+        if (signal?.aborted) {
+          console.log('Batch generation stream aborted after read.');
+          reader.cancel('Aborted by user');
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep the last partial line in the buffer
+
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const jsonData = JSON.parse(line);
+              if (onData) {
+                onData(jsonData); // Call the callback with the parsed JSON object
+              }
+              
+              // Update progress
+              generatedCount++;
+              if (onProgress) {
+                const batchProgress = generatedCount / expectedCount;
+                const overallProgress = (currentBatch - 1 + batchProgress) / totalBatches * 100;
+                
+                onProgress({
+                  currentBatch,
+                  totalBatches,
+                  percentComplete: overallProgress,
+                  status: 'processing',
+                });
+              }
+            } catch (e) {
+              console.error('Failed to parse JSON line:', line, e);
+              if (onData) {
+                onData({ error: `Failed to parse stream data: ${line}` });
+              }
+            }
+          }
+        }
+      }
+      
+      // Process any remaining data in the buffer
+      if (buffer.trim()) {
+        try {
+          const jsonData = JSON.parse(buffer);
+          if (onData) {
+            onData(jsonData);
+          }
+          
+          // Update final progress for this batch
+          generatedCount++;
+          if (onProgress) {
+            const batchProgress = generatedCount / expectedCount;
+            const overallProgress = (currentBatch - 1 + batchProgress) / totalBatches * 100;
+            
+            onProgress({
+              currentBatch,
+              totalBatches,
+              percentComplete: overallProgress,
+              status: 'processing',
+            });
+          }
+        } catch (e) {
+          console.error('Failed to parse final JSON buffer:', buffer, e);
+          if (onData) {
+            onData({ error: `Failed to parse final stream data: ${buffer}` });
+          }
+        }
+      }
+      
+      // Final progress update for this batch
+      if (onProgress) {
+        const overallProgress = currentBatch / totalBatches * 100;
+        onProgress({
+          currentBatch,
+          totalBatches,
+          percentComplete: overallProgress,
+          status: currentBatch === totalBatches ? 'complete' : 'processing',
+        });
+      }
+      
+      // If multi-batch operation and more batches remain, return batch info
+      return {
+        currentBatch,
+        totalBatches,
+        isComplete: currentBatch >= totalBatches,
+        nextBatch: currentBatch < totalBatches ? currentBatch + 1 : null
+      };
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('Batch generation fetch aborted successfully.');
+        if (onProgress) {
+          onProgress({
+            currentBatch,
+            totalBatches,
+            percentComplete: (currentBatch - 1) / totalBatches * 100,
+            status: 'aborted',
+          });
+        }
+        throw error;
+      }
+      console.error('Batch generation stream failed:', error);
+      if (onProgress) {
+        onProgress({
+          currentBatch,
+          totalBatches,
+          percentComplete: (currentBatch - 1) / totalBatches * 100,
+          status: 'error',
+          error: error.message,
+        });
+      }
+      throw new Error(`Batch generation failed: ${error.message}`);
+    }
+  },
+  
   // Generate with simple endpoint for CustomTextInput
   generateSimple: async (prompt, name = "input", onData, signal, systemPrompt = null) => {
     console.log('Sending simple generation request:', { prompt, name, hasSystemPrompt: !!systemPrompt });
@@ -310,14 +514,17 @@ const api = {
   },
   
   // Seed Banks
-  getSeedBanks: (templateId = null) => {
-    const params = templateId ? { template_id: templateId } : {};
+  getSeedBanks: (templateId = null, page = 1, size = 20) => {
+    const params = { page, size };
+    if (templateId) params.template_id = templateId;
+    
     return apiClient.get('/seed_banks', { params })
       .then(response => response.data);
   },
   
-  getSeedBankById: (seedBankId) => apiClient.get(`/seed_banks/${seedBankId}`)
-    .then(response => response.data),
+  getSeedBankById: (seedBankId, page = 1, size = 100) => 
+    apiClient.get(`/seed_banks/${seedBankId}`, { params: { page, size } })
+      .then(response => response.data),
   
   createSeedBank: (seedBank) => apiClient.post('/seed_banks', seedBank)
     .then(response => response.data),
@@ -327,6 +534,27 @@ const api = {
   
   deleteSeedBank: (seedBankId) => apiClient.delete(`/seed_banks/${seedBankId}`)
     .then(response => response.data),
+    
+  // Seeds
+  getSeeds: (seedBankId, page = 1, size = 100) => 
+    apiClient.get(`/seed_banks/${seedBankId}/seeds`, { params: { page, size } })
+      .then(response => response.data),
+  
+  createSeeds: (seedBankId, seeds) => 
+    apiClient.post(`/seed_banks/${seedBankId}/seeds`, seeds)
+      .then(response => response.data),
+  
+  updateSeed: (seedId, seed) => 
+    apiClient.put(`/seeds/${seedId}`, seed)
+      .then(response => response.data),
+  
+  deleteSeed: (seedId) => 
+    apiClient.delete(`/seeds/${seedId}`)
+      .then(response => response.data),
+  
+  deleteAllSeeds: (seedBankId) => 
+    apiClient.delete(`/seed_banks/${seedBankId}/seeds`)
+      .then(response => response.data),
   
   // Workflow Management API endpoints
   getWorkflows: (page = 1, size = 50) => 

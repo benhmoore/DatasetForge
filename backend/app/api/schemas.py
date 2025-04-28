@@ -142,6 +142,16 @@ class GenerationRequest(BaseModel):
     instruction: Optional[str] = None
 
 
+class BatchGenerationRequest(BaseModel):
+    template_id: int
+    seeds: Optional[List[SeedData]] = None  # Seeds can be provided directly
+    seed_bank_id: Optional[int] = None  # Or loaded from a seed bank
+    count: int = Field(default=3, ge=1, le=10)  # Count per seed
+    instruction: Optional[str] = None
+    page: int = Field(default=1, ge=1)  # Page number for batched loading
+    batch_size: int = Field(default=10, ge=1, le=100)  # Seeds per batch
+
+
 # Simple generation request for CustomTextInput
 class SimpleGenerationRequest(BaseModel):
     prompt: str
@@ -183,6 +193,64 @@ class ParaphraseSeedsResponse(BaseModel):
 # Export schemas
 class ExportRequest(BaseModel):
     template_id: Optional[int] = None
+
+
+# SeedBank schemas
+class SeedBase(BaseModel):
+    slots: Dict[str, str]
+
+
+class SeedCreate(SeedBase):
+    seed_bank_id: int
+
+
+class SeedUpdate(SeedBase):
+    pass
+
+
+class SeedRead(SeedBase):
+    id: int
+    seed_bank_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class SeedBankBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class SeedBankCreate(SeedBankBase):
+    template_id: int
+
+
+class SeedBankUpdate(SeedBankBase):
+    pass
+
+
+class SeedBankRead(SeedBankBase):
+    id: int
+    template_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class SeedBankWithSeeds(SeedBankRead):
+    seeds: List[SeedRead] = []
+
+    class Config:
+        orm_mode = True
+
+
+class SeedBankPagination(BaseModel):
+    items: List[SeedBankRead]
+    total: int
 
 
 # Define a reasonable size limit for local storage (e.g., 10MB)
