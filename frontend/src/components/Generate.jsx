@@ -47,6 +47,9 @@ const Generate = ({ context }) => {
   const [regenerateSourceText, setRegenerateSourceText] = useState('');
   const [regenerateSourceId, setRegenerateSourceId] = useState(null);
   
+  // State for keyboard shortcuts visibility
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+  
   // Workflow related state
   // Initialize workflowEnabled from localStorage
   const [workflowEnabled, setWorkflowEnabled] = useState(() => {
@@ -69,7 +72,7 @@ const Generate = ({ context }) => {
   
   // Add this state to track animations in progress
   const [animationsInProgress, setAnimationsInProgress] = useState(new Set());
-  
+
   const variationsRef = useRef(variations);
   const abortControllerRef = useRef(null);
   // Add this reference at the top of your component
@@ -699,7 +702,7 @@ const Generate = ({ context }) => {
                           updated[targetIndex] = {
                             ...baseVariation,
                             output: outputContent,
-                            tool_calls: toolCalls, // Update tool calls
+                            tool_calls: toolCalls,
                             variation: `${baseVariation.variation.split(' (')[0]} (${nodeResult.name || nodeId})`,
                             isGenerating: false,
                             error: null,
@@ -1328,6 +1331,7 @@ const Generate = ({ context }) => {
                       output: `[Error: Workflow execution failed - ${progressData.error}]`,
                       isGenerating: false,
                       error: `Workflow execution failed: ${progressData.error}`,
+                      template_id: selectedTemplate.id,
                       _source: 'workflow_regen_error',
                       workflow_progress: {
                         ...updated[targetIndex].workflow_progress,
@@ -2359,30 +2363,44 @@ const Generate = ({ context }) => {
         <div className="px-4 pt-4">
           <h3 className="text-lg font-medium mb-3">Generated Variations</h3>
           
-          {/* Keyboard Shortcut Cheatsheet */}
-          <div className="bg-gray-50 border border-gray-200 rounded-md p-3 mb-4">
-            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center">
-              <Icon name="keyboard" className="h-4 w-4 mr-1.5 text-gray-500" />
-              Keyboard Shortcuts
-            </h4>
-            <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+          {/* Keyboard Shortcut Cheatsheet - Now collapsible */}
+          <div className="bg-gray-50 border border-gray-200 rounded-md mb-4">
+            <button 
+              onClick={() => setShowKeyboardShortcuts(!showKeyboardShortcuts)}
+              className="w-full text-sm font-medium text-gray-700 p-3 flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-blue-300 rounded-md"
+            >
               <div className="flex items-center">
-                <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">← ↑ → ↓</kbd>
-                <span>Navigate between cards</span>
+                <Icon name="keyboard" className="h-4 w-4 mr-1.5 text-gray-500" />
+                Keyboard Shortcuts
               </div>
-              <div className="flex items-center">
-                <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">Space</kbd>
-                <span>Select/deselect card</span>
+              <Icon 
+                name={showKeyboardShortcuts ? "chevron-up" : "chevron-down"} 
+                className="h-4 w-4 text-gray-500"
+                aria-hidden="true" 
+              />
+            </button>
+            {showKeyboardShortcuts && (
+              <div className="border-t border-gray-200 p-3">
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                  <div className="flex items-center">
+                    <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">← ↑ → ↓</kbd>
+                    <span>Navigate between cards</span>
+                  </div>
+                  <div className="flex items-center">
+                    <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">Space</kbd>
+                    <span>Select/deselect card</span>
+                  </div>
+                  <div className="flex items-center">
+                    <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">Delete/Backspace</kbd>
+                    <span>Remove current card</span>
+                  </div>
+                  <div className="flex items-center">
+                    <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} + S</kbd>
+                    <span>Save selected cards to dataset</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center">
-                <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">Delete/Backspace</kbd>
-                <span>Remove current card</span>
-              </div>
-              <div className="flex items-center">
-                <kbd className="px-2 py-1 bg-white border border-gray-300 rounded shadow-sm mr-2 text-xs">{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} + S</kbd>
-                <span>Save selected cards to dataset</span>
-              </div>
-            </div>
+            )}
           </div>
 
           {(variations && variations.length === 0 && !isGenerating) ? (

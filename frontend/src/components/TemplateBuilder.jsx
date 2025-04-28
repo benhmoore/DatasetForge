@@ -28,6 +28,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [newTemplateName, setNewTemplateName] = useState('');
   const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false); // State for archive confirmation modal
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false); // State for unsaved changes
+  const [defaultGenModel, setDefaultGenModel] = useState("default generation model"); // Add state for default model name
 
   // Validation state
   const [nameError, setNameError] = useState(false);
@@ -56,6 +57,22 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [newToolSchema, setNewToolSchema] = useState({ type: 'object', properties: {}, required: [] }); // Replace newToolParameters state
   const [modelOverride, setModelOverride] = useState(''); // Add state for model override
   const [modelParameters, setModelParameters] = useState(_.cloneDeep(defaultModelParameters)); // Add state for model parameters
+
+  // Fetch app settings including default model on component mount
+  useEffect(() => {
+    const fetchAppSettings = async () => {
+      try {
+        const settings = await api.getAppSettings();
+        if (settings && settings.default_gen_model) {
+          setDefaultGenModel(settings.default_gen_model);
+        }
+      } catch (error) {
+        console.error('Failed to fetch app settings:', error);
+      }
+    };
+    
+    fetchAppSettings();
+  }, []);
 
   // Helper function to get current form state as an object
   const getCurrentFormData = useCallback(() => {
@@ -655,7 +672,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               allowNone={true}
               disabled={isLoading || isSaving}
             />
-            <p className="text-xs text-gray-500 mt-1">If set, this model will be used instead of your default generation model.</p>
+            <p className="text-xs text-gray-500 mt-1">If set, this model will be used instead of your default generation model ({defaultGenModel}).</p>
           </div>
 
           {/* Model Parameters Section */}
