@@ -235,8 +235,29 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       };
     }
 
-    // Use lodash's isEqual for deep comparison
-    const changed = !_.isEqual(currentData, originalData);
+    // Process model parameters to handle string/number conversion issues before comparison
+    // Convert strings to numbers for comparison
+    const normalizeModelParams = (params) => {
+      return {
+        temperature: parseFloat(params.temperature),
+        top_p: parseFloat(params.top_p),
+        max_tokens: params.max_tokens === null || params.max_tokens === '' ? null : parseInt(params.max_tokens, 10)
+      };
+    };
+    
+    // Create copies for comparison with normalized model parameters
+    const normalizedCurrentData = {
+      ...currentData,
+      model_parameters: normalizeModelParams(currentData.model_parameters)
+    };
+    
+    const normalizedOriginalData = {
+      ...originalData,
+      model_parameters: normalizeModelParams(originalData.model_parameters)
+    };
+
+    // Use lodash's isEqual for deep comparison with normalized data
+    const changed = !_.isEqual(normalizedCurrentData, normalizedOriginalData);
 
     // Special case: if no template is selected but a name exists, it's unsaved
     if (!selectedTemplate && name.trim()) {
