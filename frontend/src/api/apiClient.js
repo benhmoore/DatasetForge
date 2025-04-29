@@ -522,9 +522,29 @@ const api = {
       .then(response => response.data);
   },
   
-  getSeedBankById: (seedBankId, page = 1, size = 100) => 
-    apiClient.get(`/seed_banks/${seedBankId}`, { params: { page, size } })
-      .then(response => response.data),
+  getSeedBankById: (seedBankId, page = 1, size = 100, countOnly = false) => {
+    // Format the count_only parameter consistently
+    const countOnlyStr = countOnly === true || countOnly === "true" ? "true" : "false";
+    
+    console.log(`API Call: getSeedBankById(${seedBankId}, ${page}, ${size}, ${countOnly}) -> count_only=${countOnlyStr}`);
+    
+    return apiClient.get(`/seed_banks/${seedBankId}`, { 
+      params: { 
+        page, 
+        size,
+        count_only: countOnlyStr
+      } 
+    })
+    .then(response => {
+      console.log(`API Response for seedBank ${seedBankId}:`, response.data);
+      if (countOnly === true || countOnly === "true") {
+        console.log(`Total count returned: ${response.data.total || 0}`);
+      } else {
+        console.log(`Seeds returned: ${(response.data.seeds || []).length}, Total reported: ${response.data.total || 0}`);
+      }
+      return response.data;
+    });
+  },
   
   createSeedBank: (seedBank) => apiClient.post('/seed_banks', seedBank)
     .then(response => response.data),

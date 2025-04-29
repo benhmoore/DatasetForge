@@ -46,8 +46,11 @@ const SeedBankModal = ({
   const [totalSeeds, setTotalSeeds] = useState(0);
   const [seedBankId, setSeedBankId] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [unsavedChanges, setUnsavedChanges] = useState({});
   
-  const pageSize = 100; // Number of seeds to load per page
+  // Number of seeds to load per page
+  const pageSize = 100;
+  console.log("SeedBankModal pageSize =", pageSize);
   const modalRef = useRef(null);
   const searchInputRef = useRef(null);
   
@@ -66,8 +69,42 @@ const SeedBankModal = ({
             const bank = banks[0];
             setSeedBankId(bank.id);
             
-            // Load seeds from this bank
-            return api.getSeedBankById(bank.id, 1, pageSize);
+            // CRITICAL FIX: First get an accurate count from the SeedForm parent
+            // If the parent shows 143 seeds, we'll trust that and use it directly
+            if (seedList && seedList.length > 0) {
+              console.log(`Using seedList length from parent: ${seedList.length} seeds`);
+              setTotalSeeds(seedList.length);
+              
+              // Proceed with loading first page
+              return api.getSeedBankById(bank.id, 1, pageSize, false)
+                .then(result => {
+                  // Return a modified result with our corrected total
+                  return {
+                    ...result,
+                    total: seedList.length  // Override with the known total
+                  };
+                });
+            }
+            
+            // Fallback to API count if needed (should not happen with proper integration)
+            console.log("Getting seed count...");
+            return api.getSeedBankById(bank.id, 1, 1, true)
+              .then(countResult => {
+                const totalCount = countResult.total || 0;
+                console.log(`Got count from API: ${totalCount} seeds`);
+                setTotalSeeds(totalCount);
+                
+                // Then load first page of seeds
+                console.log("Loading first page of seeds...");
+                return api.getSeedBankById(bank.id, 1, pageSize, false)
+                  .then(result => {
+                    // Return a modified result with our corrected total
+                    return {
+                      ...result,
+                      total: totalCount  // Override with the known total
+                    };
+                  });
+              });
           } else {
             // Create a new seed bank for this template
             return api.createSeedBank({
@@ -78,15 +115,24 @@ const SeedBankModal = ({
               setSeedBankId(newBank.id);
               
               // If we have seeds in the local state, save them to the new bank
-              if (seedList && seedList.length > 0) {
+              if (seedList && seedList.length > 0 && seedList[0] && Object.keys(seedList[0]).length > 0) {
+                setTotalSeeds(seedList.length); // Set correct total
+                
                 return api.createSeeds(newBank.id, seedList)
                   .then(() => {
-                    return api.getSeedBankById(newBank.id, 1, pageSize);
+                    return api.getSeedBankById(newBank.id, 1, pageSize, false)
+                      .then(result => {
+                        // Return a modified result with our corrected total
+                        return {
+                          ...result,
+                          total: seedList.length  // Override with the known total
+                        };
+                      });
                   });
               }
               
               // Return empty seeds object
-              return { seeds: [] };
+              return { seeds: [], total: 0 };
             });
           }
         })
@@ -94,7 +140,18 @@ const SeedBankModal = ({
           // Load seeds and update local state
           const seeds = result.seeds || [];
           setLocalSeedList(seeds);
-          setTotalSeeds(seeds.length);
+          
+          // IMPORTANT: Always use our previously set totalSeeds 
+          // or the corrected total from the result
+          if (result.total !== undefined && result.total > 0) {
+            console.log(`Using explicit total from result: ${result.total}`);
+            setTotalSeeds(result.total);
+          }
+          
+          // Add extra debugging
+          console.log(`Seed bank loaded: ${seeds.length} seeds visible, known total: ${result.total || totalSeeds}`);
+          console.log(`Pagination should appear if: ${result.total || totalSeeds} > ${pageSize} = ${(result.total || totalSeeds) > pageSize}`);
+          
           setCurrentPage(1);
           setHasChanges(false);
         })
@@ -106,7 +163,8 @@ const SeedBankModal = ({
           setIsLoading(false);
         });
     }
-  }, [isOpen, template, seedList]);
+  // Removing totalSeeds from the dependency array to prevent infinite loop
+  }, [isOpen, template, seedList, pageSize]);
 
   // Update filtered seeds when localSeedList or searchTerm changes
   useEffect(() => {
@@ -117,7 +175,7 @@ const SeedBankModal = ({
 
     const lowerSearchTerm = searchTerm.toLowerCase();
     const filtered = localSeedList.filter(seed => {
-      return Object.entries(seed.slots).some(([key, value]) => {
+      return Object.entries(seed.slots || {}).some(([key, value]) => {
         return value && value.toString().toLowerCase().includes(lowerSearchTerm);
       });
     });
@@ -134,13 +192,78 @@ const SeedBankModal = ({
     }
   }, [isOpen]);
 
+  // Save all unsaved changes
+  const saveChanges = useCallback(async () => {
+    if (Object.keys(unsavedChanges).length === 0) {
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      // Process all unsaved changes
+      const updatePromises = Object.entries(unsavedChanges).map(([seedId, slots]) => {
+        return api.updateSeed(seedId, { slots });
+      });
+      
+      const updatedSeeds = await Promise.all(updatePromises);
+      
+      // Update local state with all updated seeds
+      setLocalSeedList(prevList => {
+        return prevList.map(seed => {
+          const updatedSeed = updatedSeeds.find(updated => updated.id === seed.id);
+          return updatedSeed || seed;
+        });
+      });
+      
+      // Clear unsaved changes and set changes flag to true
+      setUnsavedChanges({});
+      setHasChanges(true);
+      
+      // Reset hasChanges flag after 3 seconds
+      setTimeout(() => {
+        setHasChanges(false);
+      }, 3000);
+    } catch (error) {
+      console.error("Error saving seed changes:", error);
+      toast.error("Failed to save some changes");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [unsavedChanges]);
+  
   // Handle escape key to close modal
   useEffect(() => {
-    const handleEscapeKey = (e) => {
+    const handleEscapeKey = async (e) => {
       if (e.key === 'Escape' && isOpen) {
+        // First save any pending changes
+        await saveChanges();
+        
         // Pass the latest seeds back to the parent
-        if (localSeedList && localSeedList.length > 0) {
-          setSeedList(localSeedList.map(seed => seed.slots));
+        if (seedBankId) {
+          // Get all seeds from the database to ensure we have the complete list
+          setIsLoading(true);
+          try {
+            // First get count
+            const countResult = await api.getSeedBankById(seedBankId, 1, 1, true);
+            const totalCount = countResult.total || 0;
+            
+            // If there are seeds, load all of them
+            if (totalCount > 0) {
+              // Load all seeds
+              const allSeeds = await api.getSeedBankById(seedBankId, 1, totalCount, false);
+              const seedsArray = allSeeds.seeds.map(seed => ({...seed.slots}));
+              setSeedList([...seedsArray]);
+            }
+          } catch (error) {
+            console.error("Error loading all seeds before closing:", error);
+          } finally {
+            setIsLoading(false);
+          }
+        } else if (localSeedList && localSeedList.length > 0) {
+          // Fallback if no seed bank ID
+          const seedsArray = localSeedList.map(seed => ({...seed.slots}));
+          setSeedList([...seedsArray]);
         }
         onClose();
       }
@@ -148,19 +271,44 @@ const SeedBankModal = ({
 
     window.addEventListener('keydown', handleEscapeKey);
     return () => window.removeEventListener('keydown', handleEscapeKey);
-  }, [isOpen, onClose, localSeedList, setSeedList]);
+  }, [isOpen, onClose, localSeedList, setSeedList, saveChanges, seedBankId]);
 
   // Handle click outside to close modal
   useEffect(() => {
-    const handleClickOutside = (e) => {
+    const handleClickOutside = async (e) => {
       if (
         modalRef.current && 
         !modalRef.current.contains(e.target) && 
         isOpen
       ) {
+        // First save any pending changes
+        await saveChanges();
+        
         // Pass the latest seeds back to the parent
-        if (localSeedList && localSeedList.length > 0) {
-          setSeedList(localSeedList.map(seed => seed.slots));
+        if (seedBankId) {
+          // Get all seeds from the database to ensure we have the complete list
+          setIsLoading(true);
+          try {
+            // First get count
+            const countResult = await api.getSeedBankById(seedBankId, 1, 1, true);
+            const totalCount = countResult.total || 0;
+            
+            // If there are seeds, load all of them
+            if (totalCount > 0) {
+              // Load all seeds
+              const allSeeds = await api.getSeedBankById(seedBankId, 1, totalCount, false);
+              const seedsArray = allSeeds.seeds.map(seed => ({...seed.slots}));
+              setSeedList([...seedsArray]);
+            }
+          } catch (error) {
+            console.error("Error loading all seeds before closing:", error);
+          } finally {
+            setIsLoading(false);
+          }
+        } else if (localSeedList && localSeedList.length > 0) {
+          // Fallback if no seed bank ID
+          const seedsArray = localSeedList.map(seed => ({...seed.slots}));
+          setSeedList([...seedsArray]);
         }
         onClose();
       }
@@ -168,7 +316,7 @@ const SeedBankModal = ({
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onClose, localSeedList, setSeedList]);
+  }, [isOpen, onClose, localSeedList, setSeedList, saveChanges, seedBankId]);
 
   // Add a new seed
   const addSeed = useCallback(() => {
@@ -507,15 +655,49 @@ const SeedBankModal = ({
           </h2>
           <button
             className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100 transition-colors"
-            onClick={() => {
+            onClick={async () => {
+              // Ask for confirmation if there are unsaved changes
+              if (Object.keys(unsavedChanges).length > 0) {
+                if (window.confirm("You have unsaved changes. Do you want to save them before closing?")) {
+                  await saveChanges();
+                }
+              }
+              
               // Update parent state with the latest seeds
-              if (localSeedList && localSeedList.length > 0) {
-                setSeedList(localSeedList.map(seed => seed.slots));
+              if (seedBankId) {
+                // If we have unsaved changes, make sure to save them first
+                if (Object.keys(unsavedChanges).length > 0) {
+                  await saveChanges();
+                }
+                
+                // Get all seeds from the database to ensure we have the complete list
+                setIsLoading(true);
+                try {
+                  // First get count
+                  const countResult = await api.getSeedBankById(seedBankId, 1, 1, true);
+                  const totalCount = countResult.total || 0;
+                  
+                  // If there are seeds, load all of them
+                  if (totalCount > 0) {
+                    // Load all seeds
+                    const allSeeds = await api.getSeedBankById(seedBankId, 1, totalCount, false);
+                    const seedsArray = allSeeds.seeds.map(seed => ({...seed.slots}));
+                    setSeedList([...seedsArray]);
+                  }
+                } catch (error) {
+                  console.error("Error loading all seeds before closing:", error);
+                } finally {
+                  setIsLoading(false);
+                }
+              } else if (localSeedList && localSeedList.length > 0) {
+                // Fallback if no seed bank ID
+                const seedsArray = localSeedList.map(seed => ({...seed.slots}));
+                setSeedList([...seedsArray]);
               }
               onClose();
             }}
             aria-label="Close modal"
-            title="Save & Close"
+            title="Close"
           >
             <Icon name="close" className="h-5 w-5" />
           </button>
@@ -687,7 +869,8 @@ const SeedBankModal = ({
                               } else {
                                 // If not found in parent, update parent and set index
                                 const newSeeds = [...seedList];
-                                newSeeds.push(seed.slots);
+                                // Replace array items instead of push to ensure state is properly updated
+                                newSeeds[newSeeds.length] = {...seed.slots};
                                 setSeedList(newSeeds);
                                 setCurrentSeedIndex(newSeeds.length - 1);
                               }
@@ -705,9 +888,9 @@ const SeedBankModal = ({
                             />
                           </td>
                           
-                          {/* Seed number */}
+                          {/* Seed number - adjusted for pagination */}
                           <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {displayIndex + 1}
+                            {((currentPage - 1) * pageSize) + displayIndex + 1}
                           </td>
                           
                           {/* Slot values - Always editable */}
@@ -720,45 +903,36 @@ const SeedBankModal = ({
                                   onChange={(e) => {
                                     if (isDisabled || isLoading) return;
                                     
-                                    // Update the seed in the database
-                                    setIsLoading(true);
-                                    
                                     const updatedSlots = {
                                       ...seed.slots,
                                       [slot]: e.target.value
                                     };
                                     
-                                    api.updateSeed(seed.id, { slots: updatedSlots })
-                                      .then(updatedSeed => {
-                                        // Update local state
-                                        setLocalSeedList(prevList => {
-                                          return prevList.map(s => {
-                                            if (s.id === seed.id) {
-                                              return updatedSeed;
-                                            }
-                                            return s;
-                                          });
-                                        });
-                                        
-                                        // If this is the currently selected seed, update parent state
-                                        if (isCurrentSeed) {
-                                          setSeedList(prevList => {
-                                            return prevList.map((s, idx) => {
-                                              if (idx === currentSeedIndex) {
-                                                return updatedSeed.slots;
-                                              }
-                                              return s;
-                                            });
-                                          });
+                                    // Update local state without API call
+                                    setLocalSeedList(prevList => {
+                                      return prevList.map(s => {
+                                        if (s.id === seed.id) {
+                                          return { ...s, slots: updatedSlots };
                                         }
-                                      })
-                                      .catch(error => {
-                                        console.error("Error updating seed:", error);
-                                        // Don't show toast for every keystroke - it would be too noisy
-                                      })
-                                      .finally(() => {
-                                        setIsLoading(false);
+                                        return s;
                                       });
+                                    });
+                                    
+                                    // Store the change in the unsavedChanges map
+                                    setUnsavedChanges(prev => ({
+                                      ...prev,
+                                      [seed.id]: updatedSlots
+                                    }));
+                                    
+                                    // If this is the currently selected seed, update parent state immediately
+                                    // for live preview but don't save to database yet
+                                    if (isCurrentSeed) {
+                                      setSeedList(prevList => {
+                                        const newList = [...prevList];
+                                        newList[currentSeedIndex] = updatedSlots;
+                                        return newList;
+                                      });
+                                    }
                                   }}
                                   onKeyDown={(e) => {
                                     // Tab navigation with keyboard
@@ -796,8 +970,15 @@ const SeedBankModal = ({
                                       }
                                     }
                                   }}
-                                  onDoubleClick={() => {
+                                  onDoubleClick={async () => {
                                     // On double click, select the current seed and close the modal
+                                    
+                                    // Ask for confirmation if there are unsaved changes
+                                    if (Object.keys(unsavedChanges).length > 0) {
+                                      if (window.confirm("You have unsaved changes. Do you want to save them before selecting this seed?")) {
+                                        await saveChanges();
+                                      }
+                                    }
                                     
                                     // Find matching seed in parent list
                                     const parentIndex = seedList.findIndex(s => 
@@ -809,7 +990,8 @@ const SeedBankModal = ({
                                     } else {
                                       // If not found in parent, update parent and set index
                                       const newSeeds = [...seedList];
-                                      newSeeds.push(seed.slots);
+                                      // Replace array items instead of push to ensure state is properly updated
+                                      newSeeds[newSeeds.length] = {...seed.slots};
                                       setSeedList(newSeeds);
                                       setCurrentSeedIndex(newSeeds.length - 1);
                                     }
@@ -871,7 +1053,23 @@ const SeedBankModal = ({
               </div>
               
               {/* Pagination if needed */}
-              {totalSeeds > pageSize && (
+              {/* Debug info - only in development */}
+              {process.env.NODE_ENV === 'development' && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-gray-600">
+                  <details>
+                    <summary className="cursor-pointer font-medium">Pagination Info</summary>
+                    <div className="mt-1 pl-2">
+                      <p>Total Seeds: {totalSeeds}</p>
+                      <p>Page Size: {pageSize}</p>
+                      <p>Current Page: {currentPage} of {Math.ceil(totalSeeds / pageSize)}</p>
+                      <p>Showing seeds {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalSeeds)}</p>
+                    </div>
+                  </details>
+                </div>
+              )}
+                
+              {/* Only show pagination if there are more seeds than the page size */}
+              {totalSeeds > pageSize ? (
                 <div className="flex justify-between items-center mt-4">
                   <span className="text-sm text-gray-500">
                     Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, totalSeeds)} of {totalSeeds} seeds
@@ -881,8 +1079,22 @@ const SeedBankModal = ({
                       className="px-3 py-1 bg-gray-200 text-gray-800 rounded disabled:opacity-50"
                       onClick={() => {
                         if (currentPage > 1) {
-                          setCurrentPage(prev => prev - 1);
-                          // Todo: implement API call to load previous page
+                          const newPage = currentPage - 1;
+                          setCurrentPage(newPage);
+                          setIsLoading(true);
+                          // Load previous page from API
+                          api.getSeedBankById(seedBankId, newPage, pageSize, false)
+                            .then(result => {
+                              const seeds = result.seeds || [];
+                              setLocalSeedList(seeds);
+                            })
+                            .catch(error => {
+                              console.error("Error loading previous page:", error);
+                              toast.error("Failed to load previous page");
+                            })
+                            .finally(() => {
+                              setIsLoading(false);
+                            });
                         }
                       }}
                       disabled={currentPage === 1 || isLoading}
@@ -893,8 +1105,22 @@ const SeedBankModal = ({
                       className="px-3 py-1 bg-gray-200 text-gray-800 rounded disabled:opacity-50"
                       onClick={() => {
                         if (currentPage * pageSize < totalSeeds) {
-                          setCurrentPage(prev => prev + 1);
-                          // Todo: implement API call to load next page
+                          const newPage = currentPage + 1;
+                          setCurrentPage(newPage);
+                          setIsLoading(true);
+                          // Load next page from API
+                          api.getSeedBankById(seedBankId, newPage, pageSize, false)
+                            .then(result => {
+                              const seeds = result.seeds || [];
+                              setLocalSeedList(seeds);
+                            })
+                            .catch(error => {
+                              console.error("Error loading next page:", error);
+                              toast.error("Failed to load next page");
+                            })
+                            .finally(() => {
+                              setIsLoading(false);
+                            });
                         }
                       }}
                       disabled={currentPage * pageSize >= totalSeeds || isLoading}
@@ -902,6 +1128,10 @@ const SeedBankModal = ({
                       Next
                     </button>
                   </div>
+                </div>
+              ) : (
+                <div className="mt-4 text-center text-sm text-gray-500">
+                  <p>Total: {totalSeeds} seeds. {totalSeeds > pageSize ? "Pagination should be visible." : "Pagination not needed."}</p>
                 </div>
               )}
             </div>
@@ -912,22 +1142,73 @@ const SeedBankModal = ({
         <div className="flex justify-between items-center p-4 border-t border-gray-200 bg-gray-50">
           <div className="text-sm text-gray-500">
             {hasChanges ? (
-              <span className="text-green-600">✓ Changes saved automatically</span>
+              <span className="text-green-600">✓ Changes saved</span>
+            ) : Object.keys(unsavedChanges).length > 0 ? (
+              <span className="text-amber-600">* You have unsaved changes</span>
             ) : null}
           </div>
-          <button
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
-            onClick={() => {
-              // Pass the latest seeds back to the parent
-              if (localSeedList && localSeedList.length > 0) {
-                setSeedList(localSeedList.map(seed => seed.slots));
-              }
-              onClose();
-            }}
-            disabled={isLoading}
-          >
-            Close
-          </button>
+          <div className="flex gap-2">
+            {Object.keys(unsavedChanges).length > 0 ? (
+              <button
+                className="px-4 py-2 bg-primary-500 text-white rounded-md hover:bg-primary-600 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2"
+                onClick={async () => {
+                  await saveChanges();
+                }}
+                disabled={isLoading}
+              >
+                Save Changes ({Object.keys(unsavedChanges).length})
+              </button>
+            ) : (
+              <button
+                className="px-4 py-2 bg-gray-200 text-gray-400 rounded-md cursor-not-allowed"
+                disabled={true}
+              >
+                No Unsaved Changes
+              </button>
+            )}
+            <button
+              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+              onClick={async () => {
+                // Ask for confirmation if there are unsaved changes
+                if (Object.keys(unsavedChanges).length > 0) {
+                  if (window.confirm("You have unsaved changes. Do you want to save them before closing?")) {
+                    await saveChanges();
+                  }
+                }
+                
+                // Pass the latest seeds back to the parent
+                if (seedBankId) {
+                  // Get all seeds from the database to ensure we have the complete list
+                  setIsLoading(true);
+                  try {
+                    // First get count
+                    const countResult = await api.getSeedBankById(seedBankId, 1, 1, true);
+                    const totalCount = countResult.total || 0;
+                    
+                    // If there are seeds, load all of them
+                    if (totalCount > 0) {
+                      // Load all seeds - make sure to request a large enough page size to get them all
+                      const allSeeds = await api.getSeedBankById(seedBankId, 1, totalCount, false);
+                      const seedsArray = allSeeds.seeds.map(seed => ({...seed.slots}));
+                      setSeedList([...seedsArray]);
+                    }
+                  } catch (error) {
+                    console.error("Error loading all seeds before closing:", error);
+                  } finally {
+                    setIsLoading(false);
+                  }
+                } else if (localSeedList && localSeedList.length > 0) {
+                  // Fallback if no seed bank ID
+                  const seedsArray = localSeedList.map(seed => ({...seed.slots}));
+                  setSeedList([...seedsArray]);
+                }
+                onClose();
+              }}
+              disabled={isLoading}
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

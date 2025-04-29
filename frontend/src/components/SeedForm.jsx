@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient'; // Correct: Import the default export 'api'
 import AiSeedModal from './modals/AiSeedModal'; // Import the new modal component
@@ -100,9 +100,13 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
   const [validationErrors, setValidationErrors] = useState({}); // { seedIndex: { slotName: true } }
   const [isInitialized, setIsInitialized] = useState(false); // Track if initial load/reset is done
   const [isPreviewCollapsed, setIsPreviewCollapsed] = useState(true); // State for prompt preview collapse
+  const [seedBankId, setSeedBankId] = useState(null); // ID of the seed bank for this template
+  const [seedIds, setSeedIds] = useState([]); // Array of seed IDs corresponding to seedList positions
+  const [isLoadingSeedBank, setIsLoadingSeedBank] = useState(false); // Loading state for seed bank operations
+  const [unsavedChanges, setUnsavedChanges] = useState({}); // Track seeds with unsaved changes: {seedIndex: true}
 
   // Determine disabled state based on generation, paraphrasing, or archived dataset
-  const isDisabled = isGenerating || isParaphrasing || !!selectedDataset?.archived;
+  const isDisabled = isGenerating || isParaphrasing || !!selectedDataset?.archived || isLoadingSeedBank;
 
   // Create a memoized initial seed object when template changes
   const createInitialSeed = useCallback((templateSlots) => {
@@ -120,7 +124,8 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
   useEffect(() => {
     const templateId = template?.id;
     const { loaded, ...loadedState } = loadStateFromSessionStorage(templateId);
-
+    
+    // First, handle local state based on session storage
     if (loaded) {
       // If loaded from storage for the *current* template, set the state
       setSeedList(loadedState.seedList);
@@ -128,23 +133,102 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
       setVariationsPerSeed(loadedState.variationsPerSeed);
       setValidationErrors(loadedState.validationErrors);
     } else {
-      // If not loaded (no storage, different template ID, or invalid data),
-      // reset to initial state based on the *new* template.
-      clearSessionStorage(); // Clear storage for the old/invalid template ID
+      // If not loaded, reset to initial state
+      clearSessionStorage();
       if (template?.slots && Array.isArray(template.slots)) {
         const initialSlots = createInitialSeed(template.slots);
         setSeedList([initialSlots]);
       } else {
-        // Handle case where template becomes invalid/null
         setSeedList([{}]);
       }
-      // Reset other state regardless of template validity if not loaded
       setCurrentSeedIndex(0);
-      setVariationsPerSeed(1); // Reset variations to default
+      setVariationsPerSeed(1);
       setValidationErrors({});
     }
+    
     setIsInitialized(true); // Mark initialization complete for this template
   }, [template, createInitialSeed]); // Rerun when template changes
+  
+  // Effect to handle seed bank synchronization
+  useEffect(() => {
+    if (isInitialized && template && template.id) {
+      setIsLoadingSeedBank(true);
+      
+      // Check if a seed bank exists for this template
+      api.getSeedBanks(template.id)
+        .then(response => {
+          const banks = response.items;
+          
+          if (banks.length > 0) {
+            // Use the first seed bank
+            const bank = banks[0];
+            setSeedBankId(bank.id);
+            
+            // Load seeds from this bank
+            return api.getSeedBankById(bank.id, 1, 500);
+          } else {
+            // Create a new seed bank for this template
+            return api.createSeedBank({
+              name: `${template.name} Seed Bank`,
+              template_id: template.id,
+              description: `Seed bank for ${template.name} template`
+            }).then(newBank => {
+              setSeedBankId(newBank.id);
+              
+              // If we have seeds in the local state, save them to the new bank
+              if (seedList && seedList.length > 0 && seedList[0] && Object.keys(seedList[0]).length > 0) {
+                return api.createSeeds(newBank.id, seedList)
+                  .then(newSeeds => {
+                    // Return a formatted result that matches the getSeedBankById response
+                    return {
+                      id: newBank.id,
+                      name: newBank.name,
+                      template_id: newBank.template_id,
+                      description: newBank.description,
+                      seeds: newSeeds
+                    };
+                  });
+              }
+              
+              // Return empty seeds object
+              return { id: newBank.id, seeds: [] };
+            });
+          }
+        })
+        .then(result => {
+          // Load seeds and update local state
+          const seeds = result.seeds || [];
+          
+          // If we have seeds from the database, replace our local seed list
+          if (seeds.length > 0) {
+            // Update seed list with seeds from bank
+            const dbSeeds = seeds.map(seed => seed.slots);
+            setSeedList(dbSeeds);
+            setSeedIds(seeds.map(seed => seed.id));
+            
+            // Set current seed index to a valid value
+            if (currentSeedIndex >= dbSeeds.length) {
+              setCurrentSeedIndex(0);
+            }
+          } else if (seedList.length > 0 && result.id) {
+            // If no seeds in bank but we have local seeds, save them
+            api.createSeeds(result.id, seedList)
+              .then(newSeeds => {
+                setSeedIds(newSeeds.map(seed => seed.id));
+              })
+              .catch(error => {
+                console.error("Error creating initial seeds:", error);
+              });
+          }
+        })
+        .catch(error => {
+          console.error("Error loading seed bank:", error);
+        })
+        .finally(() => {
+          setIsLoadingSeedBank(false);
+        });
+    }
+  }, [template?.id, isInitialized, currentSeedIndex]);
 
   // Effect to save state to session storage whenever it changes
   useEffect(() => {
@@ -233,77 +317,214 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
     });
   }, [seedList, template, variationsPerSeed, onGenerate, validateSeeds]);
 
+  // Use a ref to store the debounced changes
+  const debouncedSeedChanges = useRef({});
+  
   const handleSlotChange = useCallback((slot, value) => {
     if (isDisabled) return; // Prevent changes if disabled
-    setSeedList(prevList => {
-      const newList = [...prevList];
-      newList[currentSeedIndex] = {
-        ...newList[currentSeedIndex],
-        [slot]: value
-      };
-      return newList;
-    });
-    // Clear validation error for this specific slot if it exists
-    setValidationErrors(prevErrors => {
-      const currentSeedErrors = prevErrors[currentSeedIndex];
-      if (currentSeedErrors && currentSeedErrors[slot]) {
-        const newSeedErrors = { ...currentSeedErrors };
-        delete newSeedErrors[slot];
-        const newErrors = { ...prevErrors };
-        if (Object.keys(newSeedErrors).length === 0) {
-          delete newErrors[currentSeedIndex]; // Remove seed index if no errors left
-        } else {
-          newErrors[currentSeedIndex] = newSeedErrors;
+    
+    // Store changes in ref first without triggering re-render
+    const currentSeed = seedList[currentSeedIndex] || {};
+    debouncedSeedChanges.current[slot] = value;
+    
+    // Debounce the state update to reduce re-renders
+    if (window.slotChangeTimeout) {
+      clearTimeout(window.slotChangeTimeout);
+    }
+    
+    window.slotChangeTimeout = setTimeout(() => {
+      // Update local state after debounce
+      setSeedList(prevList => {
+        const newList = [...prevList];
+        const updatedSeed = {
+          ...newList[currentSeedIndex],
+          ...debouncedSeedChanges.current
+        };
+        newList[currentSeedIndex] = updatedSeed;
+        return newList;
+      });
+      
+      // Clear validation error for this specific slot
+      setValidationErrors(prevErrors => {
+        const currentSeedErrors = prevErrors[currentSeedIndex];
+        if (currentSeedErrors && currentSeedErrors[slot]) {
+          const newSeedErrors = { ...currentSeedErrors };
+          delete newSeedErrors[slot];
+          const newErrors = { ...prevErrors };
+          if (Object.keys(newSeedErrors).length === 0) {
+            delete newErrors[currentSeedIndex]; // Remove seed index if no errors left
+          } else {
+            newErrors[currentSeedIndex] = newSeedErrors;
+          }
+          return newErrors;
         }
-        return newErrors;
+        return prevErrors;
+      });
+      
+      // Mark this seed as having unsaved changes
+      if (seedBankId && seedIds && seedIds[currentSeedIndex]) {
+        setUnsavedChanges(prev => ({
+          ...prev,
+          [currentSeedIndex]: true
+        }));
       }
-      return prevErrors;
-    });
-  }, [currentSeedIndex, isDisabled]);
+      
+      // Clear the ref after updating state
+      debouncedSeedChanges.current = {};
+    }, 300); // Shorter debounce time for visual feedback
+    
+    // For immediate feedback in the input field itself, we modify the current input directly
+    const inputElements = document.querySelectorAll(`[name="${slot}"]`);
+    if (inputElements && inputElements.length > 0) {
+      // The most recently modified input will be the one with the cursor
+      const activeElement = document.activeElement;
+      if (activeElement && activeElement.name === slot) {
+        // Don't modify the active element, as it would reset cursor position
+      } else {
+        // For any other inputs with the same name, update their value
+        inputElements.forEach(input => {
+          if (input !== activeElement) {
+            input.value = value;
+          }
+        });
+      }
+    }
+  }, [currentSeedIndex, isDisabled, seedBankId, seedIds, seedList]);
 
   // Add a new seed (blank)
-  const addSeed = useCallback(() => {
+  const addSeed = useCallback(async () => {
     if (isDisabled) return; // Prevent changes if disabled
+    
+    // Create a blank seed
+    const blankSeed = createInitialSeed(template?.slots);
+    
+    // Always update local state first for immediate feedback
     setSeedList(prevList => {
-      // Create a new blank seed
-      const blankSeed = createInitialSeed(template?.slots);
-      // Important: We need to create a new array to avoid React state mutation issues 
-      // but we must use the spread operator to preserve ALL existing seeds
       const newList = [...prevList, blankSeed];
-      // Navigate to the newly added seed
       setCurrentSeedIndex(newList.length - 1);
       setValidationErrors({}); // Clear errors when adding/navigating
       return newList;
     });
-  }, [template, createInitialSeed, isDisabled]);
+    
+    // If we have a seed bank, add to database
+    if (seedBankId) {
+      setIsLoadingSeedBank(true);
+      
+      try {
+        const newSeeds = await api.createSeeds(seedBankId, [blankSeed]);
+        // Update seed IDs array with the new ID
+        setSeedIds(prevIds => [...prevIds, newSeeds[0].id]);
+        toast.success("New seed added and saved to database");
+      } catch (error) {
+        console.error("Error adding seed to database:", error);
+        toast.error("Failed to save new seed to database");
+        
+        // Mark the new seed as having unsaved changes
+        const newIndex = seedList.length; // This is the index of the newly added seed
+        setUnsavedChanges(prev => ({
+          ...prev,
+          [newIndex]: true
+        }));
+      } finally {
+        setIsLoadingSeedBank(false);
+      }
+    } else {
+      // If no seed bank, just mark as unsaved
+      const newIndex = seedList.length;
+      setUnsavedChanges(prev => ({
+        ...prev,
+        [newIndex]: true
+      }));
+    }
+  }, [template, createInitialSeed, isDisabled, seedBankId, seedList.length]);
 
-  const removeSeed = useCallback(() => {
+  const removeSeed = useCallback(async () => {
     if (isDisabled) return; // Prevent changes if disabled
     if (seedList.length <= 1) {
       toast.info("Cannot remove the last seed.");
       return;
     }
     
+    const seedIdToDelete = seedIds[currentSeedIndex];
+    
+    // Always update local state first for immediate feedback
+    let removedSeed;
     setSeedList(prevList => {
+      // Save a copy of the seed we're removing
+      removedSeed = prevList[currentSeedIndex];
+      
+      // Filter the list
       const newList = prevList.filter((_, index) => index !== currentSeedIndex);
       const newIndex = Math.min(currentSeedIndex, newList.length - 1);
       setCurrentSeedIndex(newIndex);
-      // Clear errors for the removed seed and potentially shift others
-      setValidationErrors(prevErrors => {
-        const newErrors = {};
-        Object.entries(prevErrors).forEach(([idxStr, seedErrors]) => {
-          const idx = parseInt(idxStr, 10);
-          if (idx < currentSeedIndex) {
-            newErrors[idx] = seedErrors;
-          } else if (idx > currentSeedIndex) {
-            newErrors[idx - 1] = seedErrors; // Shift index down
-          }
-        });
-        return newErrors;
-      });
       return newList;
     });
-  }, [seedList.length, currentSeedIndex, isDisabled]);
+    
+    // Update seed IDs array
+    setSeedIds(prevIds => prevIds.filter((_, index) => index !== currentSeedIndex));
+    
+    // Update unsaved changes to account for index shift
+    setUnsavedChanges(prevChanges => {
+      const newChanges = {};
+      
+      // Copy changes, shifting indexes for seeds after the removed one
+      Object.entries(prevChanges).forEach(([idxStr, isChanged]) => {
+        const idx = parseInt(idxStr, 10);
+        if (idx < currentSeedIndex) {
+          newChanges[idx] = isChanged;
+        } else if (idx > currentSeedIndex) {
+          newChanges[idx - 1] = isChanged; // Shift index down
+        }
+      });
+      
+      return newChanges;
+    });
+    
+    // Clear errors for the removed seed and potentially shift others
+    setValidationErrors(prevErrors => {
+      const newErrors = {};
+      Object.entries(prevErrors).forEach(([idxStr, seedErrors]) => {
+        const idx = parseInt(idxStr, 10);
+        if (idx < currentSeedIndex) {
+          newErrors[idx] = seedErrors;
+        } else if (idx > currentSeedIndex) {
+          newErrors[idx - 1] = seedErrors; // Shift index down
+        }
+      });
+      return newErrors;
+    });
+    
+    // If we have a seed bank and seed ID, delete from database
+    if (seedBankId && seedIdToDelete) {
+      setIsLoadingSeedBank(true);
+      
+      try {
+        await api.deleteSeed(seedIdToDelete);
+        toast.success("Seed deleted from database");
+      } catch (error) {
+        console.error("Error deleting seed from database:", error);
+        toast.error("Failed to delete seed from database");
+        
+        // If deletion failed, restore the seed to local state
+        setSeedList(prevList => {
+          const newList = [...prevList];
+          
+          // Insert the removed seed back at its original position
+          newList.splice(currentSeedIndex, 0, removedSeed);
+          return newList;
+        });
+        
+        // Restore the seed ID as well
+        setSeedIds(prevIds => {
+          const newIds = [...prevIds];
+          newIds.splice(currentSeedIndex, 0, seedIdToDelete);
+          return newIds;
+        });
+      } finally {
+        setIsLoadingSeedBank(false);
+      }
+    }
+  }, [seedList.length, currentSeedIndex, isDisabled, seedBankId, seedIds]);
 
   const navigateSeeds = useCallback((direction) => {
     if (isDisabled) return; // Prevent changes if disabled
@@ -327,6 +548,39 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
     if (isDisabled) return; // Prevent changes if disabled
     setCurrentSeedIndex(seedList.length - 1);
   }, [seedList.length, isDisabled]);
+  
+  // Save changes to database
+  const saveChanges = useCallback(async () => {
+    if (isDisabled || !seedBankId || Object.keys(unsavedChanges).length === 0) {
+      return;
+    }
+    
+    setIsLoadingSeedBank(true);
+    
+    try {
+      // Process all unsaved changes
+      const updatePromises = Object.keys(unsavedChanges).map(seedIndex => {
+        const index = parseInt(seedIndex, 10);
+        const seedId = seedIds[index];
+        const seedContent = seedList[index];
+        
+        if (!seedId) return Promise.resolve(null);
+        
+        return api.updateSeed(seedId, { slots: seedContent });
+      });
+      
+      await Promise.all(updatePromises);
+      
+      // Clear unsaved changes
+      setUnsavedChanges({});
+      toast.success("All changes saved.");
+    } catch (error) {
+      console.error("Error saving seed changes:", error);
+      toast.error("Failed to save some changes");
+    } finally {
+      setIsLoadingSeedBank(false);
+    }
+  }, [isDisabled, seedBankId, unsavedChanges, seedIds, seedList]);
 
   const handleParaphraseSeeds = useCallback(async (count, instructions) => {
     if (isDisabled) return; // Prevent changes if disabled
@@ -364,6 +618,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
           }, {});
         });
 
+        // First update local state
         setSeedList(prevList => {
           const updatedList = [...prevList, ...newSeeds];
           const cleanedList = cleanupSeedList(updatedList, templateSlots);
@@ -372,7 +627,35 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
           return cleanedList;
         });
         
-        toast.success(`Added ${newSeeds.length} new seeds using paraphrasing.`);
+        // Then sync with database if we have a seed bank
+        if (seedBankId) {
+          setIsLoadingSeedBank(true);
+          
+          try {
+            // Save the new seeds to the database
+            const createdSeeds = await api.createSeeds(seedBankId, newSeeds);
+            
+            // Update seedIds with the new IDs
+            setSeedIds(prevIds => [...prevIds, ...createdSeeds.map(seed => seed.id)]);
+            
+            toast.success(`Added ${newSeeds.length} new seeds using paraphrasing and saved to database.`);
+          } catch (error) {
+            console.error("Error saving paraphrased seeds to database:", error);
+            toast.error("Seeds were generated but could not be saved to database");
+            
+            // Mark all new seeds as having unsaved changes
+            const startIdx = seedList.length;
+            const newUnsavedChanges = {};
+            for (let i = 0; i < newSeeds.length; i++) {
+              newUnsavedChanges[startIdx + i] = true;
+            }
+            setUnsavedChanges(prev => ({...prev, ...newUnsavedChanges}));
+          } finally {
+            setIsLoadingSeedBank(false);
+          }
+        } else {
+          toast.success(`Added ${newSeeds.length} new seeds using paraphrasing.`);
+        }
       } else {
         console.error('Unexpected response format:', response);
         toast.error('Failed to parse paraphrased seeds from response.');
@@ -384,7 +667,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
     } finally {
       setIsParaphrasing(false);
     }
-  }, [template, seedList, setIsParaphrasing, isDisabled]);
+  }, [template, seedList, setIsParaphrasing, isDisabled, seedBankId]);
 
   // --- Import/Export Logic ---
   const handleExportSeeds = useCallback(() => {
@@ -484,17 +767,49 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
           }
 
           const cleanedList = cleanupSeedList(newSeeds, templateSlots);
-          setSeedList(cleanedList.length > 0 ? cleanedList : [createInitialSeed(templateSlots)]);
-          setCurrentSeedIndex(0);
-          setValidationErrors({});
-          toast.success(`Successfully imported ${newSeeds.length} seeds.`);
-
-          // Display warning about ignored slots if any were found
-          if (ignoredSlots.size > 0) {
-            const ignoredSlotsList = Array.from(ignoredSlots).join(', ');
-            toast.warn(`Warning: The following slots from the imported file were ignored as they are not in the current template: ${ignoredSlotsList}`, { autoClose: 5000 });
+          
+          // If we have a seed bank, save the imported seeds to the database
+          if (seedBankId) {
+            setIsLoadingSeedBank(true);
+            
+            // Save to database
+            api.createSeeds(seedBankId, cleanedList)
+              .then(newDbSeeds => {
+                // Update local state
+                setSeedList(cleanedList);
+                setSeedIds(newDbSeeds.map(seed => seed.id));
+                setCurrentSeedIndex(0);
+                setValidationErrors({});
+                
+                toast.success(`Successfully imported ${cleanedList.length} seeds.`);
+                
+                // Display warning about ignored slots if any were found
+                if (ignoredSlots.size > 0) {
+                  const ignoredSlotsList = Array.from(ignoredSlots).join(', ');
+                  toast.warn(`Warning: The following slots from the imported file were ignored as they are not in the current template: ${ignoredSlotsList}`, { autoClose: 5000 });
+                }
+              })
+              .catch(error => {
+                console.error("Error saving imported seeds to database:", error);
+                toast.error("Failed to save imported seeds to database");
+              })
+              .finally(() => {
+                setIsLoadingSeedBank(false);
+              });
+          } else {
+            // Just update local state
+            setSeedList(cleanedList.length > 0 ? cleanedList : [createInitialSeed(templateSlots)]);
+            setCurrentSeedIndex(0);
+            setValidationErrors({});
+            
+            toast.success(`Successfully imported ${cleanedList.length} seeds.`);
+            
+            // Display warning about ignored slots if any were found
+            if (ignoredSlots.size > 0) {
+              const ignoredSlotsList = Array.from(ignoredSlots).join(', ');
+              toast.warn(`Warning: The following slots from the imported file were ignored as they are not in the current template: ${ignoredSlotsList}`, { autoClose: 5000 });
+            }
           }
-
         } catch (error) {
           console.error("Error importing seeds:", error);
           toast.error(`Import failed: ${error.message || "Could not parse JSON file."}`);
@@ -510,7 +825,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
     };
 
     input.click();
-  }, [template, createInitialSeed, isDisabled]);
+  }, [template, createInitialSeed, isDisabled, seedBankId]);
   // --- End Import/Export Logic ---
 
   // Handler for importing a file's content into a specific seed slot
@@ -800,7 +1115,7 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
         </div>
       );
     });
-  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isDisabled, validationErrors, handleImportFileToSlot]);
+  }, [template, currentSeed, currentSeedIndex, handleSlotChange, isDisabled, validationErrors, handleImportFileToSlot, seedList]);
 
   // Calculate total error count across all seeds
   const totalErrorCount = useMemo(() => {
@@ -954,6 +1269,28 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
                Please fill in all required fields for {totalErrorCount} missing value{totalErrorCount !== 1 ? 's' : ''} across all seeds. Use the navigation controls above to check each seed.
              </div>
           )}
+          
+          {/* Save indicator and button */}
+          {Object.keys(unsavedChanges).length > 0 && (
+            <div className="flex items-center justify-between mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+              <div className="flex items-center">
+                <Icon name="exclamationCircle" className="h-5 w-5 text-amber-500 mr-2" />
+                <span className="text-amber-700 font-medium">
+                  You have unsaved changes
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={saveChanges}
+                disabled={isDisabled}
+                className="px-3 py-1.5 bg-primary-500 text-white rounded-md hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 transition-colors shadow-sm"
+                title="Save changes to database"
+              >
+                <Icon name="save" className="w-4 h-4 mr-1" />
+                <span>Save Changes</span>
+              </button>
+            </div>
+          )}
 
           {promptPreview && !totalErrorCount && (
             <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
@@ -1041,7 +1378,11 @@ const SeedForm = ({ template, selectedDataset, onGenerate, isGenerating, onCance
       
       <SeedBankModal 
         isOpen={isSeedBankModalOpen}
-        onClose={() => setIsSeedBankModalOpen(false)}
+        onClose={() => {
+          setIsSeedBankModalOpen(false);
+          // Note: We don't need to reload seeds here because the modal now handles
+          // loading all seeds before it closes and passing them back to the parent
+        }}
         seedList={seedList}
         setSeedList={setSeedList}
         template={template}
