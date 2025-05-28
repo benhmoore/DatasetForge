@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import api from '../api/apiClient';
-import ExampleDetailModalWithParaphrase from './ExampleDetailModalWithParaphrase';
+import ExampleDetailModalWithParaphrase from './modals/ExampleDetailModalWithParaphrase';
 import ExportDialog from './ExportDialog';
-import ConfirmationModal from './ConfirmationModal'; // Import ConfirmationModal
-import BulkParaphraseModal from './BulkParaphraseModal'; // Import BulkParaphraseModal
+import ConfirmationModal from './modals/ConfirmationModal'; // Import ConfirmationModal
+import BulkParaphraseModal from './modals/BulkParaphraseModal'; // Import BulkParaphraseModal
 import Icon from './Icons';
 import ExampleTableHeader from './ExampleTableHeader';
 import ContextMenu from './ContextMenu'; // Import ContextMenu

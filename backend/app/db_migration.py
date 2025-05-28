@@ -89,8 +89,9 @@ def get_default_templates():
 
 def migrate_database():
     """
-    Migrate the database to add tool calling support columns
-    and create export_template and workflow tables if needed
+    Migrate the database to add tool calling support columns,
+    create export_template and workflow tables if needed,
+    and remove owner_id constraints for the no-user mode
     """
     # Skip migration for in-memory database (used in tests)
     if settings.DB_PATH == ":memory:":
@@ -110,6 +111,77 @@ def migrate_database():
 
     conn = sqlite3.connect(settings.DB_PATH)
     cursor = conn.cursor()
+
+    # Check if this is a fresh database, if so create all tables from scratch
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='dataset'"
+    )
+    if not cursor.fetchone():
+        # Create dataset table without owner_id constraint
+        logger.info("Creating dataset table (no-user mode)")
+        cursor.execute(
+            """
+        CREATE TABLE dataset (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            archived INTEGER NOT NULL DEFAULT 0
+        )
+        """
+        )
+
+    # Check if template table exists
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='template'"
+    )
+    if not cursor.fetchone():
+        # Create template table without owner_id constraint
+        logger.info("Creating template table (no-user mode)")
+        cursor.execute(
+            """
+        CREATE TABLE template (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            system_prompt TEXT NOT NULL,
+            user_prompt TEXT NOT NULL,
+            slots TEXT NOT NULL DEFAULT '[]',
+            archived INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            model_override TEXT,
+            model_parameters TEXT,
+            system_prompt_mask INTEGER NOT NULL DEFAULT 1,
+            user_prompt_mask INTEGER NOT NULL DEFAULT 1,
+            is_tool_calling_template INTEGER NOT NULL DEFAULT 0,
+            tool_definitions TEXT
+        )
+        """
+        )
+
+    # Check if example table exists
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='example'"
+    )
+    if not cursor.fetchone():
+        # Create example table
+        logger.info("Creating example table (no-user mode)")
+        cursor.execute(
+            """
+        CREATE TABLE example (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dataset_id INTEGER NOT NULL,
+            system_prompt TEXT NOT NULL,
+            user_prompt TEXT,
+            slots TEXT NOT NULL,
+            output TEXT NOT NULL,
+            timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            tool_calls TEXT,
+            FOREIGN KEY(dataset_id) REFERENCES dataset(id)
+        )
+        """
+        )
+        # Create index on dataset_id for faster lookups
+        cursor.execute("CREATE INDEX idx_example_dataset ON example(dataset_id)")
 
     try:
         # Get default templates for use throughout the function
@@ -145,19 +217,21 @@ def migrate_database():
         if "user_prompt" not in column_names:
             logger.info("Adding user_prompt column to Example table")
             cursor.execute("ALTER TABLE example ADD COLUMN user_prompt TEXT DEFAULT ''")
-            
+
             # For existing examples, populate user_prompt using template and slots
             logger.info("Populating user_prompt field for existing examples")
             # First, get all examples without a user_prompt
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT e.id, e.slots, t.user_prompt
                 FROM example e
                 JOIN dataset d ON e.dataset_id = d.id
                 JOIN template t ON 1=1
                 WHERE e.user_prompt IS NULL OR e.user_prompt = ''
-            """)
+            """
+            )
             examples_to_update = cursor.fetchall()
-            
+
             # For each example, try to generate a user_prompt from the slots
             for example_id, slots_json, template_prompt in examples_to_update:
                 try:
@@ -165,20 +239,27 @@ def migrate_database():
                     # A simple template population algorithm
                     user_prompt = template_prompt
                     for slot_name, slot_value in slots.items():
-                        user_prompt = user_prompt.replace("{" + slot_name + "}", slot_value)
-                    
+                        user_prompt = user_prompt.replace(
+                            "{" + slot_name + "}", slot_value
+                        )
+
                     # Update the example with the populated user_prompt
                     cursor.execute(
-                        "UPDATE example SET user_prompt = ? WHERE id = ?", 
-                        (user_prompt, example_id)
+                        "UPDATE example SET user_prompt = ? WHERE id = ?",
+                        (user_prompt, example_id),
                     )
                     logger.info(f"Updated user_prompt for example {example_id}")
                 except Exception as e:
-                    logger.error(f"Error updating user_prompt for example {example_id}: {e}")
+                    logger.error(
+                        f"Error updating user_prompt for example {example_id}: {e}"
+                    )
                     # Set a default value if we can't populate properly
                     cursor.execute(
-                        "UPDATE example SET user_prompt = ? WHERE id = ?", 
-                        ("[User prompt not available for existing examples]", example_id)
+                        "UPDATE example SET user_prompt = ? WHERE id = ?",
+                        (
+                            "[User prompt not available for existing examples]",
+                            example_id,
+                        ),
                     )
 
         # Check if export_template table exists
@@ -196,10 +277,8 @@ def migrate_database():
                 format_name TEXT NOT NULL,
                 template TEXT NOT NULL,
                 is_default INTEGER NOT NULL DEFAULT 0,
-                owner_id INTEGER,
                 created_at TIMESTAMP NOT NULL,
-                archived INTEGER NOT NULL DEFAULT 0,
-                FOREIGN KEY(owner_id) REFERENCES user(id)
+                archived INTEGER NOT NULL DEFAULT 0
             )
             """
             )
@@ -239,27 +318,18 @@ def migrate_database():
                 """
             CREATE TABLE workflow (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 description TEXT,
                 data TEXT NOT NULL,
                 created_at TIMESTAMP NOT NULL,
                 updated_at TIMESTAMP NOT NULL,
-                version INTEGER NOT NULL DEFAULT 1,
-                FOREIGN KEY(owner_id) REFERENCES user(id)
+                version INTEGER NOT NULL DEFAULT 1
             )
             """
             )
 
-            # Create index on owner_id for faster owner-based lookups
-            cursor.execute(
-                "CREATE INDEX idx_workflow_owner_id ON workflow(owner_id)"
-            )
-            
-            # Create unique constraint on owner_id and name
-            cursor.execute(
-                "CREATE UNIQUE INDEX uq_owner_name ON workflow(owner_id, name)"
-            )
+            # Create unique index on name
+            cursor.execute("CREATE UNIQUE INDEX uq_workflow_name ON workflow(name)")
 
             logger.info("Workflow table created successfully")
 
@@ -350,12 +420,12 @@ def migrate_database():
         ]
         for spec in default_specs:
             cursor.execute(
-                "SELECT COUNT(*) FROM exporttemplate WHERE format_name=? AND owner_id IS NULL",
+                "SELECT COUNT(*) FROM exporttemplate WHERE format_name=?",
                 (spec["format_name"],),
             )
             if cursor.fetchone()[0] == 0:
                 cursor.execute(
-                    "INSERT INTO exporttemplate (name, description, format_name, template, is_default, owner_id, created_at, archived) VALUES (?, ?, ?, ?, ?, NULL, datetime('now'), ?)",
+                    "INSERT INTO exporttemplate (name, description, format_name, template, is_default, created_at, archived) VALUES (?, ?, ?, ?, ?, datetime('now'), ?)",
                     (
                         spec["name"],
                         spec["description"],

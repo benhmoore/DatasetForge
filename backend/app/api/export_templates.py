@@ -4,8 +4,7 @@ from sqlmodel import Session, select, col
 from datetime import datetime, timezone
 
 from ..db import get_session
-from ..core.security import get_current_user
-from ..api.models import User, ExportTemplate
+from ..api.models import ExportTemplate
 from ..api.schemas import (
     ExportTemplateCreate,
     ExportTemplateRead,
@@ -22,16 +21,13 @@ async def get_export_templates(
     size: int = Query(10, ge=1, le=100),
     include_archived: bool = Query(False),
     format_name: Optional[str] = Query(None),
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
-    Get all export templates (global templates + user's custom templates)
+    Get all export templates (global + custom templates)
     """
-    # Global templates (no owner_id) and user's templates
-    query = select(ExportTemplate).where(
-        (ExportTemplate.owner_id == None) | (ExportTemplate.owner_id == user.id)
-    )
+    # All templates, since we don't have user-specific templates anymore
+    query = select(ExportTemplate)
     
     # Filter by archived status if not including archived
     if not include_archived:
@@ -42,9 +38,7 @@ async def get_export_templates(
         query = query.where(ExportTemplate.format_name == format_name)
     
     # Count total for pagination
-    total_query = select(col(ExportTemplate.id)).where(
-        (ExportTemplate.owner_id == None) | (ExportTemplate.owner_id == user.id)
-    )
+    total_query = select(col(ExportTemplate.id))
     
     if not include_archived:
         total_query = total_query.where(ExportTemplate.archived == False)
@@ -69,7 +63,6 @@ async def get_export_templates(
 @router.post("/export_templates", response_model=ExportTemplateRead, status_code=status.HTTP_201_CREATED)
 async def create_export_template(
     template: ExportTemplateCreate,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -80,8 +73,7 @@ async def create_export_template(
         existing_defaults = session.exec(
             select(ExportTemplate).where(
                 (ExportTemplate.format_name == template.format_name) &
-                (ExportTemplate.is_default == True) &
-                ((ExportTemplate.owner_id == user.id) | (ExportTemplate.owner_id == None))
+                (ExportTemplate.is_default == True)
             )
         ).all()
         
@@ -96,7 +88,6 @@ async def create_export_template(
         format_name=template.format_name,
         template=template.template,
         is_default=template.is_default,
-        owner_id=user.id,
         created_at=datetime.now(timezone.utc),
         archived=False
     )
@@ -111,7 +102,6 @@ async def create_export_template(
 @router.get("/export_templates/{template_id}", response_model=ExportTemplateRead)
 async def get_export_template(
     template_id: int,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -125,13 +115,6 @@ async def get_export_template(
             detail="Export template not found"
         )
     
-    # Check ownership if not a global template
-    if template.owner_id is not None and template.owner_id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this template"
-        )
-    
     return template
 
 
@@ -139,7 +122,6 @@ async def get_export_template(
 async def update_export_template(
     template_id: int,
     template_update: ExportTemplateUpdate,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -151,13 +133,6 @@ async def update_export_template(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Export template not found"
-        )
-    
-    # Check ownership - only the owner can update
-    if db_template.owner_id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to modify this template"
         )
     
     # Update template fields
@@ -172,8 +147,7 @@ async def update_export_template(
             select(ExportTemplate).where(
                 (ExportTemplate.format_name == format_name) &
                 (ExportTemplate.is_default == True) &
-                (ExportTemplate.id != template_id) &
-                ((ExportTemplate.owner_id == user.id) | (ExportTemplate.owner_id == None))
+                (ExportTemplate.id != template_id)
             )
         ).all()
         
@@ -195,7 +169,6 @@ async def update_export_template(
 @router.put("/export_templates/{template_id}/archive")
 async def archive_export_template(
     template_id: int,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -207,13 +180,6 @@ async def archive_export_template(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Export template not found"
-        )
-    
-    # Check ownership - only the owner can archive/unarchive
-    if template.owner_id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to modify this template"
         )
     
     # Toggle archive status

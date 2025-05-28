@@ -8,8 +8,7 @@ import asyncio
 from datetime import datetime, timezone
 
 from ..db import get_session
-from ..core.security import get_current_user
-from ..api.models import User, Template, Workflow
+from ..api.models import Template, Workflow
 from ..api.schemas import (
     WorkflowExecuteRequest, 
     WorkflowExecutionResult,
@@ -27,20 +26,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# GET all workflows for the current local user
+# GET all workflows
 @router.get("/workflows", response_model=WorkflowPagination)
 async def get_workflows(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=100, description="Items per page"),
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
-    """Get all workflows owned by the current user (paginated)."""
-    # Base query filtered by the current user
-    query = select(Workflow).where(Workflow.owner_id == user.id).order_by(Workflow.updated_at.desc())
+    """Get all workflows (paginated)."""
+    # Base query with no user filter
+    query = select(Workflow).order_by(Workflow.updated_at.desc())
 
     # Efficient count for pagination total
-    total_query = select(func.count()).select_from(Workflow).where(Workflow.owner_id == user.id)
+    total_query = select(func.count()).select_from(Workflow)
     total = session.exec(total_query).first() or 0  # Handle case with no workflows
 
     # Apply pagination limits
@@ -55,35 +53,28 @@ async def get_workflows(
 @router.get("/workflows/{workflow_id}", response_model=WorkflowRead)
 async def get_workflow(
     workflow_id: int,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """Get a specific workflow by ID."""
     workflow = session.get(Workflow, workflow_id)
     if not workflow:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
-    # Basic check ensuring the workflow belongs to the current user context
-    if workflow.owner_id != user.id:
-        # This shouldn't happen in a correct single-user setup but provides safety
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return workflow
 
 # CREATE a new workflow
 @router.post("/workflows", response_model=WorkflowRead, status_code=status.HTTP_201_CREATED)
 async def create_workflow(
     workflow_data: WorkflowCreate,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """Create a new workflow."""
-    # Check for duplicate name for this user before creating
+    # Check for duplicate name before creating
     # Try to find a unique name by appending a number if needed
     base_name = workflow_data.name
     name = base_name
     index = 1
     while True:
         existing_query = select(Workflow).where(
-            Workflow.owner_id == user.id, 
             Workflow.name == name
         )
         existing = session.exec(existing_query).first()
@@ -101,7 +92,6 @@ async def create_workflow(
 
     # Create workflow instance (timestamps/version handled by model defaults)
     db_workflow = Workflow(
-        owner_id=user.id,
         name=workflow_data.name,
         description=workflow_data.description,
         data=workflow_data.data
@@ -126,7 +116,6 @@ async def create_workflow(
 async def update_workflow(
     workflow_id: int,
     workflow_update_data: WorkflowUpdate,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """Update an existing workflow using Optimistic Concurrency Control."""
@@ -134,13 +123,10 @@ async def update_workflow(
     db_workflow = session.get(Workflow, workflow_id)
     if not db_workflow:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
-    if db_workflow.owner_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     # Check for name uniqueness if name is being updated to a new value
     if workflow_update_data.name and workflow_update_data.name != db_workflow.name:
         existing_query = select(Workflow).where(
-            Workflow.owner_id == user.id,
             Workflow.name == workflow_update_data.name,
             Workflow.id != workflow_id  # Exclude the current workflow being updated
         )
@@ -180,11 +166,11 @@ async def update_workflow(
             session.rollback()  # Rollback the transaction
             # Check if the workflow still exists to give a more specific error
             check_exists = session.get(Workflow, workflow_id)
-            if not check_exists or check_exists.owner_id != user.id:
-                # Workflow was deleted or ownership changed (unlikely in single-user)
+            if not check_exists:
+                # Workflow was deleted
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, 
-                    detail="Workflow not found or access denied."
+                    detail="Workflow not found."
                 )
             else:
                 # The workflow exists, so the version must have mismatched (OCC conflict)
@@ -215,15 +201,12 @@ async def update_workflow(
 @router.delete("/workflows/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_workflow(
     workflow_id: int,
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """Delete a workflow."""
     db_workflow = session.get(Workflow, workflow_id)
     if not db_workflow:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
-    if db_workflow.owner_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     session.delete(db_workflow)
     try:
@@ -244,7 +227,6 @@ async def delete_workflow(
 async def duplicate_workflow(
     workflow_id: int,
     response: Response,  # Inject Response object to set headers
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """Create a duplicate of an existing workflow."""
@@ -252,8 +234,6 @@ async def duplicate_workflow(
     source_workflow = session.get(Workflow, workflow_id)
     if not source_workflow:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found")
-    if source_workflow.owner_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     # Find a unique name for the copy (e.g., "My Workflow (Copy)", "My Workflow (Copy 2)")
     base_name = source_workflow.name
@@ -261,7 +241,6 @@ async def duplicate_workflow(
     copy_index = 1
     while True:
         name_check_query = select(Workflow).where(
-            Workflow.owner_id == user.id, 
             Workflow.name == copy_name
         )
         existing = session.exec(name_check_query).first()
@@ -272,7 +251,6 @@ async def duplicate_workflow(
 
     # Create the new workflow instance with copied data
     new_workflow = Workflow(
-        owner_id=user.id,
         name=copy_name,
         description=source_workflow.description,
         data=source_workflow.data  # Deep copy should be handled by JSON type
@@ -302,7 +280,6 @@ async def duplicate_workflow(
 @router.post("/workflow/execute", response_model=WorkflowExecutionResult)
 async def execute_workflow(
     request: Dict[str, Any],  # Accept raw JSON to allow client-defined workflow
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     """
@@ -383,7 +360,6 @@ async def execute_workflow(
 @router.post("/workflow/execute/stream")
 async def execute_workflow_stream(
     request: Dict[str, Any],
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     """
@@ -519,7 +495,6 @@ async def execute_workflow_stream(
 @router.post("/workflow/execute_step")
 async def execute_workflow_step(
     request: Dict[str, Any],
-    user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     """

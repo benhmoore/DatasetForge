@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'react-toastify';
-import api from '../api/apiClient';
-import Icon from './Icons';
+import api from '../../api/apiClient';
+import Icon from '../Icons';
 
 const BulkParaphraseModal = ({ 
   isOpen, 

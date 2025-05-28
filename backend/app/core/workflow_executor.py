@@ -480,7 +480,7 @@ class WorkflowExecutor:
         # For all non-input nodes, initialize with a simple structure
         node_inputs = {
             "inputs": [],  # All inputs will be collected in this array (positional)
-            "input_map": {}  # Named inputs will be collected in this map
+            "input_map": {},  # Named inputs will be collected in this map
         }
 
         # Find connections where this node is the target
@@ -504,7 +504,9 @@ class WorkflowExecutor:
             source_id = connection.get("source_node_id")
             source_handle = connection.get("source_handle", "output")
             target_handle = connection.get("target_handle", "input_0")
-            target_slot = connection.get("target_slot")  # Get the slot name if available
+            target_slot = connection.get(
+                "target_slot"
+            )  # Get the slot name if available
 
             if source_id in node_outputs:
                 connected_input = True
@@ -550,7 +552,7 @@ class WorkflowExecutor:
 
                 # Add to the inputs array (positional)
                 node_inputs["inputs"].append(output_value)
-                
+
                 # Add to input_map using the slot name from the connection or target handle
                 if target_slot:
                     # Use the explicit slot name from the connection if available
@@ -665,7 +667,9 @@ class WorkflowExecutor:
                 if len(node_inputs.get("inputs", [])) > 0:
                     user_prompt = str(node_inputs["inputs"][0])
                     if self.debug_mode:
-                        logger.debug(f"Model node {node_id}: Using first input as user prompt")
+                        logger.debug(
+                            f"Model node {node_id}: Using first input as user prompt"
+                        )
                 else:
                     error_msg = f"No user prompt provided to model node '{node_id}'."
                     logger.warning(error_msg)
@@ -707,7 +711,6 @@ class WorkflowExecutor:
                 user_prompt=user_prompt,
                 template_params=model_parameters,
                 template=None,  # Not used directly here
-                user_prefs={},  # Not used here
                 is_tool_calling=False,  # Not used here
             )
 
@@ -769,7 +772,7 @@ class WorkflowExecutor:
                 return {
                     "output": "",
                     "error": "missing_prompt_text",
-                    "timestamp": self._get_timestamp()
+                    "timestamp": self._get_timestamp(),
                 }
 
             # Get input map (named inputs) from node_inputs
@@ -801,7 +804,9 @@ class WorkflowExecutor:
                         placeholder, f"[MISSING: {slot}]"
                     )
                     missing_slots.append(slot)
-                    logger.warning(f"Prompt node {node_id}: No value provided for slot '{slot}'")
+                    logger.warning(
+                        f"Prompt node {node_id}: No value provided for slot '{slot}'"
+                    )
 
             if self.debug_mode:
                 logger.debug(
@@ -819,11 +824,13 @@ class WorkflowExecutor:
             }
 
         except Exception as e:
-            logger.exception(f"Error executing prompt node {node_config.get('id', 'unknown')}: {str(e)}")
+            logger.exception(
+                f"Error executing prompt node {node_config.get('id', 'unknown')}: {str(e)}"
+            )
             return {
                 "output": f"Error in prompt node: {str(e)}",
                 "error": str(e),
-                "timestamp": self._get_timestamp()
+                "timestamp": self._get_timestamp(),
             }
 
     async def _execute_template_node(
@@ -909,7 +916,6 @@ class WorkflowExecutor:
                     user_prompt=user_prompt,
                     template=template,
                     template_params=template_model_params,
-                    user_prefs={},  # No user prefs needed
                     is_tool_calling=template.is_tool_calling_template,
                     tools=(
                         template.tool_definitions
@@ -1281,51 +1287,55 @@ class WorkflowExecutor:
             rules = node_config.get("rules", [])
             combination_mode = node_config.get("combination_mode", "AND")
             node_id = node_config.get("id", "unknown_filter_node")
-            
+
             # Get the input text to filter
             input_text = node_inputs.get("input", "")
             if not isinstance(input_text, str):
-                logger.warning(f"Filter node {node_id} received non-string input - converting to string")
+                logger.warning(
+                    f"Filter node {node_id} received non-string input - converting to string"
+                )
                 input_text = str(input_text) if input_text is not None else ""
-            
+
             # If no rules, just pass through
             if not rules:
-                logger.info(f"Filter node {node_id} has no rules, passing input through")
+                logger.info(
+                    f"Filter node {node_id} has no rules, passing input through"
+                )
                 return {
                     "output": input_text,
                     "passed": True,
                     "pass": input_text,  # For the 'pass' handle
-                    "fail": "",          # For the 'fail' handle
+                    "fail": "",  # For the 'fail' handle
                     "rule_results": [],
                     "_node_info": {
                         "type": "filter",
                         "id": node_id,
                         "timestamp": self._get_timestamp(),
-                    }
+                    },
                 }
-            
+
             # Import filter evaluation functions
             from ..api.filter import evaluate_rule
-            
+
             # Evaluate each enabled rule
             rule_results = []
             for rule in rules:
                 if rule.get("enabled", True):
                     result = evaluate_rule(input_text, rule)
                     rule_results.append(result)
-            
+
             # Determine overall pass/fail based on combination mode
             if combination_mode == "AND":
                 passed = all(result["passed"] for result in rule_results)
             else:  # "OR"
                 passed = any(result["passed"] for result in rule_results)
-            
+
             logger.info(f"Filter node {node_id} evaluation result: {passed}")
-            
+
             # Create result with routing information
             result = {
                 "output": input_text,  # Always provide the original input as output
-                "passed": passed,      # Overall pass/fail result
+                "passed": passed,  # Overall pass/fail result
                 # Route text to the appropriate handle
                 "pass": input_text if passed else "",
                 "fail": "" if passed else input_text,
@@ -1335,13 +1345,15 @@ class WorkflowExecutor:
                     "type": "filter",
                     "id": node_id,
                     "timestamp": self._get_timestamp(),
-                }
+                },
             }
-            
+
             return result
-            
+
         except Exception as e:
-            logger.exception(f"Error executing filter node {node_config.get('id', 'unknown')}: {str(e)}")
+            logger.exception(
+                f"Error executing filter node {node_config.get('id', 'unknown')}: {str(e)}"
+            )
             # Return error result - route to 'fail' output
             return {
                 "output": f"Error in filter node: {str(e)}",
@@ -1349,7 +1361,7 @@ class WorkflowExecutor:
                 "pass": "",
                 "fail": node_inputs.get("input", ""),
                 "error": str(e),
-                "timestamp": self._get_timestamp()
+                "timestamp": self._get_timestamp(),
             }
 
     async def execute_workflow_with_progress(

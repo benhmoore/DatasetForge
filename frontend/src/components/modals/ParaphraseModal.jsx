@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import Icon from './Icons';
-import CustomSlider from './CustomSlider';
-import api from '../api/apiClient';
+import Icon from '../Icons';
+import CustomSlider from '../CustomSlider';
+import api from '../../api/apiClient';
 
 const ParaphraseModal = ({ 
   isOpen, 

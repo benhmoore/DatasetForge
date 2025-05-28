@@ -3,7 +3,7 @@ import { toast } from 'react-toastify';
 import api from '../api/apiClient';
 import Icon from './Icons';
 import ToggleSwitch from './ToggleSwitch';
-import ConfirmationModal from './ConfirmationModal';
+import ConfirmationModal from './modals/ConfirmationModal';
 
 const DatasetSelector = ({ selectedDataset, onSelectDataset }) => {
   const [datasets, setDatasets] = useState([]);

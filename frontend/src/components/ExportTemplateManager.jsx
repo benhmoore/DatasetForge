@@ -30,10 +30,7 @@ const ExportTemplateManager = ({ isOpen, onClose }) => {
       
       // Sort templates by various factors for better organization
       const sortedTemplates = [...response.items].sort((a, b) => {
-        // First separate system vs user templates
-        if (a.owner_id === null && b.owner_id !== null) return -1;
-        if (a.owner_id !== null && b.owner_id === null) return 1;
-        
+
         // Then prioritize default templates
         if (a.is_default && !b.is_default) return -1;
         if (!a.is_default && b.is_default) return 1;
@@ -244,13 +241,6 @@ const ExportTemplateManager = ({ isOpen, onClose }) => {
                                 Generic
                               </span>
                             )}
-                            
-                            {/* Template Source Tag */}
-                            {template.owner_id === null && (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                System
-                              </span>
-                            )}
                           </div>
                         </div>
                         <div className="flex space-x-2">
@@ -261,15 +251,6 @@ const ExportTemplateManager = ({ isOpen, onClose }) => {
                           >
                             <Icon name="cog" className="w-5 h-5" />
                           </button>
-                          {template.owner_id !== null && (
-                            <button
-                              onClick={() => handleArchive(template.id)}
-                              className="text-red-600 hover:text-red-800"
-                              title="Archive template"
-                            >
-                              <Icon name="trash" className="w-5 h-5" />
-                            </button>
-                          )}
                         </div>
                       </div>
                     </div>

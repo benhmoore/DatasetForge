@@ -1,19 +1,6 @@
-from sqlmodel import SQLModel, Field, JSON, Column
-from sqlalchemy import UniqueConstraint
+from sqlmodel import SQLModel, Field, JSON, Column, Relationship
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
-
-
-class User(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    username: str = Field(unique=True, index=True)
-    password_hash: str
-    salt: str
-    name: str
-    default_gen_model: str
-    default_para_model: str
-    gen_model_context_size: Optional[int] = None
-    para_model_context_size: Optional[int] = None
 
 
 class Template(SQLModel, table=True):
@@ -34,15 +21,40 @@ class Template(SQLModel, table=True):
     model_parameters: Optional[Dict[str, Any]] = Field(
         default=None, sa_column=Column(JSON)
     )  # Added model parameters
+    
+    # Relationships
+    seed_banks: List["SeedBank"] = Relationship(back_populates="template")
+
+
+class SeedBank(SQLModel, table=True, table_name="seedbank"):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    template_id: int = Field(foreign_key="template.id")
+    description: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    template: Template = Relationship(back_populates="seed_banks")
+    seeds: List["Seed"] = Relationship(back_populates="seed_bank")
+
+
+class Seed(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    seed_bank_id: int = Field(foreign_key="seedbank.id")
+    slots: Dict[str, str] = Field(sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    seed_bank: SeedBank = Relationship(back_populates="seeds")
 
 
 class Dataset(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    owner_id: int = Field(foreign_key="user.id")
     archived: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    salt: str  # base64 salt for AES-GCM
 
 
 class Example(SQLModel, table=True):
@@ -72,14 +84,12 @@ class ExportTemplate(SQLModel, table=True):
     )  # e.g., "mlx-chat", "mlx-instruct", "tool-calling"
     template: str  # Jinja2-style template for formatting each example
     is_default: bool = False
-    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     archived: bool = False
 
 
 class Workflow(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    owner_id: int = Field(foreign_key="user.id", index=True)
     name: str = Field(max_length=100)
     description: Optional[str] = None
     data: Dict[str, Any] = Field(sa_column=Column(JSON), default={})
@@ -90,6 +100,3 @@ class Workflow(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc)
     )
     version: int = Field(default=1)
-
-    # Ensure a user cannot have two workflows with the same name
-    __table_args__ = (UniqueConstraint("owner_id", "name", name="uq_owner_name"),)

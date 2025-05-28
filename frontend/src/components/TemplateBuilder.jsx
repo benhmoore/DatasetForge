@@ -5,7 +5,7 @@ import api from '../api/apiClient';
 import SystemPromptEditor from './SystemPromptEditor';
 import ModelSelector from './ModelSelector'; // Import ModelSelector
 import ToggleSwitch from './ToggleSwitch'; // Assuming a ToggleSwitch component exists or will be created
-import ConfirmationModal from './ConfirmationModal'; // Import the new component
+import ConfirmationModal from './modals/ConfirmationModal'; // Import the new component
 import Icon from './Icons';
 import ToolParameterSchemaEditor from './ToolParameterSchemaEditor'; // Import the new schema editor
 import CustomTextInput from './CustomTextInput'; // Import CustomTextInput
@@ -28,6 +28,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [newTemplateName, setNewTemplateName] = useState('');
   const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false); // State for archive confirmation modal
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false); // State for unsaved changes
+  const [defaultGenModel, setDefaultGenModel] = useState("default generation model"); // Add state for default model name
 
   // Validation state
   const [nameError, setNameError] = useState(false);
@@ -56,6 +57,22 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
   const [newToolSchema, setNewToolSchema] = useState({ type: 'object', properties: {}, required: [] }); // Replace newToolParameters state
   const [modelOverride, setModelOverride] = useState(''); // Add state for model override
   const [modelParameters, setModelParameters] = useState(_.cloneDeep(defaultModelParameters)); // Add state for model parameters
+
+  // Fetch app settings including default model on component mount
+  useEffect(() => {
+    const fetchAppSettings = async () => {
+      try {
+        const settings = await api.getAppSettings();
+        if (settings && settings.default_gen_model) {
+          setDefaultGenModel(settings.default_gen_model);
+        }
+      } catch (error) {
+        console.error('Failed to fetch app settings:', error);
+      }
+    };
+    
+    fetchAppSettings();
+  }, []);
 
   // Helper function to get current form state as an object
   const getCurrentFormData = useCallback(() => {
@@ -218,8 +235,29 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
       };
     }
 
-    // Use lodash's isEqual for deep comparison
-    const changed = !_.isEqual(currentData, originalData);
+    // Process model parameters to handle string/number conversion issues before comparison
+    // Convert strings to numbers for comparison
+    const normalizeModelParams = (params) => {
+      return {
+        temperature: parseFloat(params.temperature),
+        top_p: parseFloat(params.top_p),
+        max_tokens: params.max_tokens === null || params.max_tokens === '' ? null : parseInt(params.max_tokens, 10)
+      };
+    };
+    
+    // Create copies for comparison with normalized model parameters
+    const normalizedCurrentData = {
+      ...currentData,
+      model_parameters: normalizeModelParams(currentData.model_parameters)
+    };
+    
+    const normalizedOriginalData = {
+      ...originalData,
+      model_parameters: normalizeModelParams(originalData.model_parameters)
+    };
+
+    // Use lodash's isEqual for deep comparison with normalized data
+    const changed = !_.isEqual(normalizedCurrentData, normalizedOriginalData);
 
     // Special case: if no template is selected but a name exists, it's unsaved
     if (!selectedTemplate && name.trim()) {
@@ -655,7 +693,7 @@ const TemplateBuilder = ({ context }) => { // Accept context as prop
               allowNone={true}
               disabled={isLoading || isSaving}
             />
-            <p className="text-xs text-gray-500 mt-1">If set, this model will be used instead of your default generation model.</p>
+            <p className="text-xs text-gray-500 mt-1">If set, this model will be used instead of your default generation model ({defaultGenModel}).</p>
           </div>
 
           {/* Model Parameters Section */}

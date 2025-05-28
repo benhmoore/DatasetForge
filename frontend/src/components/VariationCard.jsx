@@ -867,8 +867,7 @@ const VariationCard = forwardRef(({
                 className="transition-colors duration-200 scrollbar-thin scrollbar-thumb-gray-300"
                 containerClassName="mb-0"
                 style={{ minHeight: '8rem' }}
-                aiContext="You are helping to edit a variation output in a dataset generation tool. The content should be high-quality and match the intended purpose."
-                systemPrompt="Improve this output to be more coherent, well-structured, and accurate while maintaining the original intent and information."
+                showAiActionButton={false} // Disable AI action
                 collapsible={false}
                 autoExpandThreshold={200}
               />
